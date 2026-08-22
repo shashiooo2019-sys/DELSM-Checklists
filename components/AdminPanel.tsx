@@ -21,7 +21,8 @@ import {
   downloadUserImportTemplate, 
   downloadChecklistImportTemplate,
   resetDayDataToDefault,
-  addAuditLog
+  addAuditLog,
+  subscribeUsers
 } from '@/lib/storage';
 import { fetchUsersFromFirestore, subscribeToUsersFromFirestore } from '@/lib/firestoreService';
 import { makeItem, FLIGHT_CODES } from '@/lib/initialData';
@@ -93,16 +94,8 @@ export function AdminPanel({
 
   useEffect(() => {
     if (!isOpen) return;
-    fetchUsersFromFirestore().then((remoteUsers) => {
-      if (remoteUsers && remoteUsers.length > 0) {
-        setUsersList(remoteUsers);
-      }
-    });
-
-    const unsubscribe = subscribeToUsersFromFirestore((remoteUsers) => {
-      if (remoteUsers && remoteUsers.length > 0) {
-        setUsersList(remoteUsers);
-      }
+    const unsubscribe = subscribeUsers((users) => {
+      setUsersList(users);
     });
 
     return () => {

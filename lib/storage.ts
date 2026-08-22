@@ -182,6 +182,25 @@ export function subscribeSession(callback: () => void): () => void {
   };
 }
 
+export function subscribeUsers(callback: (users: UserAccount[]) => void): () => void {
+  if (typeof window === 'undefined') return () => {};
+  
+  // Call initially with latest state
+  callback(loadUsers());
+  
+  const handleUsersChange = () => {
+    callback(loadUsers());
+  };
+  
+  window.addEventListener('aviation_users_change', handleUsersChange);
+  window.addEventListener('storage', handleUsersChange);
+  
+  return () => {
+    window.removeEventListener('aviation_users_change', handleUsersChange);
+    window.removeEventListener('storage', handleUsersChange);
+  };
+}
+
 let cachedSessionSnapshot: UserAccount | null | undefined = undefined;
 let lastStoredRaw: string | null = null;
 
