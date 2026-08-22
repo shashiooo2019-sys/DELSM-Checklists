@@ -22,6 +22,7 @@ import {
   uNumberToEmail,
   fetchUsersFromFirestore,
   saveUserToFirestore,
+  saveUsersToFirestoreBatch,
   deleteUserFromFirestore,
   subscribeToUsersFromFirestore,
   subscribeToAuditLogs,
@@ -134,11 +135,11 @@ export function saveUsers(users: UserAccount[]): void {
       console.error('Error saving users to localStorage:', e);
     }
   }
-  for (const u of cleanList) {
-    saveUserToFirestore(u).catch((err) => {
-      console.error('saveUserToFirestore error:', err);
-    });
-  }
+  
+  saveUsersToFirestoreBatch(cleanList).catch((err) => {
+    console.error('saveUsersToFirestoreBatch error:', err);
+  });
+  
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event('aviation_users_change'));
   }

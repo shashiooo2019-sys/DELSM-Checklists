@@ -509,6 +509,35 @@ export async function saveUserToFirestore(user: UserAccount): Promise<void> {
   }
 }
 
+export async function saveUsersToFirestoreBatch(users: UserAccount[]): Promise<void> {
+  try {
+    const batch = writeBatch(db);
+    for (const user of users) {
+      const cleanUNum = user.uNumber.trim().toLowerCase();
+      const uid = `u_${cleanUNum}`;
+      const email = uNumberToEmail(user.uNumber);
+      const userDocRef = doc(db, 'users', uid);
+      batch.set(
+        userDocRef,
+        {
+          u_number: user.uNumber,
+          email: email,
+          name: user.name,
+          role: user.role,
+          is_first_login: user.mustChangePassword || false,
+          department: user.department || 'Ground Operations',
+          password_hash: user.passwordHash || user.uNumber,
+          updated_at: serverTimestamp(),
+        },
+        { merge: true }
+      );
+    }
+    await batch.commit();
+  } catch (err) {
+    console.error('saveUsersToFirestoreBatch error:', err);
+  }
+}
+
 // Delete User from Firestore
 export async function deleteUserFromFirestore(uNumber: string): Promise<boolean> {
   try {
