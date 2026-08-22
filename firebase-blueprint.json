@@ -1,0 +1,79 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Ground personnel user account",
+      "type": "object",
+      "properties": {
+        "u_number": { "type": "string", "description": "Unique personnel identifier" },
+        "email": { "type": "string", "description": "System operational email" },
+        "name": { "type": "string", "description": "Employee full name" },
+        "role": { "type": "string", "enum": ["ADMIN", "SUPERVISOR", "USER"] },
+        "is_first_login": { "type": "boolean" },
+        "department": { "type": "string" },
+        "created_at": { "type": "string" }
+      },
+      "required": ["u_number", "name", "role"]
+    },
+    "DailyShift": {
+      "title": "DailyShift",
+      "description": "Turnaround shift operational data for a specific date",
+      "type": "object",
+      "properties": {
+        "date": { "type": "string", "description": "YYYY-MM-DD date key" },
+        "status": { "type": "string", "enum": ["IN_PROGRESS", "VERIFIED", "CLOSED"] },
+        "verified_by": { "type": "string" },
+        "verified_at": { "type": "string" },
+        "closed_by": { "type": "string" },
+        "closed_at": { "type": "string" },
+        "shift_notes": { "type": "string" },
+        "raw_data": { "type": "string", "description": "JSON representation of DayOperationalData" }
+      },
+      "required": ["date", "status"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "System audit trail entry",
+      "type": "object",
+      "properties": {
+        "date_scope": { "type": "string" },
+        "actor_uid": { "type": "string" },
+        "actor_u_number": { "type": "string" },
+        "actor_name": { "type": "string" },
+        "actor_role": { "type": "string" },
+        "action_type": { "type": "string" },
+        "target_entity": { "type": "string" },
+        "target_id": { "type": "string" },
+        "details": { "type": "object" }
+      },
+      "required": ["action_type", "target_entity", "target_id"]
+    },
+    "TemplateOpGroups": {
+      "title": "TemplateOpGroups",
+      "description": "Master operational groups checklist template manifest",
+      "type": "object",
+      "properties": {
+        "total_groups": { "type": "number" },
+        "groups": { "type": "array" }
+      }
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User account documents"
+    },
+    "/daily_shifts/{date}": {
+      "schema": { "$ref": "#/entities/DailyShift" },
+      "description": "Daily ground operation turnaround shifts"
+    },
+    "/audit_logs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "System audit trail records"
+    },
+    "/templates_op_groups/{manifestId}": {
+      "schema": { "$ref": "#/entities/TemplateOpGroups" },
+      "description": "Checklist master template definition"
+    }
+  }
+}

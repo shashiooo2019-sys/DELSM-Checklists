@@ -1,0 +1,6 @@
+{
+  "name": "DELSM Ground Ops Turnaround Checklists Control",
+  "description": "Mobile-responsive aviation ground operations checklist, supervisor verification, and shift management system with Excel import and WhatsApp reports.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
