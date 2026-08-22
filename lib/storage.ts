@@ -70,7 +70,6 @@ function deduplicateUsers(users: UserAccount[]): UserAccount[] {
 
 let inMemoryUsers: UserAccount[] = deduplicateUsers(DEFAULT_USERS);
 let inMemoryAuditLogs: AuditLogEntry[] = [];
-const inMemoryDayDataMap = new Map<string, DayOperationalData>();
 
 // Initialize and seed Firebase collections, then bind real-time listeners
 if (typeof window !== 'undefined') {
@@ -413,23 +412,14 @@ export function getTodayDateString(): string {
 }
 
 export function loadDayData(dateStr: string): DayOperationalData {
-  const cached = inMemoryDayDataMap.get(dateStr);
-  if (cached) {
-    return cached;
-  }
-  const initial = createInitialDayData(dateStr);
-  inMemoryDayDataMap.set(dateStr, initial);
-  loadDayDataFromFirestore(dateStr).then((remoteData) => {
-    if (remoteData && remoteData.groups && remoteData.groups.length > 0) {
-      inMemoryDayDataMap.set(dateStr, remoteData);
-    }
-  });
-  return initial;
+  // Always return the fresh initial DayData template as the shell.
+  // The React client's real-time listeners for Firestore will immediately hydradate
+  // the state with up-to-date document states directly from Firebase.
+  return createInitialDayData(dateStr);
 }
 
 export function saveDayData(data: DayOperationalData): void {
   data.lastUpdated = new Date().toISOString();
-  inMemoryDayDataMap.set(data.date, data);
   try {
     saveDayDataToFirestore(data);
   } catch (err) {
