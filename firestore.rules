@@ -7,37 +7,78 @@ service cloud.firestore {
     }
 
     // Helper functions
-    function isSignedIn() {
-      return request.auth != null;
-    }
-
     function isValidId(id) {
       return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
     }
 
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // Entity validation functions
+    function isValidUser(data) {
+      return data.keys().hasAll(['u_number', 'name', 'role'])
+        && data.u_number is string && data.u_number.size() <= 32
+        && data.name is string && data.name.size() <= 128
+        && data.role in ['ADMIN', 'SUPERVISOR', 'USER']
+        && (!data.keys().contains('email') || (data.email is string && data.email.size() <= 128))
+        && (!data.keys().contains('is_first_login') || data.is_first_login is bool)
+        && (!data.keys().contains('department') || (data.department is string && data.department.size() <= 128));
+    }
+
+    function isValidDailyShift(data) {
+      return data.keys().hasAll(['date', 'status'])
+        && data.date is string && data.date.size() <= 32
+        && data.status in ['IN_PROGRESS', 'VERIFIED', 'CLOSED']
+        && (!data.keys().contains('verified_by') || (data.verified_by is string && data.verified_by.size() <= 128))
+        && (!data.keys().contains('closed_by') || (data.closed_by is string && data.closed_by.size() <= 128))
+        && (!data.keys().contains('shift_notes') || (data.shift_notes is string && data.shift_notes.size() <= 2048))
+        && (!data.keys().contains('raw_data') || (data.raw_data is string && data.raw_data.size() <= 524288));
+    }
+
+    function isValidAuditLog(data) {
+      return data.keys().hasAll(['action_type', 'target_entity', 'target_id'])
+        && data.action_type is string && data.action_type.size() <= 64
+        && data.target_entity is string && data.target_entity.size() <= 64
+        && data.target_id is string && data.target_id.size() <= 128
+        && (!data.keys().contains('actor_uid') || (data.actor_uid is string && data.actor_uid.size() <= 128))
+        && (!data.keys().contains('actor_u_number') || (data.actor_u_number is string && data.actor_u_number.size() <= 32))
+        && (!data.keys().contains('actor_name') || (data.actor_name is string && data.actor_name.size() <= 128))
+        && (!data.keys().contains('actor_role') || (data.actor_role is string && data.actor_role.size() <= 32))
+        && (!data.keys().contains('date_scope') || (data.date_scope is string && data.date_scope.size() <= 32));
+    }
+
+    function isValidTemplate(data) {
+      return (!data.keys().contains('total_groups') || data.total_groups is number);
+    }
+
     // Users collection rules
     match /users/{userId} {
-      allow read: if true;
-      allow create, update, write: if true;
-      allow delete: if true;
+      allow read: if isValidId(userId);
+      allow create, update: if isValidId(userId) && isValidUser(incoming());
+      allow delete: if isValidId(userId);
     }
 
     // Daily Shifts collection
     match /daily_shifts/{date} {
-      allow read: if true;
-      allow create, update, write: if true;
+      allow read: if isValidId(date);
+      allow create, update: if isValidId(date) && isValidDailyShift(incoming());
     }
 
     // Audit Logs collection
     match /audit_logs/{logId} {
-      allow read: if true;
-      allow create, write: if true;
+      allow read: if isValidId(logId);
+      allow create: if isValidId(logId) && isValidAuditLog(incoming());
     }
 
     // Templates collection
     match /templates_op_groups/{manifestId} {
-      allow read: if true;
-      allow create, update, write: if true;
+      allow read: if isValidId(manifestId);
+      allow create, update: if isValidId(manifestId) && isValidTemplate(incoming());
     }
   }
 }
