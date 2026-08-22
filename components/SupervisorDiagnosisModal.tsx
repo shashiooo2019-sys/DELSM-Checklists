@@ -29,6 +29,7 @@ interface SupervisorDiagnosisModalProps {
   onVerifyGroup: (groupId: string, notes?: string) => void;
   onReopenGroup: (groupId: string) => void;
   onCloseShift: (notes?: string) => void;
+  onReopenShift?: () => void;
 }
 
 export function SupervisorDiagnosisModal({
@@ -40,11 +41,14 @@ export function SupervisorDiagnosisModal({
   onVerifyGroup,
   onReopenGroup,
   onCloseShift,
+  onReopenShift,
 }: SupervisorDiagnosisModalProps) {
   const [selectedGroupId, setSelectedGroupId] = useState<string>(
     targetGroupId || dayData.groups[0]?.id || ''
   );
   const [supervisorNotes, setSupervisorNotes] = useState<string>('');
+  const [verifiedExceptions, setVerifiedExceptions] = useState<boolean>(false);
+  const [showReopenConfirm, setShowReopenConfirm] = useState<boolean>(false);
 
   if (!isOpen) return null;
 
@@ -350,6 +354,65 @@ export function SupervisorDiagnosisModal({
           ) : null}
         </div>
 
+        {/* Exceptions Verification Banner when there are pending checklists */}
+        {!dayData.isShiftClosed && (() => {
+          const pendingChecklists: { groupName: string; subName: string; chkTitle: string; pendingItemsCount: number }[] = [];
+          for (const grp of dayData.groups || []) {
+            for (const sub of grp.subGroups || []) {
+              for (const chk of sub.checklists || []) {
+                if (chk.status !== 'completed') {
+                  const incompleteCount = (chk.items || []).filter(
+                    (item) => item.status === 'not_done' || item.status === 'pinned'
+                  ).length;
+                  pendingChecklists.push({
+                    groupName: grp.name,
+                    subName: sub.name,
+                    chkTitle: chk.title,
+                    pendingItemsCount: incompleteCount,
+                  });
+                }
+              }
+            }
+          }
+
+          if (pendingChecklists.length === 0) return null;
+
+          return (
+            <div className="px-4 sm:px-6 py-3 bg-amber-50 border-t border-b border-amber-200 text-amber-950 text-xs">
+              <div className="flex items-start gap-2.5">
+                <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
+                <div className="space-y-2 flex-1">
+                  <p className="font-bold">
+                    Shift Closure Exception: There are {pendingChecklists.length} pending / incomplete checklists remaining!
+                  </p>
+                  <div className="max-h-24 overflow-y-auto border border-amber-200 rounded-lg p-2 bg-white space-y-1 divide-y divide-slate-100">
+                    {pendingChecklists.map((exc, eIdx) => (
+                      <div key={eIdx} className="pt-1 first:pt-0 flex items-center justify-between text-[11px] text-slate-600">
+                        <span>
+                          <strong className="text-slate-800">[{exc.groupName}]</strong> &raquo; {exc.subName} &raquo; <strong className="text-slate-700">{exc.chkTitle}</strong>
+                        </span>
+                        <span className="font-mono bg-amber-50 text-amber-800 px-1.5 py-0.5 rounded-sm border border-amber-100 text-[10px]">
+                          {exc.pendingItemsCount} pending
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                  <label className="flex items-center gap-2 font-semibold text-amber-950 cursor-pointer select-none">
+                    <input
+                      id="chk-verify-exceptions"
+                      type="checkbox"
+                      checked={verifiedExceptions}
+                      onChange={(e) => setVerifiedExceptions(e.target.checked)}
+                      className="w-4 h-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
+                    />
+                    <span>Verify and acknowledge these pending checklist exceptions to authorize shift closure.</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Global Shift Closure Footer */}
         <div className="p-4 sm:p-5 bg-white border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
           <div className="text-xs text-slate-500">
@@ -357,20 +420,55 @@ export function SupervisorDiagnosisModal({
           </div>
 
           <div className="flex items-center gap-3">
-            {!dayData.isShiftClosed ? (
-              <button
-                id="btn-close-entire-shift"
-                type="button"
-                onClick={handleShiftCloseAction}
-                className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider shadow-sm flex items-center gap-2 transition"
-              >
-                <Lock className="w-4 h-4" />
-                <span>Official Shift Closure & Sign-off</span>
-              </button>
-            ) : (
-              <div className="text-xs text-emerald-700 font-bold flex items-center gap-1.5">
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Operational Shift Officially Closed & Archived</span>
+            {!dayData.isShiftClosed ? (() => {
+              const pendingChecklistsCount = (dayData.groups || []).flatMap(g => g.subGroups || []).flatMap(s => s.checklists || []).filter(c => c.status !== 'completed').length;
+              const isBlocked = pendingChecklistsCount > 0 && !verifiedExceptions;
+
+              return (
+                <button
+                  id="btn-close-entire-shift"
+                  type="button"
+                  disabled={isBlocked}
+                  onClick={handleShiftCloseAction}
+                  className={`px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider shadow-sm flex items-center gap-2 transition ${
+                    isBlocked
+                      ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed shadow-none'
+                      : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                  }`}
+                >
+                  <Lock className="w-4 h-4" />
+                  <span>Official Shift Closure & Sign-off</span>
+                </button>
+              );
+            })() : (
+              <div className="flex items-center gap-3 flex-wrap">
+                <div className="text-xs text-emerald-700 font-bold flex items-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Operational Shift Officially Closed & Archived</span>
+                </div>
+                {(currentUser?.role === 'SUPERVISOR' || currentUser?.role === 'ADMIN') && onReopenShift && (
+                  <button
+                    id="btn-reopen-entire-shift"
+                    type="button"
+                    onClick={() => {
+                      if (!showReopenConfirm) {
+                        setShowReopenConfirm(true);
+                        setTimeout(() => setShowReopenConfirm(false), 5000);
+                      } else {
+                        onReopenShift();
+                        setShowReopenConfirm(false);
+                      }
+                    }}
+                    className={`px-3 py-1.5 border rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-2xs cursor-pointer ${
+                      showReopenConfirm
+                        ? 'bg-amber-500 hover:bg-amber-600 border-amber-600 text-slate-950 animate-pulse font-extrabold'
+                        : 'bg-rose-50 hover:bg-rose-100 border-rose-200 text-rose-700'
+                    }`}
+                  >
+                    <Unlock className="w-3.5 h-3.5" />
+                    <span>{showReopenConfirm ? 'Confirm Reopen' : 'Reopen Shift'}</span>
+                  </button>
+                )}
               </div>
             )}
           </div>

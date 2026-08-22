@@ -19,7 +19,8 @@ import {
   MessageSquare,
   Sparkles,
   HelpCircle,
-  RotateCcw
+  RotateCcw,
+  Lock
 } from 'lucide-react';
 
 interface ChecklistCarouselModalProps {
@@ -30,6 +31,7 @@ interface ChecklistCarouselModalProps {
   currentUser: UserAccount | null;
   onClose: () => void;
   onSaveChecklist: (updatedChecklist: Checklist) => void;
+  isShiftClosed?: boolean;
 }
 
 export function ChecklistCarouselModal({
@@ -40,6 +42,7 @@ export function ChecklistCarouselModal({
   currentUser,
   onClose,
   onSaveChecklist,
+  isShiftClosed,
 }: ChecklistCarouselModalProps) {
   if (!isOpen || !checklist) return null;
 
@@ -52,6 +55,7 @@ export function ChecklistCarouselModal({
       currentUser={currentUser}
       onClose={onClose}
       onSaveChecklist={onSaveChecklist}
+      isShiftClosed={isShiftClosed}
     />
   );
 }
@@ -63,6 +67,7 @@ function ChecklistCarouselContent({
   currentUser,
   onClose,
   onSaveChecklist,
+  isShiftClosed,
 }: {
   checklist: Checklist;
   groupName: string;
@@ -70,6 +75,7 @@ function ChecklistCarouselContent({
   currentUser: UserAccount | null;
   onClose: () => void;
   onSaveChecklist: (updatedChecklist: Checklist) => void;
+  isShiftClosed?: boolean;
 }) {
   const [items, setItems] = useState<ChecklistItem[]>(() => checklist.items.map((i) => ({ ...i })));
   const [currentIndex, setCurrentIndex] = useState<number>(() => {
@@ -204,12 +210,14 @@ function ChecklistCarouselContent({
         goToNext();
       } else if (e.key === 'ArrowLeft') {
         goToPrev();
-      } else if (e.key.toLowerCase() === 'd') {
-        handleMarkDone();
-      } else if (e.key.toLowerCase() === 'p') {
-        handlePinItem();
-      } else if (e.key.toLowerCase() === 's') {
-        handleAttemptSkip();
+      } else if (!isShiftClosed) {
+        if (e.key.toLowerCase() === 'd') {
+          handleMarkDone();
+        } else if (e.key.toLowerCase() === 'p') {
+          handlePinItem();
+        } else if (e.key.toLowerCase() === 's') {
+          handleAttemptSkip();
+        }
       }
     };
 
@@ -331,27 +339,36 @@ function ChecklistCarouselContent({
           </div>
 
           <div className="flex items-center gap-2">
-            <button
-              id="btn-reset-carousel-checklist"
-              type="button"
-              onClick={handleResetChecklist}
-              className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl transition text-xs font-bold flex items-center gap-1.5 shrink-0 shadow-2xs"
-              title="Reset all items back to Not Done and start over"
-            >
-              <RotateCcw className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-              <span className="hidden sm:inline">Reset Checklist</span>
-            </button>
+            {!isShiftClosed && (
+              <button
+                id="btn-reset-carousel-checklist"
+                type="button"
+                onClick={handleResetChecklist}
+                className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl transition text-xs font-bold flex items-center gap-1.5 shrink-0 shadow-2xs"
+                title="Reset all items back to Not Done and start over"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                <span className="hidden sm:inline">Reset Checklist</span>
+              </button>
+            )}
 
             <button
               id="btn-close-carousel"
-              onClick={handleSaveProgressDraft}
+              onClick={isShiftClosed ? onClose : handleSaveProgressDraft}
               className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition"
-              title="Save Progress and Close"
+              title={isShiftClosed ? "Close modal" : "Save Progress and Close"}
             >
               <X className="w-5 h-5" />
             </button>
           </div>
         </div>
+
+        {isShiftClosed && (
+          <div className="px-4 py-2.5 bg-amber-50 border-b border-amber-200 text-amber-900 text-xs font-bold flex items-center gap-2 justify-center shrink-0">
+            <Lock className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>Operational Shift is Closed & Archived. Reopen the shift as a supervisor to modify checks.</span>
+          </div>
+        )}
 
         {/* Progress Bar & Stepper Info */}
         <div className="px-4 sm:px-6 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs text-slate-600 shrink-0">
@@ -493,8 +510,9 @@ function ChecklistCarouselContent({
             <button
               id="btn-action-done"
               type="button"
+              disabled={isShiftClosed}
               onClick={handleMarkDone}
-              className={`py-3.5 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition shadow-sm ${
+              className={`py-3.5 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${
                 currentItem?.status === 'done'
                   ? 'bg-emerald-700 text-white ring-2 ring-emerald-400'
                   : 'bg-emerald-600 hover:bg-emerald-700 text-white'
@@ -508,8 +526,9 @@ function ChecklistCarouselContent({
             <button
               id="btn-action-pin"
               type="button"
+              disabled={isShiftClosed}
               onClick={handlePinItem}
-              className={`py-3.5 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition ${
+              className={`py-3.5 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition disabled:opacity-50 disabled:cursor-not-allowed ${
                 currentItem?.status === 'pinned'
                   ? 'bg-amber-500 text-slate-950 ring-2 ring-amber-400'
                   : 'bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800'
@@ -524,8 +543,9 @@ function ChecklistCarouselContent({
             <button
               id="btn-action-skip"
               type="button"
+              disabled={isShiftClosed}
               onClick={handleAttemptSkip}
-              className={`py-3.5 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition border ${
+              className={`py-3.5 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition border disabled:opacity-50 disabled:cursor-not-allowed ${
                 currentItem?.isMandatory
                   ? 'bg-slate-100 border-slate-200 text-slate-400 hover:border-rose-300 hover:text-rose-600'
                   : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700'
@@ -594,29 +614,42 @@ function ChecklistCarouselContent({
           </div>
 
           <div className="flex items-center gap-3 w-full sm:w-auto">
-            <button
-              id="btn-save-draft"
-              type="button"
-              onClick={handleSaveProgressDraft}
-              className="w-full sm:w-auto px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition"
-            >
-              Save Draft & Exit
-            </button>
+            {isShiftClosed ? (
+              <button
+                id="btn-close-readonly"
+                type="button"
+                onClick={onClose}
+                className="w-full sm:w-auto px-6 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs rounded-xl transition"
+              >
+                Close (Read Only Mode)
+              </button>
+            ) : (
+              <>
+                <button
+                  id="btn-save-draft"
+                  type="button"
+                  onClick={handleSaveProgressDraft}
+                  className="w-full sm:w-auto px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition"
+                >
+                  Save Draft & Exit
+                </button>
 
-            <button
-              id="btn-complete-submit-checklist"
-              type="button"
-              onClick={handleOpenRemarksModal}
-              disabled={!canSubmit}
-              className={`w-full sm:w-auto px-6 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-sm transition ${
-                canSubmit
-                  ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20'
-                  : 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
-              }`}
-            >
-              <Send className="w-4 h-4" />
-              <span>Submit Checklist</span>
-            </button>
+                <button
+                  id="btn-complete-submit-checklist"
+                  type="button"
+                  onClick={handleOpenRemarksModal}
+                  disabled={!canSubmit}
+                  className={`w-full sm:w-auto px-6 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-sm transition ${
+                    canSubmit
+                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20'
+                      : 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+                  }`}
+                >
+                  <Send className="w-4 h-4" />
+                  <span>Submit Checklist</span>
+                </button>
+              </>
+            )}
           </div>
         </div>
       </div>

@@ -392,6 +392,30 @@ export default function AviationGroundOpsPage() {
     );
   };
 
+  const handleReopenShift = () => {
+    if (!currentUser) return;
+
+    const newDayData: DayOperationalData = {
+      ...dayData,
+      isShiftClosed: false,
+      closedBy: undefined,
+      closedAt: undefined,
+      shiftNotes: undefined,
+    };
+
+    saveDayData(newDayData);
+    setDayData(newDayData);
+
+    addAuditLog(
+      currentUser.uNumber,
+      currentUser.name,
+      currentUser.role,
+      'SHIFT_REOPEN',
+      `Reopened operational shift for ${selectedDate}.`,
+      selectedDate
+    );
+  };
+
   const handleCloseShift = (notes?: string) => {
     if (!currentUser) return;
 
@@ -644,6 +668,7 @@ export default function AviationGroundOpsPage() {
           onOpenWhatsApp={() => setIsWhatsAppModalOpen(true)}
           onExportExcel={() => exportShiftToExcel(dayData)}
           onOpenAdmin={() => setIsAdminPanelOpen(true)}
+          onReopenShift={handleReopenShift}
         />
 
         {/* Operational Filter & Search Bar */}
@@ -817,6 +842,7 @@ export default function AviationGroundOpsPage() {
         currentUser={currentUser}
         onClose={() => setActiveChecklistModal((prev) => ({ ...prev, isOpen: false }))}
         onSaveChecklist={handleSaveChecklist}
+        isShiftClosed={dayData.isShiftClosed}
       />
 
       {/* 4. Supervisor Diagnosis & Verification Modal */}
@@ -829,6 +855,7 @@ export default function AviationGroundOpsPage() {
         onVerifyGroup={handleVerifyGroup}
         onReopenGroup={handleReopenGroup}
         onCloseShift={handleCloseShift}
+        onReopenShift={handleReopenShift}
       />
 
       {/* 5. WhatsApp Broadcast Summary Modal */}
