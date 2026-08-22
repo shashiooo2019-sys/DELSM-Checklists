@@ -68,7 +68,21 @@ function deduplicateUsers(users: UserAccount[]): UserAccount[] {
   return result;
 }
 
-let inMemoryUsers: UserAccount[] = deduplicateUsers(DEFAULT_USERS);
+function getLocalUsers(): UserAccount[] {
+  if (typeof window !== 'undefined') {
+    try {
+      const stored = localStorage.getItem('aviation_users_local');
+      if (stored) {
+        return JSON.parse(stored) as UserAccount[];
+      }
+    } catch (e) {
+      console.error('Error loading users from localStorage:', e);
+    }
+  }
+  return [];
+}
+
+let inMemoryUsers: UserAccount[] = deduplicateUsers([...getLocalUsers(), ...DEFAULT_USERS]);
 let inMemoryAuditLogs: AuditLogEntry[] = [];
 
 // Initialize and seed Firebase collections, then bind real-time listeners
@@ -78,14 +92,20 @@ if (typeof window !== 'undefined') {
 
   fetchUsersFromFirestore().then((remoteUsers) => {
     if (remoteUsers && remoteUsers.length > 0) {
-      inMemoryUsers = deduplicateUsers(remoteUsers);
+      inMemoryUsers = deduplicateUsers([...getLocalUsers(), ...remoteUsers]);
+      try {
+        localStorage.setItem('aviation_users_local', JSON.stringify(inMemoryUsers));
+      } catch {}
       window.dispatchEvent(new Event('aviation_users_change'));
     }
   });
 
   subscribeToUsersFromFirestore((remoteUsers) => {
     if (remoteUsers && remoteUsers.length > 0) {
-      inMemoryUsers = deduplicateUsers(remoteUsers);
+      inMemoryUsers = deduplicateUsers([...getLocalUsers(), ...remoteUsers]);
+      try {
+        localStorage.setItem('aviation_users_local', JSON.stringify(inMemoryUsers));
+      } catch {}
       window.dispatchEvent(new Event('aviation_users_change'));
     }
   });
@@ -101,14 +121,23 @@ if (typeof window !== 'undefined') {
 // ----------------- USER MANAGEMENT -----------------
 
 export function loadUsers(): UserAccount[] {
-  return deduplicateUsers(inMemoryUsers);
+  return deduplicateUsers([...getLocalUsers(), ...inMemoryUsers]);
 }
 
 export function saveUsers(users: UserAccount[]): void {
   const cleanList = deduplicateUsers(users);
   inMemoryUsers = cleanList;
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem('aviation_users_local', JSON.stringify(cleanList));
+    } catch (e) {
+      console.error('Error saving users to localStorage:', e);
+    }
+  }
   for (const u of cleanList) {
-    saveUserToFirestore(u);
+    saveUserToFirestore(u).catch((err) => {
+      console.error('saveUserToFirestore error:', err);
+    });
   }
   if (typeof window !== 'undefined') {
     window.dispatchEvent(new Event('aviation_users_change'));
@@ -369,7 +398,14 @@ export function addOrUpdateUser(user: UserAccount, performer?: UserAccount): voi
     inMemoryUsers.push(user);
   }
   inMemoryUsers = deduplicateUsers(inMemoryUsers);
-  saveUserToFirestore(user);
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem('aviation_users_local', JSON.stringify(inMemoryUsers));
+    } catch {}
+  }
+  saveUserToFirestore(user).catch((err) => {
+    console.error('saveUserToFirestore error:', err);
+  });
 
   if (performer) {
     addAuditLog(performer.uNumber, performer.name, performer.role, 'USER_UPSERT', `Created/Updated user ${user.name} (${user.uNumber}) with role ${user.role}.`);
@@ -381,6 +417,11 @@ export function addOrUpdateUser(user: UserAccount, performer?: UserAccount): voi
 
 export function deleteUserAccount(uNumber: string, adminUser: UserAccount): boolean {
   inMemoryUsers = inMemoryUsers.filter((u) => u.uNumber.toLowerCase() !== uNumber.toLowerCase());
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem('aviation_users_local', JSON.stringify(inMemoryUsers));
+    } catch {}
+  }
   deleteUserFromFirestore(uNumber);
   addAuditLog(adminUser.uNumber, adminUser.name, adminUser.role, 'USER_DELETE', `Deleted user ${uNumber}.`);
   if (typeof window !== 'undefined') {

@@ -422,10 +422,10 @@ function ChecklistCarouselContent({
               id={`carousel-card-item-${currentIndex}`}
               onTouchStart={handleTouchStart}
               onTouchEnd={handleTouchEnd}
-              className="bg-white border-2 border-slate-200 rounded-2xl p-5 sm:p-8 flex flex-col justify-between shadow-sm relative min-h-[220px] select-none touch-pan-y"
+              className="bg-white border-2 border-slate-200 rounded-2xl p-4 sm:p-6 flex flex-col justify-between shadow-sm relative min-h-[240px] select-none touch-pan-y"
             >
               {/* Card Meta Badges */}
-              <div className="flex items-center justify-between flex-wrap gap-2 pb-4 border-b border-slate-100">
+              <div className="flex items-center justify-between flex-wrap gap-2 pb-3 border-b border-slate-100">
                 <div className="flex items-center gap-2">
                   <span className="w-7 h-7 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 font-mono text-xs font-bold flex items-center justify-center">
                     #{currentItem.sequenceOrder}
@@ -465,12 +465,12 @@ function ChecklistCarouselContent({
               </div>
 
               {/* Item Text */}
-              <div className="py-6 sm:py-8">
-                <p className="text-base sm:text-xl font-semibold text-slate-900 leading-relaxed">
+              <div className="py-4 sm:py-5 overflow-y-auto max-h-[220px] pr-1.5 scrollbar-thin">
+                <p className="text-base sm:text-lg font-semibold text-slate-900 leading-relaxed break-words">
                   {currentItem.text}
                 </p>
                 {currentItem.skipReason && (
-                  <p className="mt-3 text-xs text-slate-600 italic bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                  <p className="mt-2.5 text-xs text-slate-600 italic bg-slate-50 p-2.5 rounded-xl border border-slate-200">
                     Skip Note: {currentItem.skipReason}
                   </p>
                 )}
