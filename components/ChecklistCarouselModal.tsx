@@ -85,6 +85,7 @@ function ChecklistCarouselContent({
   const [skipAlert, setSkipAlert] = useState<string | null>(null);
   const [isSkipReasonModalOpen, setIsSkipReasonModalOpen] = useState<boolean>(false);
   const [skipReasonText, setSkipReasonText] = useState<string>('');
+  const [isViewAllModalOpen, setIsViewAllModalOpen] = useState<boolean>(false);
   
   // Free-text remarks modal upon completion
   const [isRemarksModalOpen, setIsRemarksModalOpen] = useState<boolean>(false);
@@ -351,6 +352,17 @@ function ChecklistCarouselContent({
                 <span className="hidden sm:inline">Reset Checklist</span>
               </button>
             )}
+
+            <button
+              id="btn-view-all-checklist"
+              type="button"
+              onClick={() => setIsViewAllModalOpen(true)}
+              className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl transition text-xs font-bold flex items-center gap-1.5 shrink-0 shadow-2xs"
+              title="View all checklist points in read-only mode"
+            >
+              <FileText className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+              <span>View All</span>
+            </button>
 
             <button
               id="btn-close-carousel"
@@ -753,6 +765,119 @@ function ChecklistCarouselContent({
               >
                 <Check className="w-4 h-4" />
                 <span>Authorize & Sign Checklist</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View All Read-Only Modal */}
+      {isViewAllModalOpen && (
+        <div className="fixed inset-6 z-60 flex items-center justify-center p-3 sm:p-6 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="w-full max-w-3xl bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden flex flex-col text-slate-900 max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="p-4 sm:p-5 bg-slate-900 text-white flex items-center justify-between shrink-0">
+              <div>
+                <span className="text-[10px] font-mono font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-blue-600 text-white mb-1 inline-block">
+                  Read-Only Mode
+                </span>
+                <h3 className="text-base sm:text-lg font-bold flex items-center gap-2">
+                  <span>{checklist.title} - All Points</span>
+                  <span className="text-xs font-mono font-normal opacity-80">({totalItems} items)</span>
+                </h3>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  {groupName} / {subGroupName}
+                </p>
+              </div>
+              <button
+                onClick={() => setIsViewAllModalOpen(false)}
+                className="p-2 text-slate-300 hover:text-white hover:bg-slate-800 rounded-xl transition"
+                title="Close View All"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body - Scrollable list */}
+            <div className="p-4 sm:p-6 overflow-y-auto space-y-3 bg-slate-50 flex-1">
+              {items.map((item, idx) => (
+                <div 
+                  key={item.id || idx}
+                  className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs space-y-2"
+                >
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="w-6 h-6 rounded-md bg-slate-100 text-slate-700 font-mono text-xs font-bold flex items-center justify-center">
+                        #{item.sequenceOrder}
+                      </span>
+                      {item.isMandatory ? (
+                        <span className="text-[10px] font-bold px-2 py-0.5 bg-rose-50 text-rose-700 border border-rose-200 rounded uppercase">
+                          Mandatory
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-bold px-2 py-0.5 bg-slate-100 text-slate-600 rounded uppercase">
+                          Optional
+                        </span>
+                      )}
+                    </div>
+
+                    <div>
+                      {item.status === 'done' && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold">
+                          <Check className="w-3 h-3 text-emerald-600" /> DONE
+                        </span>
+                      )}
+                      {item.status === 'pinned' && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-300 text-xs font-bold">
+                          <Pin className="w-3 h-3 text-amber-600" /> PINNED
+                        </span>
+                      )}
+                      {item.status === 'skipped' && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-bold border border-slate-200">
+                          SKIPPED
+                        </span>
+                      )}
+                      {item.status === 'not_done' && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-50 text-slate-500 text-xs font-medium border border-slate-200">
+                          PENDING
+                        </span>
+                      )}
+                    </div>
+                  </div>
+
+                  <p className="text-sm font-medium text-slate-900 leading-relaxed">
+                    {item.text}
+                  </p>
+
+                  {(item.actionBy || item.skipReason || item.actionAt) && (
+                    <div className="pt-2 border-t border-slate-100 text-xs text-slate-500 flex flex-wrap items-center justify-between gap-2">
+                      {item.actionBy && (
+                        <span>By: <strong className="text-slate-700">{item.actionBy}</strong></span>
+                      )}
+                      {item.skipReason && (
+                        <span className="text-amber-800 italic">Note: {item.skipReason}</span>
+                      )}
+                      {item.actionAt && (
+                        <span className="font-mono text-[11px]">
+                          {new Date(item.actionAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-white border-t border-slate-200 flex items-center justify-between shrink-0">
+              <span className="text-xs text-slate-500 font-mono">
+                Read-Only Overview
+              </span>
+              <button
+                onClick={() => setIsViewAllModalOpen(false)}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs font-bold transition shadow-sm"
+              >
+                Close View All
               </button>
             </div>
           </div>
