@@ -14,7 +14,6 @@ import {
   CheckCircle2, 
   User, 
   Clock, 
-  FileText, 
   Check, 
   MessageSquare,
   Sparkles,
@@ -57,6 +56,7 @@ export function SupervisorDiagnosisModal({
   const [verifiedExceptions, setVerifiedExceptions] = useState<boolean>(false);
   const [showReopenConfirm, setShowReopenConfirm] = useState<boolean>(false);
   const [isNavExpanded, setIsNavExpanded] = useState<boolean>(false);
+  const [isTabsFrameExpanded, setIsTabsFrameExpanded] = useState<boolean>(false);
 
   // Sign-off details
   const [signoffUNumber, setSignoffUNumber] = useState<string>('');
@@ -172,50 +172,63 @@ export function SupervisorDiagnosisModal({
             <X className="w-5 h-5" />
           </button>
         </div>
-        {/* Group Selector Navigation Bar */}
-        <div className="px-4 sm:px-6 py-2.5 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center gap-2 shrink-0">
-          <button 
-            type="button" 
-            onClick={() => setIsNavExpanded(!isNavExpanded)}
-            className="flex sm:hidden items-center justify-between w-full px-3 py-2 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 shadow-sm"
+        {/* Collapsible Frame for Operational Groups of Checklists Tabs */}
+        <div className="px-4 sm:px-6 py-2.5 bg-slate-50 border-b border-slate-200 shrink-0">
+          <button
+            id="btn-toggle-groups-tabs-frame"
+            type="button"
+            onClick={() => setIsTabsFrameExpanded(!isTabsFrameExpanded)}
+            className="w-full flex items-center justify-between px-3.5 py-2.5 bg-white hover:bg-slate-100 text-slate-800 rounded-xl text-xs font-bold transition border border-slate-200 shadow-2xs cursor-pointer"
           >
-            <span>Viewing: <span className="font-mono text-sky-700">{currentGroup?.name}</span></span>
-            <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform ${isNavExpanded ? 'rotate-180' : ''}`} />
+            <div className="flex items-center gap-2">
+              <span className="font-mono text-sky-700">Current Tab: {currentGroup?.name}</span>
+              <span className="text-[11px] text-slate-500 font-normal">({groupsList.length} groups)</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-[10px] font-mono uppercase bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200 text-slate-700 font-bold">
+                {isTabsFrameExpanded ? 'Collapse Operational Groups of Checklists' : 'Expand Operational Groups of Checklists'}
+              </span>
+              <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform ${isTabsFrameExpanded ? 'rotate-180' : ''}`} />
+            </div>
           </button>
-          
-          <div className={`sm:flex items-center sm:overflow-x-auto flex-nowrap gap-2 sm:[scrollbar-width:none] sm:[-ms-overflow-style:none] sm:[&::-webkit-scrollbar]:hidden ${isNavExpanded ? 'flex flex-col items-stretch max-h-48 overflow-y-auto' : 'hidden'}`}>
-            {groupsList.map((grp) => {
-              const isComplete = isGroupComplete(grp);
-              const isSelected = grp.id === currentGroup?.id;
-              return (
-                <button
-                  key={grp.id}
-                  id={`btn-select-diagnosis-group-${grp.id}`}
-                  type="button"
-                  onClick={() => {
-                    setSelectedGroupId(grp.id);
-                    setIsNavExpanded(false); // Auto-collapse on selection on mobile
-                  }}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-mono font-bold flex items-center justify-between sm:justify-start gap-1.5 whitespace-nowrap transition shrink-0 ${
-                    isSelected
-                      ? 'bg-amber-500 text-slate-950 shadow-sm ring-2 ring-amber-400'
-                      : grp.isVerified
-                      ? 'bg-sky-50 border border-sky-200 text-sky-800 hover:bg-sky-100'
-                      : isComplete
-                      ? 'bg-emerald-50 border border-emerald-200 text-emerald-800 hover:bg-emerald-100'
-                      : 'bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                  }`}
-                >
-                  <span>{grp.name}</span>
-                  <div className="flex items-center gap-1">
-                    {grp.isVerified && <ShieldCheck className="w-3.5 h-3.5 text-sky-700 shrink-0" />}
-                    {!grp.isVerified && isComplete && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700 shrink-0" />}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
+
+          {isTabsFrameExpanded && (
+            <div className="mt-2.5 p-3 bg-white border border-slate-200 rounded-xl flex flex-wrap gap-2 animate-in fade-in">
+              {groupsList.map((grp) => {
+                const isComplete = isGroupComplete(grp);
+                const isSelected = grp.id === currentGroup?.id;
+                return (
+                  <button
+                    key={grp.id}
+                    id={`btn-select-diagnosis-group-${grp.id}`}
+                    type="button"
+                    onClick={() => {
+                      setSelectedGroupId(grp.id);
+                      setIsTabsFrameExpanded(false); // Collapse after selection
+                    }}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-mono font-bold flex items-center gap-1.5 transition shrink-0 cursor-pointer ${
+                      isSelected
+                        ? 'bg-amber-500 text-slate-950 shadow-sm ring-2 ring-amber-400'
+                        : grp.isVerified
+                        ? 'bg-sky-50 border border-sky-200 text-sky-800 hover:bg-sky-100'
+                        : isComplete
+                        ? 'bg-emerald-50 border border-emerald-200 text-emerald-800 hover:bg-emerald-100'
+                        : 'bg-white border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span>{grp.name}</span>
+                    <div className="flex items-center gap-1">
+                      {grp.isVerified && <ShieldCheck className="w-3.5 h-3.5 text-sky-700 shrink-0" />}
+                      {!grp.isVerified && isComplete && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-700 shrink-0" />}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
+
+
 
         {/* Modal Body */}
         <div className="p-4 sm:p-6 space-y-6 bg-slate-50/50">
