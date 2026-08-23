@@ -563,7 +563,7 @@ function ChecklistCarouselContent({
               <span>Card Overview Navigator:</span>
               <span className="font-normal text-slate-400">Click to jump</span>
             </div>
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1.5 scrollbar-thin">
+            <div className="flex flex-wrap items-center gap-1.5 pb-1.5">
               {items.map((item, idx) => {
                 const isActive = idx === currentIndex;
                 let bgClass = 'bg-white border-slate-200 text-slate-700';

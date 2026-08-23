@@ -189,6 +189,8 @@ export function AdminPanel({
   const [editUserName, setEditUserName] = useState('');
   const [editUserRole, setEditUserRole] = useState<UserAccount['role']>('USER');
   const [editUserDept, setEditUserDept] = useState('Ground Operations');
+  const [editUserIsAuthorized, setEditUserIsAuthorized] = useState<boolean>(true);
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
   const userFileInputRef = useRef<HTMLInputElement>(null);
   const checklistFileInputRef = useRef<HTMLInputElement>(null);
@@ -1270,6 +1272,7 @@ export function AdminPanel({
       mustChangePassword: true,
       department: newUserDept.trim(),
       createdDate: new Date().toISOString(),
+      isAuthorized: true,
     };
 
     addOrUpdateUser(newUser, currentUser);
@@ -1285,6 +1288,7 @@ export function AdminPanel({
     setEditUserName(u.name);
     setEditUserRole(u.role);
     setEditUserDept(u.department || 'Ground Operations');
+    setEditUserIsAuthorized(u.isAuthorized ?? true);
   };
 
   const handleSaveUserEdit = async (e: React.FormEvent) => {
@@ -1296,6 +1300,7 @@ export function AdminPanel({
       name: editUserName.trim() || editingUser.name,
       role: editUserRole,
       department: editUserDept.trim() || 'Ground Operations',
+      isAuthorized: editUserIsAuthorized,
     };
 
     addOrUpdateUser(updatedUser, currentUser);
@@ -1406,62 +1411,72 @@ export function AdminPanel({
         </div>
 
         {/* Tab Navigation */}
-        <div className="px-4 sm:px-6 bg-slate-50 border-b border-slate-200 flex items-center gap-2 overflow-x-auto scrollbar-thin shrink-0">
+        <div className="px-4 sm:px-6 py-2 sm:py-0 bg-slate-50 border-b border-slate-200 shrink-0">
           <button
-            id="tab-btn-groups"
-            type="button"
-            onClick={() => setActiveTab('groups')}
-            className={`py-3 px-3.5 text-xs font-bold uppercase tracking-wider flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
-              activeTab === 'groups'
-                ? 'border-purple-600 text-purple-700'
-                : 'border-transparent text-slate-500 hover:text-slate-900'
-            }`}
+            onClick={() => setIsMobileNavOpen(!isMobileNavOpen)}
+            className="sm:hidden w-full flex items-center justify-between px-3 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg font-bold text-xs uppercase tracking-wider transition hover:bg-slate-50"
           >
-            <Building2 className="w-4 h-4" />
-            <span>1. Operational & Flight Groups</span>
+            <span>Nav: {activeTab === 'groups' ? '1. Operational Groups' : activeTab === 'checklists' ? '2. Checklist Builder' : activeTab === 'excel' ? '3. Excel Importer' : '4. Personnel Roster'}</span>
+            <span className="text-lg leading-none">{isMobileNavOpen ? '−' : '+'}</span>
           </button>
 
-          <button
-            id="tab-btn-checklists"
-            type="button"
-            onClick={() => setActiveTab('checklists')}
-            className={`py-3 px-3.5 text-xs font-bold uppercase tracking-wider flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
-              activeTab === 'checklists'
-                ? 'border-purple-600 text-purple-700'
-                : 'border-transparent text-slate-500 hover:text-slate-900'
-            }`}
-          >
-            <ListChecks className="w-4 h-4" />
-            <span>2. Checklist & Item Builder</span>
-          </button>
+          <div className={`${isMobileNavOpen ? 'flex' : 'hidden'} sm:flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mt-2 sm:mt-0`}>
+            <button
+              id="tab-btn-groups"
+              type="button"
+              onClick={() => { setActiveTab('groups'); setIsMobileNavOpen(false); }}
+              className={`py-3 px-3.5 text-xs font-bold uppercase tracking-wider flex items-center justify-start sm:justify-center gap-2 sm:border-b-2 transition whitespace-nowrap rounded-lg sm:rounded-none ${
+                activeTab === 'groups'
+                  ? 'bg-purple-100 sm:bg-transparent sm:border-purple-600 text-purple-700'
+                  : 'sm:border-transparent text-slate-500 hover:text-slate-900 hover:bg-slate-100 sm:hover:bg-transparent'
+              }`}
+            >
+              <Building2 className="w-4 h-4" />
+              <span>1. Operational & Flight Groups</span>
+            </button>
 
-          <button
-            id="tab-btn-excel"
-            type="button"
-            onClick={() => setActiveTab('excel')}
-            className={`py-3 px-3.5 text-xs font-bold uppercase tracking-wider flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
-              activeTab === 'excel'
-                ? 'border-purple-600 text-purple-700'
-                : 'border-transparent text-slate-500 hover:text-slate-900'
-            }`}
-          >
-            <FileSpreadsheet className="w-4 h-4" />
-            <span>3. Excel Bulk Importer</span>
-          </button>
+            <button
+              id="tab-btn-checklists"
+              type="button"
+              onClick={() => { setActiveTab('checklists'); setIsMobileNavOpen(false); }}
+              className={`py-3 px-3.5 text-xs font-bold uppercase tracking-wider flex items-center justify-start sm:justify-center gap-2 sm:border-b-2 transition whitespace-nowrap rounded-lg sm:rounded-none ${
+                activeTab === 'checklists'
+                  ? 'bg-purple-100 sm:bg-transparent sm:border-purple-600 text-purple-700'
+                  : 'sm:border-transparent text-slate-500 hover:text-slate-900 hover:bg-slate-100 sm:hover:bg-transparent'
+              }`}
+            >
+              <ListChecks className="w-4 h-4" />
+              <span>2. Checklist & Item Builder</span>
+            </button>
 
-          <button
-            id="tab-btn-users"
-            type="button"
-            onClick={() => setActiveTab('users')}
-            className={`py-3 px-3.5 text-xs font-bold uppercase tracking-wider flex items-center gap-2 border-b-2 transition whitespace-nowrap ${
-              activeTab === 'users'
-                ? 'border-purple-600 text-purple-700'
-                : 'border-transparent text-slate-500 hover:text-slate-900'
-            }`}
-          >
-            <Users className="w-4 h-4" />
-            <span>4. Personnel Roster</span>
-          </button>
+            <button
+              id="tab-btn-excel"
+              type="button"
+              onClick={() => { setActiveTab('excel'); setIsMobileNavOpen(false); }}
+              className={`py-3 px-3.5 text-xs font-bold uppercase tracking-wider flex items-center justify-start sm:justify-center gap-2 sm:border-b-2 transition whitespace-nowrap rounded-lg sm:rounded-none ${
+                activeTab === 'excel'
+                  ? 'bg-purple-100 sm:bg-transparent sm:border-purple-600 text-purple-700'
+                  : 'sm:border-transparent text-slate-500 hover:text-slate-900 hover:bg-slate-100 sm:hover:bg-transparent'
+              }`}
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              <span>3. Excel Bulk Importer</span>
+            </button>
+
+            <button
+              id="tab-btn-users"
+              type="button"
+              onClick={() => { setActiveTab('users'); setIsMobileNavOpen(false); }}
+              className={`py-3 px-3.5 text-xs font-bold uppercase tracking-wider flex items-center justify-start sm:justify-center gap-2 sm:border-b-2 transition whitespace-nowrap rounded-lg sm:rounded-none ${
+                activeTab === 'users'
+                  ? 'bg-purple-100 sm:bg-transparent sm:border-purple-600 text-purple-700'
+                  : 'sm:border-transparent text-slate-500 hover:text-slate-900 hover:bg-slate-100 sm:hover:bg-transparent'
+              }`}
+            >
+              <Users className="w-4 h-4" />
+              <span>4. Personnel Roster</span>
+            </button>
+          </div>
         </div>
 
         {/* Notification Banner */}
@@ -2554,16 +2569,6 @@ export function AdminPanel({
                                   <span>Edit Personnel</span>
                                 </button>
 
-                                <button
-                                  type="button"
-                                  onClick={() => handleResetUserPassword(u.uNumber)}
-                                  className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-[11px] font-bold rounded-xl transition flex items-center gap-1 shrink-0 shadow-2xs"
-                                  title={`Reset password for ${u.uNumber} back to default initial password (${u.uNumber})`}
-                                >
-                                  <RotateCcw className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                                  <span>Reset Password</span>
-                                </button>
-
                                 {u.uNumber.toLowerCase() !== 'admin' && (
                                   <button
                                     type="button"
@@ -2854,6 +2859,19 @@ export function AdminPanel({
                   onChange={(e) => setEditUserDept(e.target.value)}
                   className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:outline-none focus:ring-2 focus:ring-purple-500 focus:bg-white"
                 />
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <input
+                  type="checkbox"
+                  id="edit-user-auth"
+                  checked={editUserIsAuthorized}
+                  onChange={(e) => setEditUserIsAuthorized(e.target.checked)}
+                  className="w-4 h-4 text-purple-600 border-slate-300 rounded focus:ring-purple-500"
+                />
+                <label htmlFor="edit-user-auth" className="text-xs font-bold text-slate-700 cursor-pointer">
+                  Account Authorized (Enabled)
+                </label>
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100">

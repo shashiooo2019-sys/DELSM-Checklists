@@ -136,6 +136,7 @@ export default function AviationGroundOpsPage() {
   // Group Filters
   const [filterCategory, setFilterCategory] = useState<'all' | 'flights' | 'terminal' | 'pending' | 'completed'>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+  const [isMobileFilterMenuOpen, setIsMobileFilterMenuOpen] = useState<boolean>(false);
 
   // Real-time Firestore & Local Day Data Sync
   useEffect(() => {
@@ -179,9 +180,10 @@ export default function AviationGroundOpsPage() {
 
     addAuditLog(user.uNumber, user.name, user.role, 'USER_LOGIN', `User signed into terminal.`, selectedDate);
 
+    // Bypass mandatory password change flow per user request
     if (mustChange) {
-      setIsMandatoryFirstLogin(true);
-      setIsChangePasswordModalOpen(true);
+      // We still update local state if needed but we no longer force the modal
+      setIsMandatoryFirstLogin(false);
     }
   };
 
@@ -674,73 +676,87 @@ export default function AviationGroundOpsPage() {
         {/* Operational Filter & Search Bar */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white border border-slate-200 p-3 rounded-2xl shadow-sm">
           {/* Quick Filter Tabs */}
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0 scrollbar-thin">
+          <div className="flex flex-col sm:flex-row items-stretch gap-1.5 w-full sm:w-auto">
             <button
-              id="filter-tab-all"
               type="button"
-              onClick={() => setFilterCategory('all')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition whitespace-nowrap ${
-                filterCategory === 'all'
-                  ? 'bg-slate-900 text-white shadow-sm'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
-              }`}
+              onClick={() => setIsMobileFilterMenuOpen(!isMobileFilterMenuOpen)}
+              className="sm:hidden w-full flex items-center justify-between px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-bold text-xs uppercase tracking-wider transition hover:bg-slate-200"
             >
-              All Operations ({dayData.groups.length})
+              <div className="flex items-center gap-2">
+                <Filter className="w-4 h-4" />
+                <span>Filters ({filterCategory})</span>
+              </div>
+              <span className="text-lg leading-none">{isMobileFilterMenuOpen ? '−' : '+'}</span>
             </button>
 
-            <button
-              id="filter-tab-flights"
-              type="button"
-              onClick={() => setFilterCategory('flights')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition whitespace-nowrap flex items-center gap-1.5 ${
-                filterCategory === 'flights'
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
-              }`}
-            >
-              <Plane className="w-3.5 h-3.5" />
-              <span>Flight Turnarounds (4)</span>
-            </button>
+            <div className={`${isMobileFilterMenuOpen ? 'flex' : 'hidden'} sm:flex flex-col sm:flex-row items-stretch sm:items-center gap-1.5`}>
+              <button
+                id="filter-tab-all"
+                type="button"
+                onClick={() => setFilterCategory('all')}
+                className={`px-4 py-2.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition whitespace-nowrap text-left sm:text-center ${
+                  filterCategory === 'all'
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
+                }`}
+              >
+                All Operations ({dayData.groups.length})
+              </button>
 
-            <button
-              id="filter-tab-terminal"
-              type="button"
-              onClick={() => setFilterCategory('terminal')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition whitespace-nowrap flex items-center gap-1.5 ${
-                filterCategory === 'terminal'
-                  ? 'bg-blue-600 text-white shadow-sm'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
-              }`}
-            >
-              <Building2 className="w-3.5 h-3.5" />
-              <span>Terminal & Infrastructure</span>
-            </button>
+              <button
+                id="filter-tab-flights"
+                type="button"
+                onClick={() => setFilterCategory('flights')}
+                className={`px-4 py-2.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition whitespace-nowrap flex items-center justify-start sm:justify-center gap-1.5 ${
+                  filterCategory === 'flights'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
+                }`}
+              >
+                <Plane className="w-3.5 h-3.5" />
+                <span>Flight Turnarounds (4)</span>
+              </button>
 
-            <button
-              id="filter-tab-pending"
-              type="button"
-              onClick={() => setFilterCategory('pending')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition whitespace-nowrap ${
-                filterCategory === 'pending'
-                  ? 'bg-amber-500 text-slate-950 shadow-sm'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
-              }`}
-            >
-              Pending Checks
-            </button>
+              <button
+                id="filter-tab-terminal"
+                type="button"
+                onClick={() => setFilterCategory('terminal')}
+                className={`px-4 py-2.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition whitespace-nowrap flex items-center justify-start sm:justify-center gap-1.5 ${
+                  filterCategory === 'terminal'
+                    ? 'bg-blue-600 text-white shadow-sm'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
+                }`}
+              >
+                <Building2 className="w-3.5 h-3.5" />
+                <span>Terminal & Infrastructure</span>
+              </button>
 
-            <button
-              id="filter-tab-completed"
-              type="button"
-              onClick={() => setFilterCategory('completed')}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition whitespace-nowrap ${
-                filterCategory === 'completed'
-                  ? 'bg-emerald-600 text-white shadow-sm'
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
-              }`}
-            >
-              Completed
-            </button>
+              <button
+                id="filter-tab-pending"
+                type="button"
+                onClick={() => setFilterCategory('pending')}
+                className={`px-4 py-2.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition whitespace-nowrap text-left sm:text-center ${
+                  filterCategory === 'pending'
+                    ? 'bg-amber-500 text-slate-950 shadow-sm'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
+                }`}
+              >
+                Pending Checks
+              </button>
+
+              <button
+                id="filter-tab-completed"
+                type="button"
+                onClick={() => setFilterCategory('completed')}
+                className={`px-4 py-2.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition whitespace-nowrap text-left sm:text-center ${
+                  filterCategory === 'completed'
+                    ? 'bg-emerald-600 text-white shadow-sm'
+                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
+                }`}
+              >
+                Completed
+              </button>
+            </div>
           </div>
 
           {/* Search Input & Audit Log Trigger */}

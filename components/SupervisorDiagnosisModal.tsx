@@ -150,7 +150,7 @@ export function SupervisorDiagnosisModal({
         </div>
 
         {/* Group Selector Navigation Bar */}
-        <div className="px-4 sm:px-6 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center gap-2 overflow-x-auto scrollbar-thin shrink-0">
+        <div className="px-4 sm:px-6 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center flex-wrap gap-2 shrink-0">
           {dayData.groups.map((grp) => {
             const isComplete = isGroupComplete(grp);
             const isSelected = grp.id === currentGroup?.id;

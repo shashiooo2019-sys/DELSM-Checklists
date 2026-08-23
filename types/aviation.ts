@@ -9,6 +9,7 @@ export interface UserAccount {
   mustChangePassword: boolean; // Enforced on first login if initial password
   department?: string;
   createdDate: string;
+  isAuthorized?: boolean;
 }
 
 export type ItemStatus = 'not_done' | 'done' | 'skipped' | 'pinned';

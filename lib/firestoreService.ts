@@ -240,6 +240,7 @@ export async function seedDefaultUsersIfMissing(): Promise<void> {
       } else {
         await updateDoc(snap.docs[0].ref, {
           password_hash: def.passwordHash,
+          is_first_login: def.mustChangePassword,
         });
       }
     }
