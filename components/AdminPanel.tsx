@@ -1,13 +1,14 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { 
   DayOperationalData, 
   OperationalGroup, 
   SubOperationalGroup, 
   Checklist, 
   ChecklistItem, 
-  UserAccount 
+  UserAccount,
+  ChecklistVersionRecord
 } from '@/types/aviation';
 import { 
   loadUsers, 
@@ -27,7 +28,7 @@ import {
   purgeOldShiftsAndAuditLogs,
 } from '@/lib/storage';
 import { fetchUsersFromFirestore, subscribeToUsersFromFirestore, saveUserToFirestore, saveUsersToFirestoreBatch, deleteUserFromFirestore } from '@/lib/firestoreService';
-import { makeItem, FLIGHT_CODES } from '@/lib/initialData';
+import { makeItem, FLIGHT_CODES, getNextChecklistVersion } from '@/lib/initialData';
 import { 
   X, 
   Sliders, 
@@ -57,7 +58,12 @@ import {
   Tag,
   History,
   Calendar,
-  FileText
+  FileText,
+  Clock,
+  CheckCircle2,
+  Printer,
+  Filter,
+  ArrowUpRight
 } from 'lucide-react';
 
 interface AdminPanelProps {
@@ -173,8 +179,10 @@ export function AdminPanel({
   // Excel Upload States
   const [excelUserFile, setExcelUserFile] = useState<File | null>(null);
   const [excelChecklistFile, setExcelChecklistFile] = useState<File | null>(null);
+  const [excelImportMode, setExcelImportMode] = useState<'NEW' | 'OVERWRITE'>('NEW');
   const [excelTargetGroupId, setExcelTargetGroupId] = useState<string>('ALL_FLIGHT_GROUPS');
-  const [excelTargetSubGroupId, setExcelTargetSubGroupId] = useState<string>('');
+  const [excelTargetSubGroupId, setExcelTargetSubGroupId] = useState<string>('DIRECT_GROUP');
+  const [excelTargetChecklistId, setExcelTargetChecklistId] = useState<string>('__NEW__');
   const [excelChecklistTitle, setExcelChecklistTitle] = useState<string>('Imported Operations Checklist');
   const [importPreviewUsers, setImportPreviewUsers] = useState<UserAccount[]>([]);
   const [importPreviewItems, setImportPreviewItems] = useState<ChecklistItem[]>([]);
@@ -194,8 +202,129 @@ export function AdminPanel({
   const [editUserIsAuthorized, setEditUserIsAuthorized] = useState<boolean>(true);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
 
+  // Checklist Version Summary Directory States
+  const [showVersionSummaryModal, setShowVersionSummaryModal] = useState(false);
+  const [versionSearchQuery, setVersionSearchQuery] = useState('');
+  const [versionGroupFilter, setVersionGroupFilter] = useState<'ALL' | 'FLIGHT' | 'NON_FLIGHT' | 'REVISED_ONLY'>('ALL');
+  const [expandedHistoryChkId, setExpandedHistoryChkId] = useState<string | null>(null);
+
   const userFileInputRef = useRef<HTMLInputElement>(null);
   const checklistFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Aggregated Checklist Directory for Versioning Summary
+  const allAggregatedChecklists = useMemo(() => {
+    const list: {
+      groupId: string;
+      groupName: string;
+      groupCode: string;
+      isFlightGroup: boolean;
+      subGroupId: string;
+      subGroupName: string;
+      checklist: Checklist;
+      revisionsCount: number;
+      hasOverwrites: boolean;
+    }[] = [];
+
+    dayData.groups.forEach((grp) => {
+      grp.subGroups.forEach((sub) => {
+        sub.checklists.forEach((chk) => {
+          const history = chk.versionHistory || [];
+          const hasOverwrites = history.some((h) => h.changeType === 'OVERWRITE') || (chk.version && chk.version !== 'v1.0');
+          list.push({
+            groupId: grp.id,
+            groupName: grp.name,
+            groupCode: grp.code,
+            isFlightGroup: grp.isFlightGroup,
+            subGroupId: sub.id,
+            subGroupName: sub.name,
+            checklist: chk,
+            revisionsCount: history.length > 0 ? history.length : 1,
+            hasOverwrites: !!hasOverwrites,
+          });
+        });
+      });
+    });
+
+    return list;
+  }, [dayData.groups]);
+
+  const filteredVersionChecklists = useMemo(() => {
+    return allAggregatedChecklists.filter((item) => {
+      // Group filter
+      if (versionGroupFilter === 'FLIGHT' && !item.isFlightGroup) return false;
+      if (versionGroupFilter === 'NON_FLIGHT' && item.isFlightGroup) return false;
+      if (versionGroupFilter === 'REVISED_ONLY' && !item.hasOverwrites && item.revisionsCount <= 1) return false;
+
+      // Text query
+      if (versionSearchQuery.trim()) {
+        const q = versionSearchQuery.trim().toLowerCase();
+        const matchesTitle = item.checklist.title.toLowerCase().includes(q);
+        const matchesGroup = item.groupName.toLowerCase().includes(q) || item.groupCode.toLowerCase().includes(q);
+        const matchesSub = item.subGroupName.toLowerCase().includes(q);
+        const matchesVer = (item.checklist.version || 'v1.0').toLowerCase().includes(q);
+        const matchesHistory = (item.checklist.versionHistory || []).some(
+          (h) => h.notes?.toLowerCase().includes(q) || h.updatedBy.toLowerCase().includes(q) || h.version.toLowerCase().includes(q)
+        );
+        return matchesTitle || matchesGroup || matchesSub || matchesVer || matchesHistory;
+      }
+      return true;
+    });
+  }, [allAggregatedChecklists, versionGroupFilter, versionSearchQuery]);
+
+  const handleExportVersionSummaryCSV = () => {
+    const headers = [
+      'Station',
+      'Group Code',
+      'Group Name',
+      'Group Classification',
+      'Sub-Group / Station Section',
+      'Checklist Title',
+      'Mandatory Status',
+      'Current Version',
+      'Version Date',
+      'Active Checklist Items Count',
+      'Total Recorded Revisions',
+      'Last Modified By',
+      'Version History Logs',
+    ];
+
+    const rows = allAggregatedChecklists.map((row) => {
+      const history = row.checklist.versionHistory || [];
+      const lastHistory = history[history.length - 1];
+      const historySummary = history
+        .map(
+          (h) =>
+            `[${h.version} | ${h.versionDate} | ${h.updatedBy} | ${h.itemCount} items | ${h.changeType}: ${h.notes || 'No change notes'}]`
+        )
+        .join(' ; ');
+
+      return [
+        `"DEL"`,
+        `"${row.groupCode}"`,
+        `"${row.groupName.replace(/"/g, '""')}"`,
+        `"${row.isFlightGroup ? 'Flight Group' : 'Station Operational Group'}"`,
+        `"${row.subGroupName.replace(/"/g, '""')}"`,
+        `"${row.checklist.title.replace(/"/g, '""')}"`,
+        `"${row.checklist.isMandatory ? 'MANDATORY' : 'OPTIONAL'}"`,
+        `"${row.checklist.version || 'v1.0'}"`,
+        `"${row.checklist.versionDate || '2026-08-20'}"`,
+        row.checklist.items?.length || 0,
+        history.length > 0 ? history.length : 1,
+        `"${lastHistory?.updatedBy || 'System Baseline'}"`,
+        `"${historySummary.replace(/"/g, '""')}"`,
+      ].join(',');
+    });
+
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `DEL_GroundOps_Checklist_Versioning_Summary_${dayData.date}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    showNotification('Exported Checklist Versions Summary to CSV successfully!');
+  };
 
   if (!isOpen) return null;
 
@@ -377,6 +506,73 @@ export function AdminPanel({
       activeSubGroups.find((s) => s.id === selectedEditSubGroupId || s.name.trim().toLowerCase() === selectedEditSubGroupId.trim().toLowerCase()) ||
       activeSubGroups[0];
   }
+
+  // ------------------ EXCEL BULK IMPORTER DERIVATIONS ------------------
+  const isExcelAllFlight = excelTargetGroupId === 'ALL_FLIGHT_GROUPS';
+  const excelTargetGroup = isExcelAllFlight ? null : dayData.groups.find((g) => g.id === excelTargetGroupId);
+
+  let excelAvailableSubGroups: { id: string; name: string }[] = [];
+  if (isExcelAllFlight) {
+    const subMap = new Map<string, { id: string; name: string }>();
+    dayData.groups
+      .filter((g) => g.isFlightGroup)
+      .forEach((fg) => {
+        fg.subGroups.forEach((sub) => {
+          const key = sub.name.trim().toLowerCase();
+          if (!subMap.has(key)) {
+            subMap.set(key, { id: sub.name, name: sub.name });
+          }
+        });
+      });
+    excelAvailableSubGroups = Array.from(subMap.values());
+  } else if (excelTargetGroup) {
+    excelAvailableSubGroups = excelTargetGroup.subGroups.map((s) => ({ id: s.id, name: s.name }));
+  }
+
+  let excelAvailableChecklists: { id: string; title: string; itemCount: number; subGroupName: string }[] = [];
+  const isExcelDirect = !excelTargetSubGroupId || excelTargetSubGroupId === 'DIRECT_GROUP';
+  const excelTargetSubName = (isExcelDirect ? 'general operations' : excelTargetSubGroupId).trim().toLowerCase();
+  const chkMap = new Map<string, { id: string; title: string; itemCount: number; subGroupName: string }>();
+
+  if (isExcelAllFlight) {
+    const fGroups = dayData.groups.filter((g) => g.isFlightGroup);
+    fGroups.forEach((fg) => {
+      fg.subGroups.forEach((sg) => {
+        const isMatch = isExcelDirect || sg.name.trim().toLowerCase() === excelTargetSubName || sg.id === excelTargetSubGroupId;
+        if (isMatch) {
+          sg.checklists.forEach((chk) => {
+            const key = chk.title.trim().toLowerCase();
+            if (!chkMap.has(key)) {
+              chkMap.set(key, {
+                id: chk.id || chk.title,
+                title: chk.title,
+                itemCount: chk.items?.length || 0,
+                subGroupName: sg.name,
+              });
+            }
+          });
+        }
+      });
+    });
+  } else if (excelTargetGroup) {
+    excelTargetGroup.subGroups.forEach((sg) => {
+      const isMatch = isExcelDirect || sg.id === excelTargetSubGroupId || sg.name.trim().toLowerCase() === excelTargetSubName;
+      if (isMatch) {
+        sg.checklists.forEach((chk) => {
+          const key = chk.id || chk.title.trim().toLowerCase();
+          if (!chkMap.has(key)) {
+            chkMap.set(key, {
+              id: chk.id || chk.title,
+              title: chk.title,
+              itemCount: chk.items?.length || 0,
+              subGroupName: sg.name,
+            });
+          }
+        });
+      }
+    });
+  }
+  excelAvailableChecklists = Array.from(chkMap.values());
 
   const handleAddChecklist = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1146,31 +1342,177 @@ export function AdminPanel({
 
   const handleCommitChecklistImport = () => {
     if (importPreviewItems.length === 0 || !excelTargetGroupId) {
-      showNotification('Please select target Group and Sub-Group to append items', 'error');
+      showNotification('Please select a valid target and upload checklist items', 'error');
       return;
     }
 
     const isExcelAllFlightGroups = excelTargetGroupId === 'ALL_FLIGHT_GROUPS';
     const isDirectGroup = !excelTargetSubGroupId || excelTargetSubGroupId === 'DIRECT_GROUP';
     const targetSubName = (isDirectGroup ? 'General Operations' : excelTargetSubGroupId).trim().toLowerCase();
+    const finalChecklistTitle = excelChecklistTitle.trim() || 'Imported Excel Checklist';
+    const isOverwrite = excelImportMode === 'OVERWRITE' && excelTargetChecklistId !== '__NEW__';
+    const todayDateStr = new Date().toISOString().split('T')[0];
+    const nowIso = new Date().toISOString();
 
     if (isExcelAllFlightGroups) {
+      let overwrittenCount = 0;
+      let createdCount = 0;
+      let lastOldVer = 'v1.0';
+      let lastNewVer = 'v1.1';
+
       const updatedGroups = dayData.groups.map((grp) => {
-        if (grp.isFlightGroup) {
+        if (!grp.isFlightGroup) return grp;
+
+        if (isOverwrite) {
+          let matchedInGroup = false;
+          const updatedSubGroups = grp.subGroups.map((sub) => {
+            const isTargetSub =
+              isDirectGroup || sub.name.trim().toLowerCase() === targetSubName || sub.id === excelTargetSubGroupId;
+            if (!isTargetSub) return sub;
+
+            const updatedChecklists = sub.checklists.map((chk) => {
+              const matchesChecklist =
+                chk.id === excelTargetChecklistId ||
+                chk.title.trim().toLowerCase() === finalChecklistTitle.toLowerCase() ||
+                chk.title.trim().toLowerCase() === excelTargetChecklistId.trim().toLowerCase();
+
+              if (matchesChecklist) {
+                matchedInGroup = true;
+                overwrittenCount++;
+                const curVer = chk.version || 'v1.0';
+                const nextVer = getNextChecklistVersion(curVer);
+                lastOldVer = curVer;
+                lastNewVer = nextVer;
+
+                const prevHistory: ChecklistVersionRecord[] =
+                  chk.versionHistory && chk.versionHistory.length > 0
+                    ? chk.versionHistory
+                    : [
+                        {
+                          version: curVer,
+                          versionDate: chk.versionDate || '2026-08-20',
+                          updatedBy: 'System Baseline',
+                          itemCount: chk.items?.length || 0,
+                          changeType: 'INITIAL',
+                          notes: 'Initial station operational checklist baseline',
+                          timestamp: new Date(Date.now() - 86400000).toISOString(),
+                        },
+                      ];
+
+                const newVersionRecord: ChecklistVersionRecord = {
+                  version: nextVer,
+                  versionDate: todayDateStr,
+                  updatedBy: `${currentUser.name} (${currentUser.uNumber})`,
+                  itemCount: importPreviewItems.length,
+                  previousItemCount: chk.items?.length || 0,
+                  changeType: 'OVERWRITE',
+                  notes: `Bulk overwritten from Excel (${excelChecklistFile?.name || 'bulk_import.xlsx'}) with ${importPreviewItems.length} items`,
+                  timestamp: nowIso,
+                };
+
+                return {
+                  ...chk,
+                  title: finalChecklistTitle,
+                  version: nextVer,
+                  versionDate: todayDateStr,
+                  versionHistory: [...prevHistory, newVersionRecord],
+                  status: 'pending' as const,
+                  items: importPreviewItems.map((item, idx) => ({
+                    ...item,
+                    id: `item-imp-${grp.code.toLowerCase()}-${Date.now()}-${idx}`,
+                    status: 'not_done' as const,
+                  })),
+                };
+              }
+              return chk;
+            });
+
+            return { ...sub, checklists: updatedChecklists };
+          });
+
+          // If not matched in target sub, append as new checklist
+          if (!matchedInGroup) {
+            createdCount++;
+            const newChecklist: Checklist = {
+              id: `chk-imp-${grp.code.toLowerCase()}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+              title: finalChecklistTitle,
+              isMandatory: true,
+              status: 'pending',
+              version: 'v1.0',
+              versionDate: todayDateStr,
+              versionHistory: [
+                {
+                  version: 'v1.0',
+                  versionDate: todayDateStr,
+                  updatedBy: `${currentUser.name} (${currentUser.uNumber})`,
+                  itemCount: importPreviewItems.length,
+                  changeType: 'IMPORT',
+                  notes: `Initial creation from Excel import (${excelChecklistFile?.name || 'import.xlsx'})`,
+                  timestamp: nowIso,
+                },
+              ],
+              items: importPreviewItems.map((item, idx) => ({
+                ...item,
+                id: `item-imp-${grp.code.toLowerCase()}-${Date.now()}-${idx}`,
+              })),
+            };
+
+            const hasSub = grp.subGroups.some(
+              (s) => s.name.trim().toLowerCase() === targetSubName || s.id === excelTargetSubGroupId
+            );
+            if (hasSub) {
+              return {
+                ...grp,
+                subGroups: grp.subGroups.map((sub) => {
+                  if (sub.name.trim().toLowerCase() === targetSubName || sub.id === excelTargetSubGroupId) {
+                    return { ...sub, checklists: [...sub.checklists, newChecklist] };
+                  }
+                  return sub;
+                }),
+              };
+            } else {
+              const newSub: SubOperationalGroup = {
+                id: `sub-${grp.code.toLowerCase()}-${Date.now()}`,
+                name: 'General Operations',
+                code: grp.code,
+                isMandatory: true,
+                checklists: [newChecklist],
+              };
+              return { ...grp, subGroups: [newSub, ...grp.subGroups] };
+            }
+          }
+
+          return { ...grp, subGroups: updatedSubGroups };
+        } else {
+          // New Checklist Mode
+          createdCount++;
           const newChecklist: Checklist = {
             id: `chk-imp-${grp.code.toLowerCase()}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-            title: excelChecklistTitle.trim() || 'Imported Excel Checklist',
+            title: finalChecklistTitle,
             isMandatory: true,
             status: 'pending',
             version: 'v1.0',
-            versionDate: new Date().toISOString().split('T')[0],
+            versionDate: todayDateStr,
+            versionHistory: [
+              {
+                version: 'v1.0',
+                versionDate: todayDateStr,
+                updatedBy: `${currentUser.name} (${currentUser.uNumber})`,
+                itemCount: importPreviewItems.length,
+                changeType: 'IMPORT',
+                notes: `Initial creation from Excel import (${excelChecklistFile?.name || 'import.xlsx'})`,
+                timestamp: nowIso,
+              },
+            ],
             items: importPreviewItems.map((item, idx) => ({
               ...item,
               id: `item-imp-${grp.code.toLowerCase()}-${Date.now()}-${idx}`,
             })),
           };
 
-          const hasSub = grp.subGroups.some((s) => s.name.trim().toLowerCase() === targetSubName || s.id === excelTargetSubGroupId);
+          const hasSub = grp.subGroups.some(
+            (s) => s.name.trim().toLowerCase() === targetSubName || s.id === excelTargetSubGroupId
+          );
           if (hasSub) {
             return {
               ...grp,
@@ -1198,27 +1540,175 @@ export function AdminPanel({
             };
           }
         }
-        return grp;
       });
 
       onSaveDayData({ ...dayData, groups: updatedGroups });
+      addAuditLog(
+        currentUser.uNumber,
+        currentUser.name,
+        currentUser.role,
+        isOverwrite ? 'CHECKLIST_OVERWRITE' : 'CHECKLIST_CREATE',
+        isOverwrite
+          ? `Overwrote checklist "${finalChecklistTitle}" with automated version increment (${lastOldVer} ➔ ${lastNewVer}) containing ${importPreviewItems.length} items from Excel across ALL 4 Flight Groups.`
+          : `Imported new checklist "${finalChecklistTitle}" (v1.0) with ${importPreviewItems.length} items from Excel across ALL 4 Flight Groups.`
+      );
       setImportPreviewItems([]);
       setExcelChecklistFile(null);
-      showNotification(`Appended ${importPreviewItems.length} checklist items to ALL 4 Flight Groups simultaneously under "${excelChecklistTitle}"!`);
+      showNotification(
+        isOverwrite
+          ? `Successfully overwrote "${finalChecklistTitle}" (Version incremented: ${lastOldVer} ➔ ${lastNewVer}) across ALL 4 Flight Groups!`
+          : `Appended new checklist "${finalChecklistTitle}" with ${importPreviewItems.length} items to ALL 4 Flight Groups simultaneously!`
+      );
     } else {
-      const newChecklist: Checklist = {
-        id: generateUniqueId('chk-imp'),
-        title: excelChecklistTitle.trim() || 'Imported Excel Checklist',
-        isMandatory: true,
-        status: 'pending',
-        version: 'v1.0',
-        versionDate: new Date().toISOString().split('T')[0],
-        items: importPreviewItems,
-      };
+      // Specific Operational Group
+      const targetGroup = dayData.groups.find((g) => g.id === excelTargetGroupId);
+      const groupName = targetGroup ? targetGroup.name : 'Selected Group';
+      let lastOldVer = 'v1.0';
+      let lastNewVer = 'v1.1';
 
       const updatedGroups = dayData.groups.map((grp) => {
-        if (grp.id === excelTargetGroupId) {
-          const hasSub = grp.subGroups.some((s) => s.id === excelTargetSubGroupId || s.name.trim().toLowerCase() === targetSubName);
+        if (grp.id !== excelTargetGroupId) return grp;
+
+        if (isOverwrite) {
+          let matchedInGroup = false;
+          const updatedSubGroups = grp.subGroups.map((sub) => {
+            const isTargetSub =
+              isDirectGroup || sub.id === excelTargetSubGroupId || sub.name.trim().toLowerCase() === targetSubName;
+            if (!isTargetSub) return sub;
+
+            const updatedChecklists = sub.checklists.map((chk) => {
+              const matchesChecklist =
+                chk.id === excelTargetChecklistId ||
+                chk.title.trim().toLowerCase() === finalChecklistTitle.toLowerCase() ||
+                chk.title.trim().toLowerCase() === excelTargetChecklistId.trim().toLowerCase();
+
+              if (matchesChecklist) {
+                matchedInGroup = true;
+                const curVer = chk.version || 'v1.0';
+                const nextVer = getNextChecklistVersion(curVer);
+                lastOldVer = curVer;
+                lastNewVer = nextVer;
+
+                const prevHistory: ChecklistVersionRecord[] =
+                  chk.versionHistory && chk.versionHistory.length > 0
+                    ? chk.versionHistory
+                    : [
+                        {
+                          version: curVer,
+                          versionDate: chk.versionDate || '2026-08-20',
+                          updatedBy: 'System Baseline',
+                          itemCount: chk.items?.length || 0,
+                          changeType: 'INITIAL',
+                          notes: 'Initial station operational checklist baseline',
+                          timestamp: new Date(Date.now() - 86400000).toISOString(),
+                        },
+                      ];
+
+                const newVersionRecord: ChecklistVersionRecord = {
+                  version: nextVer,
+                  versionDate: todayDateStr,
+                  updatedBy: `${currentUser.name} (${currentUser.uNumber})`,
+                  itemCount: importPreviewItems.length,
+                  previousItemCount: chk.items?.length || 0,
+                  changeType: 'OVERWRITE',
+                  notes: `Bulk overwritten from Excel (${excelChecklistFile?.name || 'bulk_import.xlsx'}) with ${importPreviewItems.length} items`,
+                  timestamp: nowIso,
+                };
+
+                return {
+                  ...chk,
+                  title: finalChecklistTitle,
+                  version: nextVer,
+                  versionDate: todayDateStr,
+                  versionHistory: [...prevHistory, newVersionRecord],
+                  status: 'pending' as const,
+                  items: importPreviewItems.map((item, idx) => ({
+                    ...item,
+                    id: `item-imp-${grp.id}-${Date.now()}-${idx}`,
+                    status: 'not_done' as const,
+                  })),
+                };
+              }
+              return chk;
+            });
+
+            return { ...sub, checklists: updatedChecklists };
+          });
+
+          if (!matchedInGroup) {
+            const newChecklist: Checklist = {
+              id: generateUniqueId('chk-imp'),
+              title: finalChecklistTitle,
+              isMandatory: true,
+              status: 'pending',
+              version: 'v1.0',
+              versionDate: todayDateStr,
+              versionHistory: [
+                {
+                  version: 'v1.0',
+                  versionDate: todayDateStr,
+                  updatedBy: `${currentUser.name} (${currentUser.uNumber})`,
+                  itemCount: importPreviewItems.length,
+                  changeType: 'IMPORT',
+                  notes: `Initial creation from Excel import (${excelChecklistFile?.name || 'import.xlsx'})`,
+                  timestamp: nowIso,
+                },
+              ],
+              items: importPreviewItems,
+            };
+
+            const hasSub = grp.subGroups.some(
+              (s) => s.id === excelTargetSubGroupId || s.name.trim().toLowerCase() === targetSubName
+            );
+            if (hasSub) {
+              return {
+                ...grp,
+                subGroups: grp.subGroups.map((sub) => {
+                  if (sub.id === excelTargetSubGroupId || sub.name.trim().toLowerCase() === targetSubName) {
+                    return { ...sub, checklists: [...sub.checklists, newChecklist] };
+                  }
+                  return sub;
+                }),
+              };
+            } else {
+              const newSub: SubOperationalGroup = {
+                id: `sub-${grp.id}-${Date.now()}`,
+                name: 'General Operations',
+                code: grp.code,
+                isMandatory: true,
+                checklists: [newChecklist],
+              };
+              return { ...grp, subGroups: [newSub, ...grp.subGroups] };
+            }
+          }
+
+          return { ...grp, subGroups: updatedSubGroups };
+        } else {
+          // New Checklist Mode
+          const newChecklist: Checklist = {
+            id: generateUniqueId('chk-imp'),
+            title: finalChecklistTitle,
+            isMandatory: true,
+            status: 'pending',
+            version: 'v1.0',
+            versionDate: todayDateStr,
+            versionHistory: [
+              {
+                version: 'v1.0',
+                versionDate: todayDateStr,
+                updatedBy: `${currentUser.name} (${currentUser.uNumber})`,
+                itemCount: importPreviewItems.length,
+                changeType: 'IMPORT',
+                notes: `Initial creation from Excel import (${excelChecklistFile?.name || 'import.xlsx'})`,
+                timestamp: nowIso,
+              },
+            ],
+            items: importPreviewItems,
+          };
+
+          const hasSub = grp.subGroups.some(
+            (s) => s.id === excelTargetSubGroupId || s.name.trim().toLowerCase() === targetSubName
+          );
           if (hasSub) {
             return {
               ...grp,
@@ -1246,13 +1736,25 @@ export function AdminPanel({
             };
           }
         }
-        return grp;
       });
 
       onSaveDayData({ ...dayData, groups: updatedGroups });
+      addAuditLog(
+        currentUser.uNumber,
+        currentUser.name,
+        currentUser.role,
+        isOverwrite ? 'CHECKLIST_OVERWRITE' : 'CHECKLIST_CREATE',
+        isOverwrite
+          ? `Overwrote checklist "${finalChecklistTitle}" with automated version increment (${lastOldVer} ➔ ${lastNewVer}) containing ${importPreviewItems.length} items from Excel in ${groupName}.`
+          : `Imported new checklist "${finalChecklistTitle}" (v1.0) with ${importPreviewItems.length} items from Excel in ${groupName}.`
+      );
       setImportPreviewItems([]);
       setExcelChecklistFile(null);
-      showNotification(`Appended ${newChecklist.items.length} checklist items to ${excelChecklistTitle}!`);
+      showNotification(
+        isOverwrite
+          ? `Successfully overwrote "${finalChecklistTitle}" (Version incremented: ${lastOldVer} ➔ ${lastNewVer}) in ${groupName}!`
+          : `Appended new checklist "${finalChecklistTitle}" with ${importPreviewItems.length} items to ${groupName}!`
+      );
     }
   };
 
@@ -1419,6 +1921,21 @@ export function AdminPanel({
             >
               <Trash2 className="w-3.5 h-3.5" />
               <span>Purge (&gt;30d)</span>
+            </button>
+
+            <button
+              id="btn-open-version-summary"
+              type="button"
+              onClick={() => setShowVersionSummaryModal(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs font-bold rounded-xl transition shadow-2xs"
+              title="Display automated versioning summary & revision audit log for all checklists"
+            >
+              <History className="w-3.5 h-3.5 text-indigo-600" />
+              <span className="hidden sm:inline">Checklist Versions Summary</span>
+              <span className="sm:hidden">Versions</span>
+              <span className="ml-0.5 px-1.5 py-0.5 bg-indigo-200/80 text-indigo-900 rounded-full text-[10px] font-mono font-bold leading-none">
+                {allAggregatedChecklists.length}
+              </span>
             </button>
 
             <button
@@ -1825,6 +2342,32 @@ export function AdminPanel({
           {/* TAB 2: CHECKLIST & ITEMS BUILDER */}
           {activeTab === 'checklists' && (
             <div className="space-y-6">
+              {/* Quick Launch Version Summary Banner */}
+              <div className="p-3.5 bg-gradient-to-r from-indigo-50 via-purple-50 to-indigo-50 border border-indigo-200/80 rounded-2xl flex items-center justify-between flex-wrap gap-3 shadow-2xs">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold shadow-xs">
+                    <History className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="text-xs font-bold text-indigo-950">
+                      Station Checklist Versioning & Lifecycle Audit Directory
+                    </div>
+                    <p className="text-[11px] text-indigo-800/80">
+                      View all {allAggregatedChecklists.length} station checklists, active semantic versions (e.g. v1.1), and modification timelines.
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setShowVersionSummaryModal(true)}
+                  className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5"
+                >
+                  <History className="w-3.5 h-3.5" />
+                  <span>Open Version Directory</span>
+                </button>
+              </div>
+
               {/* Group & Sub-Group Selection Filter */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 bg-white border border-slate-200 rounded-2xl shadow-2xs">
                 <div>
@@ -2319,76 +2862,240 @@ export function AdminPanel({
 
               {/* Sub-Section B: Bulk Checklist Items Import */}
               <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4 shadow-2xs">
-                <div className="flex items-center gap-2">
-                  <ListChecks className="w-4 h-4 text-sky-600" />
-                  <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
-                    Bulk Import Checklist Items (.xlsx)
-                  </h3>
-                </div>
-                <p className="text-xs text-slate-500">
-                  Col 1 = Serial No, Col 2 = Item Description, Col 3 = Mandatory (Y/N). Defaults all items to <strong className="text-emerald-700 font-bold">is_mandatory = true</strong>.
-                </p>
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <ListChecks className="w-4 h-4 text-sky-600" />
+                    <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+                      Bulk Import Checklist Items (.xlsx)
+                    </h3>
+                  </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {/* Mode Toggle Pills */}
+                  <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs font-bold">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExcelImportMode('NEW');
+                        setExcelTargetChecklistId('__NEW__');
+                        if (!excelChecklistTitle || excelChecklistTitle === 'Standard Turnaround Inspection') {
+                          setExcelChecklistTitle('Imported Operations Checklist');
+                        }
+                      }}
+                      className={`px-3 py-1 rounded-lg transition flex items-center gap-1.5 ${
+                        excelImportMode === 'NEW'
+                          ? 'bg-white text-emerald-700 shadow-2xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
+                      <span>Create New Checklist</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExcelImportMode('OVERWRITE');
+                        if (excelAvailableChecklists.length > 0) {
+                          const firstChk = excelAvailableChecklists[0];
+                          setExcelTargetChecklistId(firstChk.id || firstChk.title);
+                          setExcelChecklistTitle(firstChk.title);
+                        }
+                      }}
+                      className={`px-3 py-1 rounded-lg transition flex items-center gap-1.5 ${
+                        excelImportMode === 'OVERWRITE'
+                          ? 'bg-white text-amber-800 shadow-2xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Overwrite Existing Checklist</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <p className="text-xs text-slate-500">
+                    Import an Excel sheet (.xlsx) as a <strong className="text-emerald-700 font-bold">New Checklist</strong> or <strong className="text-amber-800 font-bold">Overwrite an Existing Checklist</strong> within a Direct Operational Group (General Operations) or Sub-Group. Defaults all imported items to <strong className="text-emerald-700 font-bold">is_mandatory = true</strong>.
+                  </p>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowVersionSummaryModal(true)}
+                    className="px-3 py-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-xs font-bold rounded-xl transition flex items-center gap-1.5 shadow-2xs"
+                    title="View automated version history log across all checklists"
+                  >
+                    <History className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>View Versioning Summary</span>
+                  </button>
+                </div>
+
+                {/* Configuration 4-Column Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                  {/* 1. Target Group */}
                   <div>
                     <label className="block text-[11px] font-bold text-slate-700 mb-1">Target Group:</label>
                     <select
                       value={excelTargetGroupId}
                       onChange={(e) => {
-                        setExcelTargetGroupId(e.target.value);
-                        setExcelTargetSubGroupId('');
+                        const newGrp = e.target.value;
+                        setExcelTargetGroupId(newGrp);
+                        setExcelTargetSubGroupId('DIRECT_GROUP');
+                        setExcelTargetChecklistId('__NEW__');
+                        setExcelImportMode('NEW');
                       }}
-                      className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-xs font-mono focus:bg-white"
+                      className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-xs font-mono focus:bg-white font-semibold"
                     >
                       <option value="ALL_FLIGHT_GROUPS" className="font-bold text-blue-700">
                         🚀 ALL 4 FLIGHT GROUPS (LX147, LX2647, LH763, LH761)
                       </option>
-                      {dayData.groups.map((g) => (
-                        <option key={g.id} value={g.id}>
-                          {g.name} ({g.code}) {g.isFlightGroup ? '✈️' : ''}
-                        </option>
-                      ))}
+                      <optgroup label="── Specific Operational Groups ──">
+                        {dayData.groups.map((g) => (
+                          <option key={g.id} value={g.id}>
+                            {g.name} ({g.code}) {g.isFlightGroup ? '✈️' : ''}
+                          </option>
+                        ))}
+                      </optgroup>
                     </select>
                   </div>
 
+                  {/* 2. Target Sub-Group / Destination */}
                   <div>
                     <label className="block text-[11px] font-bold text-slate-700 mb-1">Target Sub-Group / Destination:</label>
                     <select
                       value={excelTargetSubGroupId || 'DIRECT_GROUP'}
-                      onChange={(e) => setExcelTargetSubGroupId(e.target.value)}
+                      onChange={(e) => {
+                        const newSub = e.target.value;
+                        setExcelTargetSubGroupId(newSub);
+                        setExcelTargetChecklistId('__NEW__');
+                        setExcelImportMode('NEW');
+                      }}
                       className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-xs font-mono focus:bg-white font-semibold"
                     >
                       <option value="DIRECT_GROUP" className="font-bold text-purple-700">
                         📌 Direct Operational Group (General Operations)
                       </option>
-                      {excelTargetGroupId === 'ALL_FLIGHT_GROUPS'
-                        ? activeSubGroups.map((s) => (
-                            <option key={s.id} value={s.name}>
-                              📂 {s.name}
-                            </option>
-                          ))
-                        : dayData.groups
-                            .find((g) => g.id === excelTargetGroupId)
-                            ?.subGroups.map((s) => (
-                              <option key={s.id} value={s.id}>
-                                📂 {s.name}
-                              </option>
-                            ))}
+                      {excelAvailableSubGroups.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          📂 {s.name}
+                        </option>
+                      ))}
                     </select>
                   </div>
 
+                  {/* 3. Action / Target Checklist Dropdown (New or Overwrite) */}
                   <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">Checklist Title:</label>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1 flex items-center justify-between">
+                      <span>Target Checklist:</span>
+                      <span
+                        className={`text-[9px] font-mono font-bold px-1.5 py-0.5 rounded ${
+                          excelImportMode === 'OVERWRITE'
+                            ? 'bg-amber-100 text-amber-800'
+                            : 'bg-emerald-100 text-emerald-800'
+                        }`}
+                      >
+                        {excelImportMode === 'OVERWRITE' ? 'OVERWRITE' : 'NEW'}
+                      </span>
+                    </label>
+                    <select
+                      value={excelTargetChecklistId}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setExcelTargetChecklistId(val);
+                        if (val === '__NEW__') {
+                          setExcelImportMode('NEW');
+                          if (!excelChecklistTitle || excelAvailableChecklists.some((c) => c.title === excelChecklistTitle)) {
+                            setExcelChecklistTitle('Imported Operations Checklist');
+                          }
+                        } else {
+                          setExcelImportMode('OVERWRITE');
+                          const targetChk = excelAvailableChecklists.find(
+                            (c) => c.id === val || c.title.trim().toLowerCase() === val.trim().toLowerCase()
+                          );
+                          if (targetChk) {
+                            setExcelChecklistTitle(targetChk.title);
+                          }
+                        }
+                      }}
+                      className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-xs font-mono focus:bg-white font-semibold"
+                    >
+                      <option value="__NEW__" className="font-bold text-emerald-700">
+                        ✨ [+ Create as New Checklist]
+                      </option>
+                      {excelAvailableChecklists.length > 0 && (
+                        <optgroup label="── Overwrite Existing Checklist ──">
+                          {excelAvailableChecklists.map((chk) => (
+                            <option key={chk.id} value={chk.id || chk.title} className="text-amber-800 font-medium">
+                              📝 {chk.title} ({chk.itemCount} items)
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </select>
+                  </div>
+
+                  {/* 4. Checklist Title */}
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      {excelImportMode === 'OVERWRITE' ? 'Checklist Title (Overwrite):' : 'Checklist Title (New):'}
+                    </label>
                     <input
                       type="text"
                       placeholder="e.g. Standard Turnaround Inspection"
                       value={excelChecklistTitle}
                       onChange={(e) => setExcelChecklistTitle(e.target.value)}
-                      className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-xs focus:bg-white"
-                    />
+                      className="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-xs font-medium focus:bg-white focus:ring-2 focus:ring-sky-500"
+                    >
+                    </input>
                   </div>
                 </div>
 
+                {/* Dynamic Destination & Action Summary Banner */}
+                <div
+                  className={`p-3 rounded-xl border text-xs flex items-center justify-between flex-wrap gap-2 ${
+                    excelImportMode === 'OVERWRITE'
+                      ? 'bg-amber-50/70 border-amber-200 text-amber-900'
+                      : 'bg-emerald-50/70 border-emerald-200 text-emerald-900'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    {excelImportMode === 'OVERWRITE' ? (
+                      <RotateCcw className="w-4 h-4 text-amber-700 shrink-0" />
+                    ) : (
+                      <Sparkles className="w-4 h-4 text-emerald-700 shrink-0" />
+                    )}
+                    <div>
+                      <span className="font-bold uppercase tracking-wider text-[10px] mr-1.5 px-1.5 py-0.5 rounded bg-white border border-current">
+                        {excelImportMode === 'OVERWRITE' ? 'Overwrite Mode' : 'New Checklist Mode'}
+                      </span>
+                      <span>
+                        Destination:{' '}
+                        <strong>
+                          {excelTargetGroupId === 'ALL_FLIGHT_GROUPS'
+                            ? 'ALL 4 Flight Groups'
+                            : dayData.groups.find((g) => g.id === excelTargetGroupId)?.name || excelTargetGroupId}
+                        </strong>{' '}
+                        &gt;{' '}
+                        <strong>
+                          {excelTargetSubGroupId === 'DIRECT_GROUP' || !excelTargetSubGroupId
+                            ? 'Direct Operational Group (General Operations)'
+                            : excelAvailableSubGroups.find((s) => s.id === excelTargetSubGroupId)?.name || excelTargetSubGroupId}
+                        </strong>{' '}
+                        &gt;{' '}
+                        <strong className={excelImportMode === 'OVERWRITE' ? 'text-amber-800 underline' : 'text-emerald-800 underline'}>
+                          {excelChecklistTitle || 'Untitled Checklist'}
+                        </strong>
+                      </span>
+                    </div>
+                  </div>
+
+                  {excelImportMode === 'OVERWRITE' && (
+                    <span className="text-[11px] font-mono font-bold text-amber-800">
+                      Existing items will be replaced with imported Excel items
+                    </span>
+                  )}
+                </div>
+
+                {/* File Upload Trigger */}
                 <div className="flex items-center gap-3">
                   <input
                     ref={checklistFileInputRef}
@@ -2407,16 +3114,22 @@ export function AdminPanel({
                   </button>
 
                   {excelChecklistFile && (
-                    <span className="text-xs font-mono text-sky-700 font-bold">
-                      {excelChecklistFile.name} ({importPreviewItems.length} parsed items)
+                    <span className="text-xs font-mono text-sky-700 font-bold flex items-center gap-1.5">
+                      <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                      <span>{excelChecklistFile.name}</span>
+                      <span className="text-slate-500 font-normal">({importPreviewItems.length} parsed items)</span>
                     </span>
                   )}
                 </div>
 
+                {/* Preview Table */}
                 {importPreviewItems.length > 0 && (
                   <div className="space-y-3 pt-2">
-                    <div className="text-xs font-bold text-slate-700">
-                      Previewing {importPreviewItems.length} Parsed Items:
+                    <div className="text-xs font-bold text-slate-700 flex items-center justify-between">
+                      <span>Previewing {importPreviewItems.length} Parsed Items Ready for Import:</span>
+                      <span className="text-[11px] font-mono text-slate-500 font-normal">
+                        All items will be tagged mandatory by default
+                      </span>
                     </div>
                     <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-xl">
                       <table className="w-full text-left text-xs">
@@ -2444,13 +3157,25 @@ export function AdminPanel({
                     <button
                       type="button"
                       onClick={handleCommitChecklistImport}
-                      className="px-5 py-2.5 bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-sm transition flex items-center gap-2"
+                      className={`px-5 py-2.5 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-sm transition flex items-center gap-2 ${
+                        excelImportMode === 'OVERWRITE'
+                          ? 'bg-amber-600 hover:bg-amber-700 focus:ring-2 focus:ring-amber-500'
+                          : 'bg-sky-600 hover:bg-sky-700 focus:ring-2 focus:ring-sky-500'
+                      }`}
                     >
                       <Check className="w-4 h-4" />
                       <span>
-                        {excelTargetGroupId === 'ALL_FLIGHT_GROUPS'
-                          ? 'Append Checklist to ALL 4 Flight Groups'
-                          : 'Append Checklist to Group'}
+                        {excelImportMode === 'OVERWRITE'
+                          ? excelTargetGroupId === 'ALL_FLIGHT_GROUPS'
+                            ? `Overwrite "${excelChecklistTitle}" in ALL 4 Flight Groups (${importPreviewItems.length} items)`
+                            : `Overwrite "${excelChecklistTitle}" in ${
+                                dayData.groups.find((g) => g.id === excelTargetGroupId)?.name || 'Group'
+                              } (${importPreviewItems.length} items)`
+                          : excelTargetGroupId === 'ALL_FLIGHT_GROUPS'
+                          ? `Append "${excelChecklistTitle}" to ALL 4 Flight Groups (${importPreviewItems.length} items)`
+                          : `Append "${excelChecklistTitle}" to ${
+                              dayData.groups.find((g) => g.id === excelTargetGroupId)?.name || 'Group'
+                            } (${importPreviewItems.length} items)`}
                       </span>
                     </button>
                   </div>
@@ -2923,6 +3648,383 @@ export function AdminPanel({
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Checklist Versioning Information Summary Modal */}
+      {showVersionSummaryModal && (
+        <div 
+          id="modal-checklist-version-summary"
+          className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-950/70 backdrop-blur-xs animate-in fade-in"
+        >
+          <div className="w-full max-w-6xl max-h-[92vh] bg-white border border-slate-200 rounded-3xl shadow-2xl overflow-hidden flex flex-col text-slate-900">
+            {/* Modal Header */}
+            <div className="p-5 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between shrink-0 border-b border-indigo-900/50">
+              <div className="flex items-center gap-3.5">
+                <div className="w-10 h-10 rounded-2xl bg-indigo-500/20 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shadow-inner">
+                  <History className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="font-black text-sm uppercase tracking-wider text-white">Checklist Versioning Directory</span>
+                    <span className="px-2 py-0.5 rounded-full bg-indigo-500/30 text-indigo-200 font-mono text-[11px] font-bold border border-indigo-400/30">
+                      DEL Station Hub
+                    </span>
+                  </div>
+                  <p className="text-xs text-indigo-200/80">
+                    Comprehensive audit trail, automated version increments, and lifecycle history for all station operational checklists.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleExportVersionSummaryCSV}
+                  className="px-3.5 py-2 bg-indigo-600/60 hover:bg-indigo-600 border border-indigo-400/40 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm"
+                  title="Export full checklist version log to CSV"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Export CSV</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowVersionSummaryModal(false)}
+                  className="p-2 text-slate-400 hover:text-white hover:bg-white/10 rounded-xl transition"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Top KPI Metrics Bar */}
+            <div className="p-4 sm:p-5 bg-slate-50 border-b border-slate-200 grid grid-cols-2 sm:grid-cols-4 gap-3 shrink-0">
+              <div className="p-3 bg-white border border-slate-200 rounded-xl shadow-2xs">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 flex items-center justify-between">
+                  <span>Total Checklists</span>
+                  <ListChecks className="w-3.5 h-3.5 text-indigo-500" />
+                </div>
+                <div className="text-2xl font-black text-slate-900 mt-1 font-mono">{allAggregatedChecklists.length}</div>
+                <div className="text-[10px] text-slate-400 mt-0.5">Across all operational departments</div>
+              </div>
+
+              <div className="p-3 bg-white border border-slate-200 rounded-xl shadow-2xs">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-blue-700 flex items-center justify-between">
+                  <span>Flight Groups (4x)</span>
+                  <Plane className="w-3.5 h-3.5 text-blue-500" />
+                </div>
+                <div className="text-2xl font-black text-blue-900 mt-1 font-mono">
+                  {allAggregatedChecklists.filter((c) => c.isFlightGroup).length}
+                </div>
+                <div className="text-[10px] text-slate-400 mt-0.5">LX147, LX2647, LH763, LH761</div>
+              </div>
+
+              <div className="p-3 bg-white border border-slate-200 rounded-xl shadow-2xs">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-slate-700 flex items-center justify-between">
+                  <span>Station Ops Checklists</span>
+                  <Building2 className="w-3.5 h-3.5 text-slate-500" />
+                </div>
+                <div className="text-2xl font-black text-slate-800 mt-1 font-mono">
+                  {allAggregatedChecklists.filter((c) => !c.isFlightGroup).length}
+                </div>
+                <div className="text-[10px] text-slate-400 mt-0.5">Cargo, Terminal, Security, Ramp</div>
+              </div>
+
+              <div className="p-3 bg-white border border-amber-200 bg-amber-50/40 rounded-xl shadow-2xs">
+                <div className="text-[11px] font-bold uppercase tracking-wider text-amber-800 flex items-center justify-between">
+                  <span>Updated / Overwritten</span>
+                  <RotateCcw className="w-3.5 h-3.5 text-amber-600" />
+                </div>
+                <div className="text-2xl font-black text-amber-900 mt-1 font-mono">
+                  {allAggregatedChecklists.filter((c) => c.hasOverwrites).length}
+                </div>
+                <div className="text-[10px] text-amber-700 mt-0.5">Automated version bumps recorded</div>
+              </div>
+            </div>
+
+            {/* Filter & Search Toolbar */}
+            <div className="p-4 bg-white border-b border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0">
+              <div className="relative flex-1 max-w-md">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  id="input-version-search"
+                  type="text"
+                  placeholder="Search checklists by title, version (e.g. v1.1), department, notes..."
+                  value={versionSearchQuery}
+                  onChange={(e) => setVersionSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:bg-white"
+                />
+                {versionSearchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => setVersionSearchQuery('')}
+                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 sm:pb-0">
+                <button
+                  type="button"
+                  onClick={() => setVersionGroupFilter('ALL')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+                    versionGroupFilter === 'ALL'
+                      ? 'bg-slate-900 text-white shadow-2xs'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                  }`}
+                >
+                  All ({allAggregatedChecklists.length})
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setVersionGroupFilter('FLIGHT')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+                    versionGroupFilter === 'FLIGHT'
+                      ? 'bg-blue-600 text-white shadow-2xs'
+                      : 'bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200'
+                  }`}
+                >
+                  ✈️ Flight Groups ({allAggregatedChecklists.filter((c) => c.isFlightGroup).length})
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setVersionGroupFilter('NON_FLIGHT')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+                    versionGroupFilter === 'NON_FLIGHT'
+                      ? 'bg-slate-700 text-white shadow-2xs'
+                      : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                  }`}
+                >
+                  Station Ops ({allAggregatedChecklists.filter((c) => !c.isFlightGroup).length})
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setVersionGroupFilter('REVISED_ONLY')}
+                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+                    versionGroupFilter === 'REVISED_ONLY'
+                      ? 'bg-amber-600 text-white shadow-2xs'
+                      : 'bg-amber-50 text-amber-800 hover:bg-amber-100 border border-amber-200'
+                  }`}
+                >
+                  🔄 Revised Only ({allAggregatedChecklists.filter((c) => c.hasOverwrites).length})
+                </button>
+              </div>
+            </div>
+
+            {/* Checklist Directory Table / Accordion List */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-50/60 space-y-3">
+              {filteredVersionChecklists.length === 0 ? (
+                <div className="p-12 text-center bg-white border border-slate-200 rounded-2xl">
+                  <AlertCircle className="w-8 h-8 text-slate-400 mx-auto mb-2" />
+                  <div className="font-bold text-slate-800 text-sm">No checklists match the filter</div>
+                  <p className="text-xs text-slate-500 mt-1">Try clearing your search query or switching filters.</p>
+                </div>
+              ) : (
+                filteredVersionChecklists.map((item) => {
+                  const isExpanded = expandedHistoryChkId === item.checklist.id;
+                  const history = item.checklist.versionHistory || [];
+
+                  return (
+                    <div
+                      key={`${item.groupId}-${item.subGroupId}-${item.checklist.id}`}
+                      className={`bg-white border rounded-2xl transition overflow-hidden shadow-2xs ${
+                        isExpanded ? 'border-indigo-400 ring-2 ring-indigo-100' : 'border-slate-200 hover:border-slate-300'
+                      }`}
+                    >
+                      {/* Row Header */}
+                      <div className="p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                        <div className="flex items-start sm:items-center gap-3 flex-1 min-w-0">
+                          <span
+                            className={`w-9 h-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
+                              item.isFlightGroup
+                                ? 'bg-blue-50 text-blue-700 border border-blue-200'
+                                : 'bg-slate-100 text-slate-700 border border-slate-200'
+                            }`}
+                          >
+                            {item.isFlightGroup ? 'FLT' : 'OPS'}
+                          </span>
+
+                          <div className="space-y-1 min-w-0 flex-1">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-mono text-xs font-bold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
+                                {item.groupCode}
+                              </span>
+                              <span className="text-xs font-medium text-slate-500">
+                                {item.groupName} &gt; {item.subGroupName}
+                              </span>
+                              {item.checklist.isMandatory && (
+                                <span className="px-1.5 py-0.5 rounded bg-rose-50 text-rose-700 text-[10px] font-bold border border-rose-200">
+                                  MANDATORY
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="text-sm font-bold text-slate-900 truncate">
+                              {item.checklist.title}
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Versioning & Meta Pills */}
+                        <div className="flex items-center gap-2.5 flex-wrap shrink-0">
+                          <div className="flex items-center gap-1.5 px-3 py-1 bg-indigo-50 border border-indigo-200 rounded-xl text-indigo-900">
+                            <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-600">Ver:</span>
+                            <span className="font-mono font-black text-xs text-indigo-800">
+                              {item.checklist.version || 'v1.0'}
+                            </span>
+                            <span className="text-[10px] text-indigo-500 font-mono">
+                              ({item.checklist.versionDate || '2026-08-20'})
+                            </span>
+                          </div>
+
+                          <div className="px-2.5 py-1 bg-slate-100 border border-slate-200 rounded-xl text-[11px] font-semibold text-slate-700">
+                            <strong>{item.checklist.items?.length || 0}</strong> active items
+                          </div>
+
+                          <div
+                            className={`px-2.5 py-1 rounded-xl text-[11px] font-bold border flex items-center gap-1 ${
+                              item.hasOverwrites
+                                ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                            }`}
+                          >
+                            <History className="w-3 h-3" />
+                            <span>{item.revisionsCount} {item.revisionsCount === 1 ? 'Revision' : 'Revisions'}</span>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => setExpandedHistoryChkId(isExpanded ? null : item.checklist.id)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 ${
+                              isExpanded
+                                ? 'bg-indigo-600 text-white shadow-xs'
+                                : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                            }`}
+                          >
+                            <span>{isExpanded ? 'Hide History' : 'View History'}</span>
+                            <ChevronDown className={`w-3.5 h-3.5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Expandable Version Timeline Drawer */}
+                      {isExpanded && (
+                        <div className="p-4 sm:p-5 bg-indigo-50/30 border-t border-indigo-100 space-y-3 animate-in fade-in">
+                          <div className="flex items-center justify-between">
+                            <h5 className="text-xs font-black uppercase tracking-wider text-indigo-950 flex items-center gap-1.5">
+                              <History className="w-3.5 h-3.5 text-indigo-600" />
+                              <span>Version Audit Trail & Modification Log</span>
+                            </h5>
+                            <span className="text-[11px] text-slate-500 font-mono">
+                              ID: {item.checklist.id}
+                            </span>
+                          </div>
+
+                          {history.length === 0 ? (
+                            <div className="p-3.5 bg-white border border-slate-200 rounded-xl text-xs text-slate-600 space-y-1">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 font-mono font-bold rounded text-xs">
+                                    {item.checklist.version || 'v1.0'}
+                                  </span>
+                                  <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-bold rounded text-[10px]">
+                                    INITIAL BASELINE
+                                  </span>
+                                </div>
+                                <span className="font-mono text-slate-400 text-[11px]">{item.checklist.versionDate || '2026-08-20'}</span>
+                              </div>
+                              <p className="text-[11px] text-slate-500 mt-1">
+                                Station default checklist baseline with {item.checklist.items?.length || 0} active inspection steps.
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="space-y-2 relative before:absolute before:left-3 before:top-2 before:bottom-2 before:w-0.5 before:bg-indigo-200">
+                              {history.map((rev, rIdx) => (
+                                <div
+                                  key={`${rev.version}-${rIdx}`}
+                                  className="ml-6 p-3 bg-white border border-indigo-100 rounded-xl shadow-2xs relative space-y-1.5"
+                                >
+                                  {/* Dot */}
+                                  <div
+                                    className={`absolute -left-[19px] top-4 w-2.5 h-2.5 rounded-full border-2 border-white ${
+                                      rev.changeType === 'OVERWRITE'
+                                        ? 'bg-amber-500'
+                                        : rev.changeType === 'IMPORT'
+                                        ? 'bg-blue-500'
+                                        : 'bg-emerald-500'
+                                    }`}
+                                  />
+
+                                  <div className="flex items-center justify-between flex-wrap gap-2">
+                                    <div className="flex items-center gap-2">
+                                      <span className="px-2 py-0.5 bg-indigo-100 text-indigo-900 font-mono font-black text-xs rounded-md">
+                                        {rev.version}
+                                      </span>
+                                      <span
+                                        className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                                          rev.changeType === 'OVERWRITE'
+                                            ? 'bg-amber-100 text-amber-900 border border-amber-200'
+                                            : rev.changeType === 'IMPORT'
+                                            ? 'bg-blue-100 text-blue-900 border border-blue-200'
+                                            : 'bg-emerald-100 text-emerald-900 border border-emerald-200'
+                                        }`}
+                                      >
+                                        {rev.changeType}
+                                      </span>
+                                      <span className="text-xs font-semibold text-slate-700">
+                                        By: <strong className="text-slate-900">{rev.updatedBy}</strong>
+                                      </span>
+                                    </div>
+
+                                    <div className="text-[11px] font-mono text-slate-500">
+                                      {rev.timestamp ? new Date(rev.timestamp).toLocaleString() : rev.versionDate}
+                                    </div>
+                                  </div>
+
+                                  <div className="text-xs text-slate-700 bg-slate-50 p-2 rounded-lg border border-slate-100">
+                                    {rev.notes || 'Automated version increment recorded.'}
+                                  </div>
+
+                                  <div className="flex items-center gap-3 text-[11px] text-slate-500 font-mono">
+                                    <span>Items in version: <strong className="text-slate-800">{rev.itemCount}</strong></span>
+                                    {rev.previousItemCount !== undefined && (
+                                      <span>(Previous item count: {rev.previousItemCount})</span>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-slate-100 border-t border-slate-200 flex items-center justify-between shrink-0">
+              <div className="text-xs text-slate-600 font-medium flex items-center gap-2">
+                <Check className="w-4 h-4 text-emerald-600" />
+                <span>Automated semantic versioning tracks all bulk overwrites and changes across station shifts.</span>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowVersionSummaryModal(false)}
+                className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition"
+              >
+                Close Directory
+              </button>
+            </div>
           </div>
         </div>
       )}

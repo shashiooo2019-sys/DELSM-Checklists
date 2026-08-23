@@ -876,6 +876,20 @@ export const MASTER_NON_FLIGHT_DEFINITIONS = [
   },
 ];
 
+// Helper to compute next automated version string
+export function getNextChecklistVersion(currentVersion?: string, isMajor: boolean = false): string {
+  if (!currentVersion || !currentVersion.trim()) return 'v1.1';
+  const clean = currentVersion.trim().replace(/^v/i, '');
+  const parts = clean.split('.').map((p) => parseInt(p, 10));
+  const major = isNaN(parts[0]) || parts[0] < 1 ? 1 : parts[0];
+  const minor = isNaN(parts[1]) || parts[1] < 0 ? 0 : parts[1];
+
+  if (isMajor) {
+    return `v${major + 1}.0`;
+  }
+  return `v${major}.${minor + 1}`;
+}
+
 // Helper to build a checklist instance with fresh not_done items
 export function instantiateChecklist(
   prefix: string,
@@ -890,11 +904,27 @@ export function instantiateChecklist(
     status: 'not_done',
   }));
 
+  const initialVersion = 'v1.0';
+  const initialDate = '2026-08-20';
+
   return {
     id: chkId,
     title: template.title,
     isMandatory: true,
     status: 'pending',
+    version: initialVersion,
+    versionDate: initialDate,
+    versionHistory: [
+      {
+        version: initialVersion,
+        versionDate: initialDate,
+        updatedBy: 'System Baseline',
+        itemCount: items.length,
+        changeType: 'INITIAL',
+        notes: 'Initial station master checklist baseline configuration',
+        timestamp: new Date('2026-08-20T00:00:00.000Z').toISOString(),
+      },
+    ],
     items,
   };
 }
@@ -1116,6 +1146,9 @@ export function mergeMasterHierarchyWithExisting(
           id: masterChecklist.id,
           title: masterChecklist.title,
           isMandatory: masterChecklist.isMandatory !== false,
+          version: existingChecklist.version || masterChecklist.version || 'v1.0',
+          versionDate: existingChecklist.versionDate || masterChecklist.versionDate || '2026-08-20',
+          versionHistory: existingChecklist.versionHistory || masterChecklist.versionHistory || [],
           status: isComplete ? 'completed' : hasStarted ? 'in_progress' : existingChecklist.status || 'pending',
           completedBy: existingChecklist.completedBy,
           completedAt: existingChecklist.completedAt,

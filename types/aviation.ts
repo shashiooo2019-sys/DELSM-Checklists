@@ -27,6 +27,17 @@ export interface ChecklistItem {
 
 export type ChecklistStatus = 'pending' | 'in_progress' | 'completed';
 
+export interface ChecklistVersionRecord {
+  version: string;
+  versionDate: string;
+  updatedBy: string; // e.g. "U10482 (Admin)"
+  itemCount: number;
+  previousItemCount?: number;
+  changeType: 'OVERWRITE' | 'INITIAL' | 'MANUAL_UPDATE' | 'IMPORT';
+  notes?: string;
+  timestamp: string;
+}
+
 export interface Checklist {
   id: string;
   title: string;
@@ -39,6 +50,7 @@ export interface Checklist {
   remarks?: string; // Free-text remarks on submit
   version?: string; // e.g. "v1.0", "v1.1"
   versionDate?: string; // e.g. "2026-08-22"
+  versionHistory?: ChecklistVersionRecord[];
 }
 
 export interface SubOperationalGroup {
