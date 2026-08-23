@@ -19,6 +19,7 @@ interface WhatsAppShareModalProps {
   isOpen: boolean;
   dayData: DayOperationalData;
   currentUser: UserAccount | null;
+  dayShiftOnly?: boolean;
   onClose: () => void;
 }
 
@@ -26,6 +27,7 @@ export function WhatsAppShareModal({
   isOpen,
   dayData,
   currentUser,
+  dayShiftOnly = false,
   onClose,
 }: WhatsAppShareModalProps) {
   const [copied, setCopied] = useState<boolean>(false);
@@ -35,10 +37,33 @@ export function WhatsAppShareModal({
 
   const summary = getDayOverallProgress(dayData);
   const isClosed = dayData.isShiftClosed;
+  const dayShiftGroup = dayData.groups.find(g => g.name.includes('Day Shift') || g.code === 'DAY-OPS');
 
   // Generate structured message
   let text = '';
-  if (isClosed) {
+  if (dayShiftOnly) {
+    text += `☀️ *DAY SHIFT OPERATIONS (DUTY 2) - STATUS REPORT* 📋\n`;
+    text += `📅 *Date:* ${dayData.date}\n`;
+    if (dayShiftGroup?.isVerified) {
+      text += `⏱️ *Status:* VERIFIED & CLOSED ✅\n`;
+      text += `👮‍♂️ *Supervisor:* ${dayShiftGroup.verifiedBy || currentUser?.name || 'Supervisor'}\n`;
+      if (dayShiftGroup.supervisorNotes) {
+        text += `📝 *Notes:* ${dayShiftGroup.supervisorNotes}\n`;
+      }
+    } else {
+      text += `⏱️ *Status:* IN-PROGRESS ⏳\n`;
+    }
+    text += `\n📊 *DAY SHIFT CHECKLISTS & SUB-OPERATIONS:*\n`;
+    if (dayShiftGroup) {
+      for (const sub of dayShiftGroup.subGroups || []) {
+        text += `• *${sub.name.toUpperCase()}*\n`;
+        for (const chk of sub.checklists || []) {
+          text += `  - ${chk.title}: *${chk.status.toUpperCase()}*\n`;
+        }
+      }
+    }
+    text += `\n_Generated securely via AeroOps GroundOps v2.4_`;
+  } else if (isClosed) {
     text += `🛫 *AVIATION GROUND OPERATIONS - SHIFT CLOSURE REPORT* 🟢\n`;
     text += `📅 *Date:* ${dayData.date}\n`;
     text += `⏱️ *Shift Status:* CLOSED & SUPERVISOR VERIFIED ✅\n`;
@@ -138,10 +163,10 @@ export function WhatsAppShareModal({
             </div>
             <div>
               <h3 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
-                WhatsApp Operations Broadcast
+                {dayShiftOnly ? 'Day Shift (Duty 2) WhatsApp Summary' : 'WhatsApp Operations Broadcast'}
               </h3>
               <p className="text-xs text-slate-500">
-                Format: <span className="text-emerald-700 font-semibold">{isClosed ? 'Official Shift Closure Summary' : 'Live In-Progress Telemetry'}</span>
+                Format: <span className="text-emerald-700 font-semibold">{dayShiftOnly ? 'Day Shift Duty 2 Report' : isClosed ? 'Official Shift Closure Summary' : 'Live In-Progress Telemetry'}</span>
               </p>
             </div>
           </div>
@@ -158,16 +183,20 @@ export function WhatsAppShareModal({
         {/* Body Preview */}
         <div className="p-4 sm:p-6 flex-1 overflow-y-auto space-y-4 bg-slate-50/50">
           <div className="flex items-center justify-between">
-            <label className="flex items-center gap-2 cursor-pointer select-none">
-              <input
-                type="checkbox"
-                id="checkbox-include-day-shift"
-                checked={includeDayShift}
-                onChange={(e) => setIncludeDayShift(e.target.checked)}
-                className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500"
-              />
-              <span className="text-xs font-bold text-slate-700">Include Day Shift Operations (Day Shift Only mode)</span>
-            </label>
+            {!dayShiftOnly ? (
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  id="checkbox-include-day-shift"
+                  checked={includeDayShift}
+                  onChange={(e) => setIncludeDayShift(e.target.checked)}
+                  className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500"
+                />
+                <span className="text-xs font-bold text-slate-700">Include Day Shift Operations (Day Shift Only mode)</span>
+              </label>
+            ) : (
+              <span className="text-xs font-bold text-slate-700">Operational Group: Day Shift (Duty 2) Exclusive</span>
+            )}
             <span className="font-mono text-[11px] text-slate-500">{text.length} characters</span>
           </div>
 

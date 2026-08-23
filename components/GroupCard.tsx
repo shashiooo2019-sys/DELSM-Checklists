@@ -19,7 +19,8 @@ import {
   FileText,
   User,
   ShieldAlert,
-  RotateCcw
+  RotateCcw,
+  Share2
 } from 'lucide-react';
 
 interface GroupCardProps {
@@ -28,6 +29,8 @@ interface GroupCardProps {
   onOpenChecklist: (group: OperationalGroup, subGroup: SubOperationalGroup, checklist: Checklist) => void;
   onOpenDiagnosis: (groupId: string) => void;
   onResetChecklist?: (group: OperationalGroup, subGroup: SubOperationalGroup, checklist: Checklist) => void;
+  onOpenDayShiftDiagnosis?: (groupId: string) => void;
+  onOpenDayShiftWhatsApp?: () => void;
 }
 
 export function GroupCard({
@@ -36,6 +39,8 @@ export function GroupCard({
   onOpenChecklist,
   onOpenDiagnosis,
   onResetChecklist,
+  onOpenDayShiftDiagnosis,
+  onOpenDayShiftWhatsApp,
 }: GroupCardProps) {
   const [isExpanded, setIsExpanded] = useState<boolean>(true);
   const [expandedSubGroups, setExpandedSubGroups] = useState<Record<string, boolean>>({});
@@ -147,15 +152,42 @@ export function GroupCard({
 
           {/* Supervisor Direct Diagnosis Button */}
           {isSupervisor && (
-            <button
-              id={`btn-diagnose-group-${group.id}`}
-              type="button"
-              onClick={() => onOpenDiagnosis(group.id)}
-              className="p-2 text-amber-700 hover:text-amber-800 hover:bg-amber-50 rounded-xl border border-amber-200 transition shadow-2xs"
-              title="Supervisor Diagnosis & Sign-off"
-            >
-              <Stethoscope className="w-4 h-4" />
-            </button>
+            group.code === 'DAY-OPS' || group.name.includes('Day Shift') ? (
+              <div className="flex items-center gap-1.5">
+                <button
+                  id={`btn-close-dayshift-${group.id}`}
+                  type="button"
+                  onClick={() => onOpenDayShiftDiagnosis ? onOpenDayShiftDiagnosis(group.id) : onOpenDiagnosis(group.id)}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold transition shadow-2xs"
+                  title="Close Day Shift (Duty 2)"
+                >
+                  <Stethoscope className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Close Day Shift</span>
+                </button>
+                {onOpenDayShiftWhatsApp && (
+                  <button
+                    id={`btn-whatsapp-dayshift-${group.id}`}
+                    type="button"
+                    onClick={onOpenDayShiftWhatsApp}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold transition shadow-2xs"
+                    title="WhatsApp Day Shift Summary"
+                  >
+                    <Share2 className="w-3.5 h-3.5 text-emerald-600" />
+                    <span>WhatsApp</span>
+                  </button>
+                )}
+              </div>
+            ) : (
+              <button
+                id={`btn-diagnose-group-${group.id}`}
+                type="button"
+                onClick={() => onOpenDiagnosis(group.id)}
+                className="p-2 text-amber-700 hover:text-amber-800 hover:bg-amber-50 rounded-xl border border-amber-200 transition shadow-2xs"
+                title="Supervisor Diagnosis & Sign-off"
+              >
+                <Stethoscope className="w-4 h-4" />
+              </button>
+            )
           )}
 
           {/* Toggle Accordion */}

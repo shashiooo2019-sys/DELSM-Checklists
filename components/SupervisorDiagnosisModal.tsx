@@ -26,6 +26,7 @@ interface SupervisorDiagnosisModalProps {
   dayData: DayOperationalData;
   currentUser: UserAccount | null;
   targetGroupId?: string;
+  dayShiftOnly?: boolean;
   onClose: () => void;
   onVerifyGroup: (groupId: string, notes?: string) => void;
   onReopenGroup: (groupId: string) => void;
@@ -38,14 +39,19 @@ export function SupervisorDiagnosisModal({
   dayData,
   currentUser,
   targetGroupId,
+  dayShiftOnly = false,
   onClose,
   onVerifyGroup,
   onReopenGroup,
   onCloseShift,
   onReopenShift,
 }: SupervisorDiagnosisModalProps) {
+  const groupsList = dayShiftOnly
+    ? dayData.groups.filter((g) => g.name.includes('Day Shift') || g.code === 'DAY-OPS')
+    : dayData.groups.filter((g) => !g.name.includes('Day Shift') && g.code !== 'DAY-OPS');
+
   const [selectedGroupId, setSelectedGroupId] = useState<string>(
-    targetGroupId || dayData.groups[0]?.id || ''
+    targetGroupId || groupsList[0]?.id || ''
   );
   const [supervisorNotes, setSupervisorNotes] = useState<string>('');
   const [verifiedExceptions, setVerifiedExceptions] = useState<boolean>(false);
@@ -59,10 +65,12 @@ export function SupervisorDiagnosisModal({
 
   if (!isOpen) return null;
 
-  const currentGroup = dayData.groups.find((g) => g.id === selectedGroupId) || dayData.groups[0];
+  const currentGroup = groupsList.find((g) => g.id === selectedGroupId) || groupsList[0];
   const overall = getDayOverallProgress(dayData);
   const isGroupReady = currentGroup ? isGroupComplete(currentGroup) : false;
-  const canCloseShift = overall.completedGroups === overall.totalGroups;
+  const canCloseShift = dayShiftOnly
+    ? (currentGroup ? isGroupComplete(currentGroup) : false)
+    : overall.completedGroups === overall.totalGroups;
 
   // Gather diagnosis insights for currentGroup
   const skippedItemsList: { subName: string; chkTitle: string; text: string; reason?: string; actionBy?: string }[] = [];
@@ -115,8 +123,13 @@ export function SupervisorDiagnosisModal({
   };
 
   const handleShiftCloseAction = () => {
-    const finalNotes = `Sign-off by: ${signoffName.trim()} (U-Number: ${signoffUNumber.trim()})\nRemarks: ${shiftClosureRemarks.trim() || 'Full shift verified and closed by Duty Supervisor.'}`;
-    onCloseShift(finalNotes);
+    if (dayShiftOnly && currentGroup) {
+      const finalNotes = `Day Shift Sign-off by: ${signoffName.trim()} (U-Number: ${signoffUNumber.trim()})\nRemarks: ${shiftClosureRemarks.trim() || 'Day Shift verified and closed independently.'}`;
+      onVerifyGroup(currentGroup.id, finalNotes);
+    } else {
+      const finalNotes = `Sign-off by: ${signoffName.trim()} (U-Number: ${signoffUNumber.trim()})\nRemarks: ${shiftClosureRemarks.trim() || 'Full shift verified and closed by Duty Supervisor.'}`;
+      onCloseShift(finalNotes);
+    }
     setSupervisorNotes('');
     setSignoffUNumber('');
     setSignoffName('');
@@ -139,7 +152,7 @@ export function SupervisorDiagnosisModal({
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight">
-                  Supervisor Diagnosis & Verification Control
+                  {dayShiftOnly ? 'Day Shift (Duty 2) - Supervisor Verification & Closure' : 'Supervisor Diagnosis & Verification Control'}
                 </h2>
                 <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 font-bold">
                   AUTH LEVEL: SUPERVISOR
@@ -171,7 +184,7 @@ export function SupervisorDiagnosisModal({
           </button>
           
           <div className={`sm:flex items-center sm:overflow-x-auto flex-nowrap gap-2 sm:[scrollbar-width:none] sm:[-ms-overflow-style:none] sm:[&::-webkit-scrollbar]:hidden ${isNavExpanded ? 'flex flex-col items-stretch max-h-48 overflow-y-auto' : 'hidden'}`}>
-            {dayData.groups.map((grp) => {
+            {groupsList.map((grp) => {
               const isComplete = isGroupComplete(grp);
               const isSelected = grp.id === currentGroup?.id;
               return (
@@ -380,20 +393,12 @@ export function SupervisorDiagnosisModal({
         </div>
 
         {/* Exceptions Verification Banner when there are pending checklists */}
-        {!dayData.isShiftClosed && (() => {
+        {!(dayShiftOnly ? currentGroup?.isVerified : dayData.isShiftClosed) && (() => {
           const pendingChecklists: { groupName: string; subName: string; chkTitle: string; pendingItemsCount: number }[] = [];
-          for (const grp of dayData.groups || []) {
+          const groupsToCheck = dayShiftOnly ? groupsList : (dayData.groups || []).filter(g => !g.name.includes('Day Shift') && g.code !== 'DAY-OPS');
+          for (const grp of groupsToCheck) {
             for (const sub of grp.subGroups || []) {
               for (const chk of sub.checklists || []) {
-                // Exclude Duty 2 Checklist from exceptions since it's closed in a separate shift
-                if (
-                  (grp.name.includes('Day Shift')) &&
-                  sub.name === 'General Operations' &&
-                  chk.title === 'Duty 2 Checklist'
-                ) {
-                  continue;
-                }
-
                 if (chk.status !== 'completed') {
                   const incompleteCount = (chk.items || []).filter(
                     (item) => item.status === 'not_done' || item.status === 'pinned'
@@ -484,8 +489,11 @@ export function SupervisorDiagnosisModal({
           </div>
 
           <div className="flex items-center gap-3">
-            {!dayData.isShiftClosed ? (() => {
-              const pendingChecklistsCount = (dayData.groups || []).flatMap(g => g.subGroups || []).flatMap(s => s.checklists || []).filter(c => c.status !== 'completed').length;
+            {!(dayShiftOnly ? currentGroup?.isVerified : dayData.isShiftClosed) ? (() => {
+              const pendingChecklistsCount = (dayShiftOnly && currentGroup ? currentGroup.subGroups : (dayData.groups || []))
+                .flatMap(g => 'subGroups' in g ? g.subGroups : [g])
+                .flatMap(s => s.checklists || [])
+                .filter(c => c.status !== 'completed').length;
               const hasExceptions = pendingChecklistsCount > 0 && !verifiedExceptions;
               const isBlocked = hasExceptions || signoffUNumber.trim() === "" || signoffName.trim() === "";
 
@@ -502,14 +510,14 @@ export function SupervisorDiagnosisModal({
                   }`}
                 >
                   <Lock className="w-4 h-4" />
-                  <span>Official Shift Closure & Sign-off</span>
+                  <span>{dayShiftOnly ? 'Close Day Shift (Duty 2) & Sign-off' : 'Official Shift Closure & Sign-off'}</span>
                 </button>
               );
             })() : (
               <div className="flex items-center gap-3 flex-wrap">
                 <div className="text-xs text-emerald-700 font-bold flex items-center gap-1.5">
                   <CheckCircle2 className="w-4 h-4" />
-                  <span>Operational Shift Officially Closed & Archived</span>
+                  <span>{dayShiftOnly ? 'Day Shift (Duty 2) Verified & Closed' : 'Operational Shift Officially Closed & Archived'}</span>
                 </div>
                 {(currentUser?.role === 'SUPERVISOR' || currentUser?.role === 'ADMIN') && onReopenShift && (
                   <button

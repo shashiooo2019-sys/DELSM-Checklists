@@ -128,6 +128,13 @@ export default function AviationGroundOpsPage() {
     isOpen: false,
   });
 
+  // Day Shift separate Supervisor & WhatsApp states
+  const [dayShiftDiagnosisState, setDayShiftDiagnosisState] = useState<{
+    isOpen: boolean;
+    targetGroupId?: string;
+  }>({ isOpen: false });
+  const [isDayShiftWhatsAppOpen, setIsDayShiftWhatsAppOpen] = useState<boolean>(false);
+
   // WhatsApp & Admin & Audit states
   const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState<boolean>(false);
   const [isAdminPanelOpen, setIsAdminPanelOpen] = useState<boolean>(false);
@@ -421,12 +428,26 @@ export default function AviationGroundOpsPage() {
   const handleCloseShift = (notes?: string) => {
     if (!currentUser) return;
 
+    const updatedGroups = dayData.groups.map((grp) => {
+      if (grp.name.includes('Day Shift') || grp.code === 'DAY-OPS') {
+        return grp;
+      }
+      return {
+        ...grp,
+        isVerified: true,
+        verifiedBy: `${currentUser.name} (${currentUser.uNumber})`,
+        verifiedAt: new Date().toISOString(),
+        supervisorNotes: grp.supervisorNotes || notes || 'Verified and locked upon shift closure.',
+      };
+    });
+
     const newDayData: DayOperationalData = {
       ...dayData,
       isShiftClosed: true,
       closedBy: `${currentUser.name} (${currentUser.uNumber})`,
       closedAt: new Date().toISOString(),
       shiftNotes: notes,
+      groups: updatedGroups,
     };
 
     saveDayData(newDayData);
@@ -814,6 +835,13 @@ export default function AviationGroundOpsPage() {
                     targetGroupId: groupId,
                   });
                 }}
+                onOpenDayShiftDiagnosis={(groupId) => {
+                  setDayShiftDiagnosisState({
+                    isOpen: true,
+                    targetGroupId: groupId,
+                  });
+                }}
+                onOpenDayShiftWhatsApp={() => setIsDayShiftWhatsAppOpen(true)}
                 onResetChecklist={handleResetChecklist}
               />
             ))
@@ -874,12 +902,35 @@ export default function AviationGroundOpsPage() {
         onReopenShift={handleReopenShift}
       />
 
+      {/* 4b. Day Shift Dedicated Supervisor Verification Modal */}
+      <SupervisorDiagnosisModal
+        isOpen={dayShiftDiagnosisState.isOpen}
+        dayData={dayData}
+        currentUser={currentUser}
+        targetGroupId={dayShiftDiagnosisState.targetGroupId}
+        dayShiftOnly={true}
+        onClose={() => setDayShiftDiagnosisState({ isOpen: false })}
+        onVerifyGroup={handleVerifyGroup}
+        onReopenGroup={handleReopenGroup}
+        onCloseShift={handleCloseShift}
+        onReopenShift={handleReopenShift}
+      />
+
       {/* 5. WhatsApp Broadcast Summary Modal */}
       <WhatsAppShareModal
         isOpen={isWhatsAppModalOpen}
         dayData={dayData}
         currentUser={currentUser}
         onClose={() => setIsWhatsAppModalOpen(false)}
+      />
+
+      {/* 5b. Day Shift Dedicated WhatsApp Summary Modal */}
+      <WhatsAppShareModal
+        isOpen={isDayShiftWhatsAppOpen}
+        dayData={dayData}
+        currentUser={currentUser}
+        dayShiftOnly={true}
+        onClose={() => setIsDayShiftWhatsAppOpen(false)}
       />
 
       {/* 6. Admin Management Control Center */}
