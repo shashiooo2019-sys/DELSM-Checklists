@@ -21,7 +21,10 @@ import {
   addAuditLog, 
   exportShiftToExcel,
   isGroupComplete,
-  authenticateUserAsync
+  authenticateUserAsync,
+  ensureDateWindowInitialized,
+  purgeOldShiftsAndAuditLogs,
+  purgeLocalStaleData,
 } from '@/lib/storage';
 import { createInitialDayData } from '@/lib/initialData';
 import { loadDayDataFromFirestore, subscribeToDayData } from '@/lib/firestoreService';
@@ -176,6 +179,25 @@ export default function AviationGroundOpsPage() {
       unsubscribe();
     };
   }, [selectedDate]);
+
+  // Rolling 10-Day Window Generator & 1-Month Purge Policy Lifecycle
+  useEffect(() => {
+    // 1. Expand and initialize the rolling 10-day forward window in background
+    ensureDateWindowInitialized(10);
+
+    // 2. Execute 1-month retention maintenance (purging shifts & audit logs older than 30 days)
+    purgeOldShiftsAndAuditLogs(30);
+    purgeLocalStaleData(30);
+
+    // Periodically re-check the rolling window as time progresses (e.g. every hour)
+    const windowInterval = setInterval(() => {
+      ensureDateWindowInitialized(10);
+      purgeOldShiftsAndAuditLogs(30);
+      purgeLocalStaleData(30);
+    }, 60 * 60 * 1000);
+
+    return () => clearInterval(windowInterval);
+  }, []);
 
   const handleDateChange = (newDate: string) => {
     setSelectedDate(newDate);

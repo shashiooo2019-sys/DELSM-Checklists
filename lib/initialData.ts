@@ -994,6 +994,226 @@ export function generateDefaultGroups(): OperationalGroup[] {
   return [...flightGroups, ...nonFlightGroups];
 }
 
+// Helper to merge master template hierarchy with an existing DayOperationalData,
+// strictly preserving all user progress, checked item states, remarks, timestamps,
+// group verifications, and shift closure states.
+export function mergeMasterHierarchyWithExisting(
+  existing: DayOperationalData,
+  dateStr: string
+): { merged: DayOperationalData; changed: boolean } {
+  let changed = false;
+  const masterGroups = generateDefaultGroups();
+
+  if (!existing || !existing.groups || !Array.isArray(existing.groups) || existing.groups.length === 0) {
+    return {
+      merged: createInitialDayData(dateStr),
+      changed: true,
+    };
+  }
+
+  // Clean out legacy sample subgroups first
+  const cleanedExistingGroups = cleanSampleSubGroups(existing.groups);
+  if (cleanedExistingGroups.length !== existing.groups.length) {
+    changed = true;
+  }
+
+  const mergedGroups: OperationalGroup[] = masterGroups.map((masterGroup) => {
+    const existingGroup = cleanedExistingGroups.find(
+      (g) => g.id === masterGroup.id || g.code.toUpperCase() === masterGroup.code.toUpperCase()
+    );
+
+    if (!existingGroup) {
+      changed = true;
+      return masterGroup;
+    }
+
+    // Existing group found: preserve group verification & notes
+    const groupChanged = false;
+    const existingSubGroups = existingGroup.subGroups || [];
+
+    if (existingSubGroups.length === 0) {
+      changed = true;
+      return {
+        ...existingGroup,
+        subGroups: masterGroup.subGroups,
+      };
+    }
+
+    const mergedSubGroups: SubOperationalGroup[] = masterGroup.subGroups.map((masterSubGroup) => {
+      const existingSubGroup = existingSubGroups.find(
+        (sg) => sg.id === masterSubGroup.id || sg.name.toLowerCase() === masterSubGroup.name.toLowerCase()
+      );
+
+      if (!existingSubGroup) {
+        changed = true;
+        return masterSubGroup;
+      }
+
+      const existingChecklists = existingSubGroup.checklists || [];
+      if (existingChecklists.length === 0) {
+        changed = true;
+        return {
+          ...existingSubGroup,
+          checklists: masterSubGroup.checklists,
+        };
+      }
+
+      const mergedChecklists: Checklist[] = masterSubGroup.checklists.map((masterChecklist) => {
+        const existingChecklist = existingChecklists.find(
+          (chk) =>
+            chk.id === masterChecklist.id ||
+            chk.title.trim().toLowerCase() === masterChecklist.title.trim().toLowerCase()
+        );
+
+        if (!existingChecklist) {
+          changed = true;
+          return masterChecklist;
+        }
+
+        // Merge checklist items while strictly preserving user progress
+        const existingItems = existingChecklist.items || [];
+        const mergedItems: ChecklistItem[] = masterChecklist.items.map((masterItem) => {
+          const existingItem = existingItems.find(
+            (it) =>
+              it.id === masterItem.id ||
+              it.sequenceOrder === masterItem.sequenceOrder ||
+              it.text.trim().toLowerCase() === masterItem.text.trim().toLowerCase()
+          );
+
+          if (!existingItem) {
+            changed = true;
+            return masterItem;
+          }
+
+          // Preserve user status, timestamps, and action user
+          return {
+            ...masterItem,
+            id: existingItem.id || masterItem.id,
+            status: existingItem.status || 'not_done',
+            actionBy: existingItem.actionBy,
+            actionAt: existingItem.actionAt,
+            skipReason: existingItem.skipReason,
+          };
+        });
+
+        // Also preserve any custom user-added items in existing checklist
+        const masterItemIds = new Set(masterChecklist.items.map((it) => it.id));
+        const customItems = existingItems.filter(
+          (it) => !masterItemIds.has(it.id) && !masterChecklist.items.some((m) => m.text.trim().toLowerCase() === it.text.trim().toLowerCase())
+        );
+
+        if (customItems.length > 0) {
+          mergedItems.push(...customItems);
+        }
+
+        const isComplete =
+          mergedItems.length > 0 &&
+          mergedItems.filter((it) => it.isMandatory).every((it) => it.status === 'done' || it.status === 'skipped');
+        const hasStarted = mergedItems.some((it) => it.status === 'done' || it.status === 'skipped');
+
+        return {
+          ...existingChecklist,
+          id: masterChecklist.id,
+          title: masterChecklist.title,
+          isMandatory: masterChecklist.isMandatory !== false,
+          status: isComplete ? 'completed' : hasStarted ? 'in_progress' : existingChecklist.status || 'pending',
+          completedBy: existingChecklist.completedBy,
+          completedAt: existingChecklist.completedAt,
+          remarks: existingChecklist.remarks,
+          items: mergedItems,
+        };
+      });
+
+      // Also preserve any custom checklists created in this subgroup
+      const masterChecklistTitles = new Set(masterSubGroup.checklists.map((c) => c.title.trim().toLowerCase()));
+      const customChecklists = existingChecklists.filter(
+        (c) => !masterChecklistTitles.has(c.title.trim().toLowerCase())
+      );
+      if (customChecklists.length > 0) {
+        mergedChecklists.push(...customChecklists);
+      }
+
+      return {
+        ...existingSubGroup,
+        id: masterSubGroup.id,
+        name: masterSubGroup.name,
+        checklists: mergedChecklists,
+      };
+    });
+
+    // Also preserve custom subgroups in this group
+    const masterSubGroupNames = new Set(masterGroup.subGroups.map((sg) => sg.name.trim().toLowerCase()));
+    const customSubGroups = existingSubGroups.filter(
+      (sg) => !masterSubGroupNames.has(sg.name.trim().toLowerCase())
+    );
+    if (customSubGroups.length > 0) {
+      mergedSubGroups.push(...customSubGroups);
+    }
+
+    return {
+      ...existingGroup,
+      id: masterGroup.id,
+      name: masterGroup.name,
+      code: masterGroup.code,
+      isFlightGroup: masterGroup.isFlightGroup,
+      subGroups: mergedSubGroups,
+    };
+  });
+
+  // Preserve any custom groups that the user might have created
+  const masterGroupCodes = new Set(masterGroups.map((g) => g.code.toUpperCase()));
+  const customGroups = cleanedExistingGroups.filter(
+    (g) => !masterGroupCodes.has(g.code.toUpperCase())
+  );
+  if (customGroups.length > 0) {
+    mergedGroups.push(...customGroups);
+  }
+
+  const merged: DayOperationalData = {
+    date: dateStr,
+    groups: mergedGroups,
+    isShiftClosed: existing.isShiftClosed || false,
+    closedBy: existing.closedBy,
+    closedAt: existing.closedAt,
+    shiftNotes: existing.shiftNotes,
+    lastUpdated: existing.lastUpdated || new Date().toISOString(),
+  };
+
+  return { merged, changed };
+}
+
+// Generate upcoming rolling date window array (e.g. next 10 days)
+export function getUpcomingDateStrings(startDateStr?: string, daysCount: number = 10): string[] {
+  let baseDate: Date;
+  if (startDateStr) {
+    const [y, m, d] = startDateStr.split('-').map(Number);
+    baseDate = new Date(y, (m || 1) - 1, d || 1);
+  } else {
+    baseDate = new Date();
+  }
+
+  const dates: string[] = [];
+  for (let i = 0; i < daysCount; i++) {
+    const d = new Date(baseDate);
+    d.setDate(d.getDate() + i);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    dates.push(`${yyyy}-${mm}-${dd}`);
+  }
+  return dates;
+}
+
+// Calculate cutoff date string for 1-month purge retention policy (e.g. 30 days ago)
+export function getPurgeCutoffDateString(retentionDays: number = 30): string {
+  const cutoff = new Date();
+  cutoff.setDate(cutoff.getDate() - retentionDays);
+  const yyyy = cutoff.getFullYear();
+  const mm = String(cutoff.getMonth() + 1).padStart(2, '0');
+  const dd = String(cutoff.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 export function createInitialDayData(dateStr: string): DayOperationalData {
   return {
     date: dateStr,

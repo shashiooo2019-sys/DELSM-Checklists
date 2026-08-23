@@ -37,7 +37,17 @@ import {
   ItemStatus,
   ChecklistStatus,
 } from '@/types/aviation';
-import { DEFAULT_USERS, generateDefaultGroups, makeItem, FLIGHT_CODES, cleanSampleSubGroups } from './initialData';
+import {
+  DEFAULT_USERS,
+  generateDefaultGroups,
+  makeItem,
+  FLIGHT_CODES,
+  cleanSampleSubGroups,
+  mergeMasterHierarchyWithExisting,
+  getUpcomingDateStrings,
+  getPurgeCutoffDateString,
+  createInitialDayData,
+} from './initialData';
 
 // Domain mapping helper
 export function uNumberToEmail(uNumber: string): string {
@@ -667,71 +677,177 @@ export async function saveDayDataToFirestore(
   }
 }
 
-// Load Full Day Operational Data from Firestore or fallback to default template
+// Load Full Day Operational Data from Firestore or fallback to default template,
+// guaranteeing full checklist hierarchy while preserving user progress & verification states.
 export async function loadDayDataFromFirestore(dateStr: string): Promise<DayOperationalData> {
   try {
     const shiftRef = doc(db, 'daily_shifts', dateStr);
     const shiftSnap = await getDoc(shiftRef);
 
-    const baseGroups = generateDefaultGroups();
-
     if (!shiftSnap.exists()) {
-      const initialDay: DayOperationalData = {
-        date: dateStr,
-        groups: baseGroups,
-        isShiftClosed: false,
-        lastUpdated: new Date().toISOString(),
-      };
+      const initialDay = createInitialDayData(dateStr);
       await saveDayDataToFirestore(initialDay);
       return initialDay;
     }
 
     const shiftData = shiftSnap.data();
+    let parsedData: DayOperationalData | null = null;
+
     if (shiftData.raw_data) {
       try {
-        const parsed = JSON.parse(shiftData.raw_data) as DayOperationalData;
-        if (parsed && parsed.groups && parsed.groups.length > 0) {
-          parsed.groups = cleanSampleSubGroups(parsed.groups);
-          const defaults = generateDefaultGroups();
-          let needsUpdate = false;
-          parsed.groups = parsed.groups.map((g) => {
-            if (!g.subGroups || g.subGroups.length === 0) {
-              const match = defaults.find((d) => d.id === g.id || d.code === g.code);
-              if (match && match.subGroups && match.subGroups.length > 0) {
-                needsUpdate = true;
-                return { ...g, subGroups: match.subGroups };
-              }
-            }
-            return g;
-          });
-          if (needsUpdate) {
-            saveDayDataToFirestore(parsed);
-          }
-          return parsed;
-        }
+        parsedData = JSON.parse(shiftData.raw_data) as DayOperationalData;
       } catch (parseErr) {
-        console.warn('Error parsing raw_data:', parseErr);
+        console.warn(`Error parsing raw_data for ${dateStr}:`, parseErr);
       }
     }
 
-    return {
-      date: dateStr,
-      groups: baseGroups,
-      isShiftClosed: shiftData.status === 'CLOSED',
-      closedBy: shiftData.closed_by || undefined,
-      closedAt: shiftData.closed_at || undefined,
-      shiftNotes: shiftData.shift_notes || undefined,
-      lastUpdated: shiftData.last_updated?.toDate?.()?.toISOString() || new Date().toISOString(),
-    };
+    if (!parsedData || !parsedData.groups || parsedData.groups.length === 0) {
+      parsedData = {
+        date: dateStr,
+        groups: generateDefaultGroups(),
+        isShiftClosed: shiftData.status === 'CLOSED',
+        closedBy: shiftData.closed_by || undefined,
+        closedAt: shiftData.closed_at || undefined,
+        shiftNotes: shiftData.shift_notes || undefined,
+        lastUpdated: shiftData.last_updated?.toDate?.()?.toISOString() || new Date().toISOString(),
+      };
+    }
+
+    // Run master hierarchy merge to guarantee complete checklists while strictly preserving user edits
+    const { merged, changed } = mergeMasterHierarchyWithExisting(parsedData, dateStr);
+
+    if (changed || !shiftData.raw_data) {
+      // Background update without blocking the user
+      saveDayDataToFirestore(merged);
+    }
+
+    return merged;
   } catch (err) {
-    console.error('loadDayDataFromFirestore error, returning default:', err);
-    return {
-      date: dateStr,
-      groups: generateDefaultGroups(),
-      isShiftClosed: false,
-      lastUpdated: new Date().toISOString(),
-    };
+    console.error(`loadDayDataFromFirestore error for ${dateStr}, returning default:`, err);
+    return createInitialDayData(dateStr);
   }
+}
+
+// ----------------- ROLLING 10-DAY WINDOW AUTO-INITIALIZATION -----------------
+
+/**
+ * Pre-seeds and initializes the rolling 10-day forward window in Firestore.
+ * Ensures that any date in the 10-day window exists with complete checklists
+ * while strictly preserving all user progress and verification states.
+ */
+export async function ensureDateWindowInitialized(
+  daysCount: number = 10,
+  startDateStr?: string
+): Promise<{ initializedDates: string[]; success: boolean }> {
+  const dates = getUpcomingDateStrings(startDateStr, daysCount);
+  const initializedDates: string[] = [];
+
+  try {
+    const promises = dates.map(async (dStr) => {
+      try {
+        const day = await loadDayDataFromFirestore(dStr);
+        if (day && day.groups && day.groups.length > 0) {
+          initializedDates.push(dStr);
+        }
+      } catch (e) {
+        console.warn(`Failed auto-initializing window for date ${dStr}:`, e);
+      }
+    });
+
+    await Promise.allSettled(promises);
+    return { initializedDates, success: true };
+  } catch (err) {
+    console.warn('ensureDateWindowInitialized encountered an error:', err);
+    return { initializedDates, success: false };
+  }
+}
+
+// ----------------- 1-MONTH DATA RETENTION PURGE ENGINE -----------------
+
+/**
+ * Purges operational shifts and audit trail records older than 1 month (default 30 days)
+ * to maintain high database responsiveness and prevent bloat.
+ */
+export async function purgeOldShiftsAndAuditLogs(
+  retentionDays: number = 30
+): Promise<{ purgedShifts: number; purgedAuditLogs: number; cutoffDate: string }> {
+  const cutoffDateStr = getPurgeCutoffDateString(retentionDays);
+  let purgedShifts = 0;
+  let purgedAuditLogs = 0;
+
+  try {
+    // 1. Purge old daily_shifts older than cutoffDateStr
+    const shiftsCol = collection(db, 'daily_shifts');
+    const shiftsSnap = await getDocs(shiftsCol);
+
+    const shiftDeletePromises: Promise<void>[] = [];
+    shiftsSnap.docs.forEach((d) => {
+      const docId = d.id;
+      const data = d.data();
+      const dateVal = data.date || docId;
+
+      if (dateVal < cutoffDateStr || docId < cutoffDateStr) {
+        shiftDeletePromises.push(
+          deleteDoc(doc(db, 'daily_shifts', docId))
+            .then(() => {
+              purgedShifts += 1;
+            })
+            .catch((err) => {
+              console.warn(`Could not purge shift ${docId}:`, err);
+            })
+        );
+      }
+    });
+
+    await Promise.allSettled(shiftDeletePromises);
+
+    // 2. Purge old audit logs older than cutoffDateStr
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - retentionDays);
+    const cutoffTimestamp = Timestamp.fromDate(cutoffDate);
+
+    const logsCol = collection(db, 'audit_logs');
+    // Query logs where date_scope < cutoffDateStr or timestamp < cutoffTimestamp
+    const logsSnap = await getDocs(logsCol);
+
+    const logDeletePromises: Promise<void>[] = [];
+    logsSnap.docs.forEach((d) => {
+      const data = d.data();
+      const dateScope = data.date_scope || '';
+      const ts = data.timestamp;
+
+      let isOld = false;
+      if (dateScope && dateScope < cutoffDateStr) {
+        isOld = true;
+      } else if (ts && ts.toDate && ts.toDate() < cutoffDate) {
+        isOld = true;
+      }
+
+      if (isOld) {
+        logDeletePromises.push(
+          deleteDoc(doc(db, 'audit_logs', d.id))
+            .then(() => {
+              purgedAuditLogs += 1;
+            })
+            .catch((err) => {
+              console.warn(`Could not purge audit log ${d.id}:`, err);
+            })
+        );
+      }
+    });
+
+    await Promise.allSettled(logDeletePromises);
+
+    if (purgedShifts > 0 || purgedAuditLogs > 0) {
+      console.info(
+        `[Data Retention] Purged ${purgedShifts} old shifts and ${purgedAuditLogs} old audit logs older than ${cutoffDateStr}.`
+      );
+    }
+  } catch (err) {
+    console.warn('purgeOldShiftsAndAuditLogs notice:', err);
+  }
+
+  return { purgedShifts, purgedAuditLogs, cutoffDate: cutoffDateStr };
 }
 
 // ----------------- AUDIT LOGS SUBSCRIPTION -----------------

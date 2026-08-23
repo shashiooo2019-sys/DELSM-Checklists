@@ -9,13 +9,24 @@ import {
   ChecklistItem,
   AuditLogEntry,
 } from '@/types/aviation';
-import { DEFAULT_USERS, createInitialDayData, makeItem, FLIGHT_CODES, cleanSampleSubGroups } from './initialData';
+import {
+  DEFAULT_USERS,
+  createInitialDayData,
+  makeItem,
+  FLIGHT_CODES,
+  cleanSampleSubGroups,
+  getUpcomingDateStrings,
+  getPurgeCutoffDateString,
+  mergeMasterHierarchyWithExisting,
+} from './initialData';
 import {
   loginWithFirebase,
   updateUserPasswordInFirebase,
   resetUserPasswordInFirebase,
   saveDayDataToFirestore,
   loadDayDataFromFirestore,
+  ensureDateWindowInitialized,
+  purgeOldShiftsAndAuditLogs,
   logAuditEvent,
   seedDefaultUsersIfMissing,
   seedTemplatesIfMissing,
@@ -494,6 +505,38 @@ export function resetDayDataToDefault(dateStr: string, adminUser: UserAccount): 
   saveDayData(fresh);
   addAuditLog(adminUser.uNumber, adminUser.name, adminUser.role, 'DAY_DATA_RESET', `Reset operational state for ${dateStr} to defaults.`);
   return fresh;
+}
+
+// ----------------- ROLLING 10-DAY WINDOW & 1-MONTH RETENTION EXPORTS -----------------
+
+export { ensureDateWindowInitialized, purgeOldShiftsAndAuditLogs, getUpcomingDateStrings, getPurgeCutoffDateString };
+
+/**
+ * Clean up local storage cached records older than 30 days
+ */
+export function purgeLocalStaleData(retentionDays: number = 30): number {
+  if (typeof window === 'undefined') return 0;
+  const cutoffStr = getPurgeCutoffDateString(retentionDays);
+  let purgedCount = 0;
+  try {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.startsWith('aviation_day_data_') || key.startsWith('day_data_'))) {
+        const datePart = key.replace('aviation_day_data_', '').replace('day_data_', '');
+        if (datePart && datePart < cutoffStr) {
+          keysToRemove.push(key);
+        }
+      }
+    }
+    keysToRemove.forEach((k) => {
+      localStorage.removeItem(k);
+      purgedCount += 1;
+    });
+  } catch (e) {
+    console.warn('purgeLocalStaleData notice:', e);
+  }
+  return purgedCount;
 }
 
 // ----------------- AUDIT LOGS -----------------

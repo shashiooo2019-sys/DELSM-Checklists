@@ -67,12 +67,14 @@ service cloud.firestore {
     match /daily_shifts/{date} {
       allow read: if isValidId(date);
       allow create, update: if isValidId(date) && isValidDailyShift(incoming());
+      allow delete: if isValidId(date);
     }
 
     // Audit Logs collection
     match /audit_logs/{logId} {
       allow read: if isValidId(logId);
       allow create: if isValidId(logId) && isValidAuditLog(incoming());
+      allow delete: if isValidId(logId);
     }
 
     // Templates collection

@@ -22,7 +22,9 @@ import {
   downloadChecklistImportTemplate,
   resetDayDataToDefault,
   addAuditLog,
-  subscribeUsers
+  subscribeUsers,
+  ensureDateWindowInitialized,
+  purgeOldShiftsAndAuditLogs,
 } from '@/lib/storage';
 import { fetchUsersFromFirestore, subscribeToUsersFromFirestore, saveUserToFirestore, saveUsersToFirestoreBatch, deleteUserFromFirestore } from '@/lib/firestoreService';
 import { makeItem, FLIGHT_CODES } from '@/lib/initialData';
@@ -1388,7 +1390,37 @@ export function AdminPanel({
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              id="btn-admin-sync-window"
+              type="button"
+              onClick={async () => {
+                const res = await ensureDateWindowInitialized(10);
+                showNotification(`Rolling 10-Day Window synchronized (${res.initializedDates.length} operational dates verified).`);
+              }}
+              className="hidden md:flex items-center gap-1.5 px-3 py-1.5 bg-sky-50 hover:bg-sky-100 border border-sky-200 text-sky-700 text-xs font-bold rounded-xl transition shadow-2xs"
+              title="Pre-seed and synchronize the 10-day forward operational window"
+            >
+              <Calendar className="w-3.5 h-3.5" />
+              <span>Sync 10-Day Window</span>
+            </button>
+
+            <button
+              id="btn-admin-purge-retention"
+              type="button"
+              onClick={async () => {
+                if (confirm('Run 1-Month Retention Policy Check?\n\nThis will purge operational shifts and audit records older than 30 days.')) {
+                  const res = await purgeOldShiftsAndAuditLogs(30);
+                  showNotification(`Retention Check Complete: Purged ${res.purgedShifts} shifts & ${res.purgedAuditLogs} logs older than ${res.cutoffDate}.`);
+                }
+              }}
+              className="hidden lg:flex items-center gap-1.5 px-3 py-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 text-xs font-bold rounded-xl transition shadow-2xs"
+              title="Purge checklists and audit records older than 1 month"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>Purge (&gt;30d)</span>
+            </button>
+
             <button
               id="btn-admin-reset-day"
               type="button"
