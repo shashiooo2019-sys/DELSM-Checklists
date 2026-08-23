@@ -93,7 +93,7 @@ if (typeof window !== 'undefined') {
 
   fetchUsersFromFirestore().then((remoteUsers) => {
     if (remoteUsers && remoteUsers.length > 0) {
-      inMemoryUsers = deduplicateUsers([...getLocalUsers(), ...remoteUsers]);
+      inMemoryUsers = deduplicateUsers([...remoteUsers, ...getLocalUsers()]);
       try {
         localStorage.setItem('aviation_users_local', JSON.stringify(inMemoryUsers));
       } catch {}
@@ -103,7 +103,7 @@ if (typeof window !== 'undefined') {
 
   subscribeToUsersFromFirestore((remoteUsers) => {
     if (remoteUsers && remoteUsers.length > 0) {
-      inMemoryUsers = deduplicateUsers([...getLocalUsers(), ...remoteUsers]);
+      inMemoryUsers = deduplicateUsers([...remoteUsers, ...getLocalUsers()]);
       try {
         localStorage.setItem('aviation_users_local', JSON.stringify(inMemoryUsers));
       } catch {}
@@ -122,7 +122,7 @@ if (typeof window !== 'undefined') {
 // ----------------- USER MANAGEMENT -----------------
 
 export function loadUsers(): UserAccount[] {
-  return deduplicateUsers([...getLocalUsers(), ...inMemoryUsers]);
+  return deduplicateUsers([...inMemoryUsers, ...getLocalUsers()]);
 }
 
 export function saveUsers(users: UserAccount[]): void {
