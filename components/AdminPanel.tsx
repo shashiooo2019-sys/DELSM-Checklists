@@ -24,7 +24,7 @@ import {
   addAuditLog,
   subscribeUsers
 } from '@/lib/storage';
-import { fetchUsersFromFirestore, subscribeToUsersFromFirestore } from '@/lib/firestoreService';
+import { fetchUsersFromFirestore, subscribeToUsersFromFirestore, saveUserToFirestore, saveUsersToFirestoreBatch, deleteUserFromFirestore } from '@/lib/firestoreService';
 import { makeItem, FLIGHT_CODES } from '@/lib/initialData';
 import { 
   X, 
@@ -232,6 +232,7 @@ export function AdminPanel({
   };
 
   const handleDeleteGroup = (groupId: string) => {
+    if (!window.confirm('Are you sure you want to delete this Operational Group? This cannot be undone.')) return;
     const updatedGroups = dayData.groups.filter((g) => g.id !== groupId);
     onSaveDayData({ ...dayData, groups: updatedGroups });
     showNotification('Group deleted');
@@ -301,6 +302,7 @@ export function AdminPanel({
   };
 
   const handleDeleteSubGroup = (groupId: string, subId: string) => {
+    if (!window.confirm('Are you sure you want to delete this Sub-Operational Group? This cannot be undone.')) return;
     const updatedGroups = dayData.groups.map((grp) => {
       if (grp.id === groupId) {
         return {
@@ -508,6 +510,7 @@ export function AdminPanel({
   };
 
   const handleDeleteChecklist = (chkTitle: string, chkId: string) => {
+    if (!window.confirm(`Are you sure you want to delete the checklist "${chkTitle}"? This cannot be undone.`)) return;
     if (!selectedEditSubGroup) return;
     const targetSubName = selectedEditSubGroup.name.trim().toLowerCase();
 
@@ -708,6 +711,7 @@ export function AdminPanel({
   };
 
   const handleDeleteItem = (chkTitle: string, chkId: string, itemText: string, itemId: string) => {
+    if (!window.confirm(`Are you sure you want to delete the item "${itemText}" from the checklist? This cannot be undone.`)) return;
     if (!selectedEditSubGroup) return;
     const targetSubName = selectedEditSubGroup.name.trim().toLowerCase();
 
@@ -1107,13 +1111,14 @@ export function AdminPanel({
     }
   };
 
-  const handleCommitUserImport = () => {
+  const handleCommitUserImport = async () => {
     if (importPreviewUsers.length === 0) return;
     const current = loadUsers();
     const existingSet = new Set(current.map((u) => u.uNumber.trim().toLowerCase()));
     const toAdd = importPreviewUsers.filter((u) => !existingSet.has(u.uNumber.trim().toLowerCase()));
     
     saveUsers([...current, ...toAdd]);
+    await saveUsersToFirestoreBatch(toAdd);
     setUsersList(loadUsers());
     setImportPreviewUsers([]);
     setExcelUserFile(null);
@@ -1249,7 +1254,7 @@ export function AdminPanel({
 
   // ------------------ USER ACCOUNTS MANAGEMENT ------------------
 
-  const handleCreateUser = (e: React.FormEvent) => {
+  const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newUNumber.trim() || !newUserName.trim()) {
       showNotification('Enter U-Number and Name', 'error');
@@ -1268,6 +1273,7 @@ export function AdminPanel({
     };
 
     addOrUpdateUser(newUser, currentUser);
+    await saveUserToFirestore(newUser);
     setUsersList(loadUsers());
     setNewUNumber('');
     setNewUserName('');
@@ -1281,7 +1287,7 @@ export function AdminPanel({
     setEditUserDept(u.department || 'Ground Operations');
   };
 
-  const handleSaveUserEdit = (e: React.FormEvent) => {
+  const handleSaveUserEdit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingUser) return;
 
@@ -1293,6 +1299,7 @@ export function AdminPanel({
     };
 
     addOrUpdateUser(updatedUser, currentUser);
+    await saveUserToFirestore(updatedUser);
     setUsersList(loadUsers());
     setEditingUser(null);
     showNotification(`Updated personnel account for ${updatedUser.name} (${updatedUser.uNumber}). Role set to ${updatedUser.role}.`);
@@ -1319,13 +1326,16 @@ export function AdminPanel({
     showNotification('All demo accounts have been permanently purged from roster.');
   };
 
-  const handleDeleteUser = (uNumber: string) => {
+  const handleDeleteUser = async (uNumber: string) => {
     if (uNumber.toLowerCase() === currentUser.uNumber.toLowerCase()) {
       showNotification('Cannot delete your own active administrator account.', 'error');
       return;
     }
+    if (!window.confirm(`Are you sure you want to delete user ${uNumber}? This will remove them from the system.`)) return;
+    
     const success = deleteUserAccount(uNumber, currentUser);
     if (success) {
+      await deleteUserFromFirestore(uNumber);
       setUsersList(loadUsers());
       showNotification(`Deleted account ${uNumber}`);
     }

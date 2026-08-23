@@ -484,9 +484,13 @@ export async function fetchUsersFromFirestore(): Promise<UserAccount[]> {
   }
 }
 
-// Save or Update User in Firestore
 export async function saveUserToFirestore(user: UserAccount): Promise<void> {
   try {
+    console.log('Saving user to Firestore:', user.uNumber, user.name);
+    if (!user.name) {
+      console.error('CRITICAL: Attempting to save user with empty name:', user.uNumber);
+      return;
+    }
     const cleanUNum = user.uNumber.trim().toLowerCase();
     const uid = `u_${cleanUNum}`;
     const email = uNumberToEmail(user.uNumber);
@@ -505,7 +509,7 @@ export async function saveUserToFirestore(user: UserAccount): Promise<void> {
       { merge: true }
     );
   } catch (err) {
-    console.error('saveUserToFirestore error:', err);
+    handleFirestoreError(err, OperationType.WRITE, 'users');
   }
 }
 
@@ -513,6 +517,11 @@ export async function saveUsersToFirestoreBatch(users: UserAccount[]): Promise<v
   try {
     const batch = writeBatch(db);
     for (const user of users) {
+      console.log('Batch saving user to Firestore:', user.uNumber, user.name);
+      if (!user.name) {
+        console.error('CRITICAL: Attempting to save batch user with empty name:', user.uNumber);
+        continue;
+      }
       const cleanUNum = user.uNumber.trim().toLowerCase();
       const uid = `u_${cleanUNum}`;
       const email = uNumberToEmail(user.uNumber);
@@ -534,7 +543,7 @@ export async function saveUsersToFirestoreBatch(users: UserAccount[]): Promise<v
     }
     await batch.commit();
   } catch (err) {
-    console.error('saveUsersToFirestoreBatch error:', err);
+    handleFirestoreError(err, OperationType.WRITE, 'users');
   }
 }
 
@@ -556,7 +565,7 @@ export async function deleteUserFromFirestore(uNumber: string): Promise<boolean>
     }
     return true;
   } catch (err) {
-    console.error('deleteUserFromFirestore error:', err);
+    handleFirestoreError(err, OperationType.DELETE, 'users');
     return false;
   }
 }

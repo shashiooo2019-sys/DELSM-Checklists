@@ -80,5 +80,10 @@ service cloud.firestore {
       allow read: if isValidId(manifestId);
       allow create, update: if isValidId(manifestId) && isValidTemplate(incoming());
     }
+
+    // Connection test collection
+    match /_connection_test/{docId} {
+      allow read: if true;
+    }
   }
 }

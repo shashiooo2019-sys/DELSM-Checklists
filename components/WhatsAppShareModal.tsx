@@ -45,8 +45,21 @@ export function WhatsAppShareModal({
     text += `🕒 *Closure Time:* ${dayData.closedAt ? new Date(dayData.closedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })} UTC/Local\n\n`;
     text += `📊 *SUMMARY METRICS:*\n`;
     text += `• Total Operational Groups: ${summary.totalGroups}/${summary.totalGroups} VERIFIED 🟢\n`;
-    text += `• Total Checklist Items Executed: ${summary.doneItems}/${summary.totalItems} (100%)\n`;
-    text += `• Optional Skipped Items: ${summary.skippedItems}\n\n`;
+    text += `• Overall Progress: ${summary.percent}%\n`;
+    text += `• Total Checklist Items Executed: ${summary.doneItems}/${summary.totalItems}\n`;
+    text += `• Total Checklists Skipped: ${summary.skippedItems}\n`;
+    
+    // Calculate checklist exceptions (if any items have status 'not_done' or 'pinned' in a closed shift, this is an exception)
+    let checklistExceptions = 0;
+    for (const grp of dayData.groups) {
+      for (const sub of grp.subGroups) {
+        for (const chk of sub.checklists) {
+          if (chk.status !== 'completed') checklistExceptions++;
+        }
+      }
+    }
+    text += `• Checklists with Exceptions: ${checklistExceptions}\n\n`;
+
     text += `✈️ *FLIGHT TURNAROUND STATUS:*\n`;
     
     for (const grp of dayData.groups) {
