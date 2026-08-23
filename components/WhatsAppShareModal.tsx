@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { DayOperationalData, UserAccount } from '@/types/aviation';
 import { getDayOverallProgress, isGroupComplete } from '@/lib/storage';
 import { 
@@ -10,8 +10,9 @@ import {
   Check, 
   ExternalLink, 
   Smartphone, 
+  RotateCcw,
   CheckCircle2, 
-  Plane,
+  Lock,
   Clock
 } from 'lucide-react';
 
@@ -32,121 +33,180 @@ export function WhatsAppShareModal({
 }: WhatsAppShareModalProps) {
   const [copied, setCopied] = useState<boolean>(false);
   const [includeDayShift, setIncludeDayShift] = useState<boolean>(false);
-
-  if (!isOpen) return null;
-
-  const summary = getDayOverallProgress(dayData);
-  const isClosed = dayData.isShiftClosed;
-  const dayShiftGroup = dayData.groups.find(g => g.name.includes('Day Shift') || g.code === 'DAY-OPS');
+  const [editedText, setEditedText] = useState<string | null>(null);
 
   // Generate structured message
-  let text = '';
-  if (dayShiftOnly) {
-    text += `☀️ *DAY SHIFT OPERATIONS (DUTY 2) - STATUS REPORT* 📋\n`;
-    text += `📅 *Date:* ${dayData.date}\n`;
-    if (dayShiftGroup?.isVerified) {
-      text += `⏱️ *Status:* VERIFIED & CLOSED ✅\n`;
-      text += `👮‍♂️ *Supervisor:* ${dayShiftGroup.verifiedBy || currentUser?.name || 'Supervisor'}\n`;
-      if (dayShiftGroup.supervisorNotes) {
-        text += `📝 *Notes:* ${dayShiftGroup.supervisorNotes}\n`;
-      }
-    } else {
-      text += `⏱️ *Status:* IN-PROGRESS ⏳\n`;
-    }
-    text += `\n📊 *DAY SHIFT CHECKLISTS & SUB-OPERATIONS:*\n`;
-    if (dayShiftGroup) {
-      for (const sub of dayShiftGroup.subGroups || []) {
-        text += `• *${sub.name.toUpperCase()}*\n`;
-        for (const chk of sub.checklists || []) {
-          text += `  - ${chk.title}: *${chk.status.toUpperCase()}*\n`;
-        }
-      }
-    }
-    text += `\n_Generated securely via AeroOps GroundOps v2.4_`;
-  } else if (isClosed) {
-    text += `🛫 *AVIATION GROUND OPERATIONS - SHIFT CLOSURE REPORT* 🟢\n`;
-    text += `📅 *Date:* ${dayData.date}\n`;
-    text += `⏱️ *Shift Status:* CLOSED & SUPERVISOR VERIFIED ✅\n`;
-    text += `👮‍♂️ *Signed by Duty Supervisor:* ${dayData.closedBy || currentUser?.name || 'Duty Supervisor'}\n`;
-    text += `🕒 *Closure Time:* ${dayData.closedAt ? new Date(dayData.closedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })} UTC/Local\n\n`;
-    text += `📊 *SUMMARY METRICS:*\n`;
-    text += `• Total Operational Groups: ${summary.totalGroups}/${summary.totalGroups} VERIFIED 🟢\n`;
-    text += `• Overall Progress: ${summary.percent}%\n`;
-    text += `• Total Checklist Items Executed: ${summary.doneItems}/${summary.totalItems}\n`;
-    text += `• Total Checklists Skipped: ${summary.skippedItems}\n`;
-    
-    // Calculate checklist exceptions (if any items have status 'not_done' or 'pinned' in a closed shift, this is an exception)
-    let checklistExceptions = 0;
-    for (const grp of dayData.groups) {
-      if (!includeDayShift && (grp.name.includes('Day Shift') || grp.code === 'DAY-OPS')) continue;
-      for (const sub of grp.subGroups) {
-        for (const chk of sub.checklists) {
-          if (chk.status !== 'completed') checklistExceptions++;
-        }
-      }
-    }
-    text += `• Checklists with Exceptions: ${checklistExceptions}\n\n`;
+  const generatedText = useMemo(() => {
+    if (!dayData) return '';
+    const summary = getDayOverallProgress(dayData);
+    const isClosed = dayData.isShiftClosed;
+    const dayShiftGroup = dayData.groups.find(
+      (g) => g.name.includes('Day Shift') || g.code === 'DAY-OPS'
+    );
 
-    text += `✈️ *FLIGHT TURNAROUND STATUS:*\n`;
-    
-    for (const grp of dayData.groups) {
-      if (grp.isFlightGroup) {
-        text += `  ✅ *${grp.name} (${grp.code})* - Fully Cleared & Ready 🟢 [Verified: ${grp.verifiedBy || 'Sup'}]\n`;
+    let text = '';
+    if (dayShiftOnly) {
+      const isVerified = dayShiftGroup?.isVerified || false;
+      text += `☀️ *DAY SHIFT OPERATIONS (DUTY 2) - STATUS REPORT* 📋\n`;
+      text += `📅 *Date:* ${dayData.date}\n`;
+      text += `⏱️ *Shift Status:* ${isVerified ? 'SHIFT VERIFIED AND CLOSED ✅' : 'IN-PROGRESS ⏳'}\n`;
+      text += `👮‍♂️ *Supervisor:* ${dayShiftGroup?.verifiedBy || (currentUser ? `${currentUser.name} (${currentUser.uNumber})` : 'Duty Supervisor')}\n`;
+      if (dayShiftGroup?.verifiedAt) {
+        text += `🕒 *Timestamp:* ${new Date(dayShiftGroup.verifiedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })} Local\n`;
       }
-    }
 
-    text += `\n🏢 *TERMINAL & INFRASTRUCTURE GROUPS:*\n`;
-    for (const grp of dayData.groups) {
-      if (!grp.isFlightGroup) {
-        if (!includeDayShift && (grp.name.includes('Day Shift') || grp.code === 'DAY-OPS')) continue;
-        text += `  ✅ *${grp.name}* - Complete 🟢\n`;
-      }
-    }
+      // Calculate Day Shift Specific Items
+      let totalDayItems = 0;
+      let doneDayItems = 0;
+      let skippedDayItems = 0;
+      let notDoneDayItems = 0;
+      const skippedList: { chk: string; item: string; reason?: string }[] = [];
+      const notDoneList: { chk: string; item: string }[] = [];
 
-    if (dayData.shiftNotes) {
-      text += `\n📝 *Supervisor Handover Notes:*\n"${dayData.shiftNotes}"\n`;
-    }
-
-    text += `\n_Generated securely via DEL GroundOps v2.4_`;
-  } else {
-    text += `⚠️ *DEL GROUND OPERATIONS - SHIFT IN-PROGRESS STATUS* 📋\n`;
-    text += `📅 *Date:* ${dayData.date}\n`;
-    text += `⏱️ *Current Progress:* ${summary.percent}% (${summary.doneItems}/${summary.totalItems} Checks Done)\n`;
-    text += `👮‍♂️ *Duty Auditor:* ${currentUser ? `${currentUser.name} (${currentUser.uNumber})` : 'DEL Operations'}\n\n`;
-    text += `📊 *OPERATIONAL GROUPS BREAKDOWN:*\n`;
-
-    for (const grp of dayData.groups) {
-      if (!includeDayShift && (grp.name.includes('Day Shift') || grp.code === 'DAY-OPS')) continue;
-      const complete = isGroupComplete(grp);
-      let done = 0;
-      let total = 0;
-      for (const sub of grp.subGroups) {
-        for (const chk of sub.checklists) {
-          for (const item of chk.items) {
-            total++;
-            if (item.status === 'done' || item.status === 'skipped') done++;
+      if (dayShiftGroup) {
+        for (const sub of dayShiftGroup.subGroups || []) {
+          for (const chk of sub.checklists || []) {
+            for (const item of chk.items || []) {
+              totalDayItems++;
+              if (item.status === 'done') doneDayItems++;
+              else if (item.status === 'skipped') {
+                skippedDayItems++;
+                skippedList.push({ chk: chk.title, item: item.text, reason: item.skipReason });
+              } else {
+                notDoneDayItems++;
+                notDoneList.push({ chk: chk.title, item: item.text });
+              }
+            }
           }
         }
       }
+
+      const percent = totalDayItems > 0 ? Math.round((doneDayItems / totalDayItems) * 100) : 100;
+
+      text += `\n📊 *SUMMARY METRICS:*\n`;
+      text += `• Overall Progress: ${percent}%\n`;
+      text += `• Total Items Done: ${doneDayItems}/${totalDayItems}\n`;
+      text += `• Skipped Items: ${skippedDayItems}\n`;
+      text += `• Not Done Items: ${notDoneDayItems}\n`;
+
+      text += `\n📋 *DAY SHIFT SUB-OPERATIONS & CHECKLISTS:*\n`;
+      if (dayShiftGroup && dayShiftGroup.subGroups.length > 0) {
+        for (const sub of dayShiftGroup.subGroups) {
+          text += `• *${sub.name.toUpperCase()}*\n`;
+          for (const chk of sub.checklists || []) {
+            const chkDone = (chk.items || []).filter((i) => i.status === 'done').length;
+            const chkTotal = (chk.items || []).length;
+            text += `  - ${chk.title}: *${chk.status.toUpperCase()}* (${chkDone}/${chkTotal} done)\n`;
+          }
+        }
+      } else {
+        text += `  - No checklists assigned yet.\n`;
+      }
+
+      if (skippedList.length > 0) {
+        text += `\n⚠️ *SKIPPED ITEMS AUDIT:*\n`;
+        for (const s of skippedList) {
+          text += `  • [${s.chk}] ${s.item}${s.reason ? ` _(Reason: ${s.reason})_` : ''}\n`;
+        }
+      }
+
+      if (dayShiftGroup?.supervisorNotes) {
+        text += `\n📝 *Supervisor Handover Notes:*\n"${dayShiftGroup.supervisorNotes}"\n`;
+      }
+
+      text += `\n_Generated securely via DEL GroundOps Checklist System_`;
+    } else if (isClosed) {
+      text += `🛫 *DEL GROUND OPERATIONS - SHIFT CLOSURE REPORT* 🟢\n`;
+      text += `📅 *Date:* ${dayData.date}\n`;
+      text += `⏱️ *Shift Status:* SHIFT VERIFIED AND CLOSED ✅\n`;
+      text += `👮‍♂️ *Signed by Duty Supervisor:* ${dayData.closedBy || currentUser?.name || 'Duty Supervisor'}\n`;
+      text += `🕒 *Closure Time:* ${dayData.closedAt ? new Date(dayData.closedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }) : new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })} Local\n\n`;
+      text += `📊 *SUMMARY METRICS:*\n`;
+      text += `• Total Operational Groups: ${summary.totalGroups}/${summary.totalGroups} VERIFIED 🟢\n`;
+      text += `• Overall Progress: ${summary.percent}%\n`;
+      text += `• Total Checklist Items Executed: ${summary.doneItems}/${summary.totalItems}\n`;
+      text += `• Total Items Skipped: ${summary.skippedItems}\n`;
       
-      const statusIcon = grp.isVerified ? '🔒 🟢' : complete ? '✅' : '⏳ ⚠️';
-      text += `${statusIcon} *${grp.name} (${grp.code})*: ${done}/${total} items done ${grp.isVerified ? '[Verified]' : complete ? '[Ready for Sup]' : '[In-Progress]'}\n`;
+      let checklistExceptions = 0;
+      for (const grp of dayData.groups) {
+        if (!includeDayShift && (grp.name.includes('Day Shift') || grp.code === 'DAY-OPS')) continue;
+        for (const sub of grp.subGroups || []) {
+          for (const chk of sub.checklists || []) {
+            if (chk.status !== 'completed') checklistExceptions++;
+          }
+        }
+      }
+      text += `• Checklists with Exceptions: ${checklistExceptions}\n\n`;
+
+      text += `✈️ *FLIGHT TURNAROUND STATUS:*\n`;
+      for (const grp of dayData.groups) {
+        if (grp.isFlightGroup) {
+          text += `  ✅ *${grp.name} (${grp.code})* - Fully Cleared & Ready 🟢 [Verified: ${grp.verifiedBy || 'Supervisor'}]\n`;
+        }
+      }
+
+      text += `\n🏢 *TERMINAL & INFRASTRUCTURE GROUPS:*\n`;
+      for (const grp of dayData.groups) {
+        if (!grp.isFlightGroup) {
+          if (!includeDayShift && (grp.name.includes('Day Shift') || grp.code === 'DAY-OPS')) continue;
+          text += `  ✅ *${grp.name}* - ${grp.isVerified ? 'Shift Verified & Closed 🟢' : 'Complete 🟢'}\n`;
+        }
+      }
+
+      if (dayData.shiftNotes) {
+        text += `\n📝 *Supervisor Handover Notes:*\n"${dayData.shiftNotes}"\n`;
+      }
+
+      text += `\n_Generated securely via DEL GroundOps Checklist System_`;
+    } else {
+      text += `⚠️ *DEL GROUND OPERATIONS - SHIFT IN-PROGRESS STATUS* 📋\n`;
+      text += `📅 *Date:* ${dayData.date}\n`;
+      text += `⏱️ *Current Progress:* ${summary.percent}% (${summary.doneItems}/${summary.totalItems} Checks Done)\n`;
+      text += `👮‍♂️ *Duty Auditor:* ${currentUser ? `${currentUser.name} (${currentUser.uNumber})` : 'DEL Ground Operations'}\n\n`;
+      text += `📊 *OPERATIONAL GROUPS BREAKDOWN:*\n`;
+
+      for (const grp of dayData.groups) {
+        if (!includeDayShift && (grp.name.includes('Day Shift') || grp.code === 'DAY-OPS')) continue;
+        const complete = isGroupComplete(grp);
+        let done = 0;
+        let total = 0;
+        for (const sub of grp.subGroups || []) {
+          for (const chk of sub.checklists || []) {
+            for (const item of chk.items || []) {
+              total++;
+              if (item.status === 'done' || item.status === 'skipped') done++;
+            }
+          }
+        }
+        
+        const statusIcon = grp.isVerified ? '🔒 🟢' : complete ? '✅' : '⏳ ⚠️';
+        text += `${statusIcon} *${grp.name} (${grp.code})*: ${done}/${total} items done ${grp.isVerified ? '[Shift Verified & Closed]' : complete ? '[Ready for Sup]' : '[In-Progress]'}\n`;
+      }
+
+      if (summary.pinnedItems > 0) {
+        text += `\n📌 *Attention:* ${summary.pinnedItems} items currently PINNED and pending final check.\n`;
+      }
+
+      text += `\n_Live update via DEL GroundOps Checklist System_`;
     }
 
-    if (summary.pinnedItems > 0) {
-      text += `\n📌 *Attention:* ${summary.pinnedItems} items currently PINNED and pending final check.\n`;
-    }
+    return text;
+  }, [dayData, currentUser, dayShiftOnly, includeDayShift]);
 
-    text += `\n_Live update via AeroOps GroundOps v2.4_`;
-  }
+  if (!isOpen) return null;
 
-  const encodedUrl = `https://wa.me/?text=${encodeURIComponent(text)}`;
-  const deepLink = `whatsapp://send?text=${encodeURIComponent(text)}`;
+  const isCustomEdited = editedText !== null;
+  const currentDisplayText = isCustomEdited ? editedText : generatedText;
+  const encodedUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(currentDisplayText)}`;
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(text);
+    navigator.clipboard.writeText(currentDisplayText);
     setCopied(true);
     setTimeout(() => setCopied(false), 2500);
+  };
+
+  const handleResetText = () => {
+    setEditedText(null);
   };
 
   return (
@@ -166,7 +226,7 @@ export function WhatsAppShareModal({
                 {dayShiftOnly ? 'Day Shift (Duty 2) WhatsApp Summary' : 'WhatsApp Operations Broadcast'}
               </h3>
               <p className="text-xs text-slate-500">
-                Format: <span className="text-emerald-700 font-semibold">{dayShiftOnly ? 'Day Shift Duty 2 Report' : isClosed ? 'Official Shift Closure Summary' : 'Live In-Progress Telemetry'}</span>
+                Format: <span className="text-emerald-700 font-semibold">{dayShiftOnly ? 'Day Shift Duty 2 Report' : dayData.isShiftClosed ? 'Official Shift Closure Summary' : 'Live In-Progress Telemetry'}</span>
               </p>
             </div>
           </div>
@@ -174,34 +234,70 @@ export function WhatsAppShareModal({
           <button
             id="btn-close-whatsapp-modal"
             onClick={onClose}
-            className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition"
+            className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Body Preview */}
+        {/* Body Preview & Editor */}
         <div className="p-4 sm:p-6 flex-1 overflow-y-auto space-y-4 bg-slate-50/50">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between flex-wrap gap-2">
             {!dayShiftOnly ? (
               <label className="flex items-center gap-2 cursor-pointer select-none">
                 <input
                   type="checkbox"
                   id="checkbox-include-day-shift"
                   checked={includeDayShift}
-                  onChange={(e) => setIncludeDayShift(e.target.checked)}
-                  className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500"
+                  onChange={(e) => {
+                    setIncludeDayShift(e.target.checked);
+                    setEditedText(null);
+                  }}
+                  className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
                 />
-                <span className="text-xs font-bold text-slate-700">Include Day Shift Operations (Day Shift Only mode)</span>
+                <span className="text-xs font-bold text-slate-700">Include Day Shift Operations in report</span>
               </label>
             ) : (
-              <span className="text-xs font-bold text-slate-700">Operational Group: Day Shift (Duty 2) Exclusive</span>
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-800">Operational Group: Day Shift (Duty 2)</span>
+                {dayData.groups.find(g => g.name.includes('Day Shift') || g.code === 'DAY-OPS')?.isVerified && (
+                  <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold rounded-md border border-emerald-200">
+                    SHIFT VERIFIED AND CLOSED
+                  </span>
+                )}
+              </div>
             )}
-            <span className="font-mono text-[11px] text-slate-500">{text.length} characters</span>
+
+            <div className="flex items-center gap-2">
+              {isCustomEdited && (
+                <button
+                  type="button"
+                  onClick={handleResetText}
+                  className="flex items-center gap-1 text-[11px] font-bold text-amber-700 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded-md border border-amber-200 transition cursor-pointer"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  <span>Reset to Default</span>
+                </button>
+              )}
+              <span className="font-mono text-[11px] text-slate-500">{currentDisplayText.length} characters</span>
+            </div>
           </div>
 
-          <div className="p-4 bg-white border border-slate-200 rounded-xl font-mono text-xs text-emerald-950 whitespace-pre-wrap leading-relaxed shadow-2xs max-h-72 overflow-y-auto">
-            {text}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between text-[11px] text-slate-500">
+              <span>Message Preview & Editor (exact text to be transmitted on WhatsApp):</span>
+              {isCustomEdited && <span className="text-amber-600 font-semibold italic">Customized</span>}
+            </div>
+            <textarea
+              id="textarea-whatsapp-preview"
+              value={currentDisplayText}
+              onChange={(e) => {
+                setEditedText(e.target.value);
+              }}
+              rows={11}
+              className="w-full p-3.5 bg-white border border-slate-200 rounded-xl font-mono text-xs text-emerald-950 leading-relaxed shadow-2xs focus:outline-none focus:ring-2 focus:ring-emerald-500 resize-y"
+              placeholder="Type or customize your WhatsApp summary..."
+            />
           </div>
 
           <p className="text-xs text-slate-500">
@@ -215,7 +311,7 @@ export function WhatsAppShareModal({
             id="btn-copy-whatsapp-text"
             type="button"
             onClick={handleCopy}
-            className="w-full sm:w-auto px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold border border-slate-200 flex items-center justify-center gap-2 transition"
+            className="w-full sm:w-auto px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold border border-slate-200 flex items-center justify-center gap-2 transition cursor-pointer"
           >
             {copied ? <Check className="w-4 h-4 text-emerald-600" /> : <Copy className="w-4 h-4 text-slate-600" />}
             <span>{copied ? 'Copied to Clipboard!' : 'Copy Text'}</span>
@@ -227,7 +323,7 @@ export function WhatsAppShareModal({
               href={encodedUrl}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex-1 sm:flex-initial px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider shadow-sm flex items-center justify-center gap-2 transition"
+              className="flex-1 sm:flex-initial px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider shadow-sm flex items-center justify-center gap-2 transition cursor-pointer"
             >
               <Smartphone className="w-4 h-4" />
               <span>Send via WhatsApp</span>

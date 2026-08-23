@@ -58,9 +58,9 @@ export function SupervisorDiagnosisModal({
   const [isNavExpanded, setIsNavExpanded] = useState<boolean>(false);
   const [isTabsFrameExpanded, setIsTabsFrameExpanded] = useState<boolean>(false);
 
-  // Sign-off details
-  const [signoffUNumber, setSignoffUNumber] = useState<string>('');
-  const [signoffName, setSignoffName] = useState<string>('');
+  // Sign-off details - Pre-fill with active logged in user credentials if available
+  const [signoffUNumber, setSignoffUNumber] = useState<string>(currentUser?.uNumber || '');
+  const [signoffName, setSignoffName] = useState<string>(currentUser?.name || '');
   const [shiftClosureRemarks, setShiftClosureRemarks] = useState<string>('');
 
   if (!isOpen) return null;
@@ -250,19 +250,45 @@ export function SupervisorDiagnosisModal({
 
                 <div className="flex items-center gap-2 flex-wrap">
                   {currentGroup.isVerified ? (
-                    <div className="px-3 py-1.5 bg-sky-50 text-sky-800 border border-sky-200 rounded-xl text-xs font-bold flex items-center gap-2 shadow-2xs">
-                      <Lock className="w-4 h-4 text-sky-600" />
-                      <span>Verified by {currentGroup.verifiedBy || 'Supervisor'}</span>
+                    <div className="flex items-center gap-2">
+                      <div className="px-3 py-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold flex items-center gap-2 shadow-2xs">
+                        <Lock className="w-4 h-4 text-emerald-600" />
+                        <span>Shift Verified & Closed · {currentGroup.verifiedBy || 'Supervisor'}</span>
+                      </div>
+                      {(currentUser?.role === 'SUPERVISOR' || currentUser?.role === 'ADMIN') && (
+                        <button
+                          id="btn-overview-reopen-group"
+                          type="button"
+                          onClick={() => {
+                            if (!showReopenConfirm) {
+                              setShowReopenConfirm(true);
+                              setTimeout(() => setShowReopenConfirm(false), 5000);
+                            } else {
+                              handleReopen();
+                              setShowReopenConfirm(false);
+                            }
+                          }}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition cursor-pointer border ${
+                            showReopenConfirm
+                              ? 'bg-amber-500 hover:bg-amber-600 text-slate-950 border-amber-600 animate-pulse font-extrabold'
+                              : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border-rose-200 shadow-2xs'
+                          }`}
+                          title={dayShiftOnly ? 'Reopen Day Shift Operations for rework' : 'Reopen this group for rework'}
+                        >
+                          <Unlock className="w-3.5 h-3.5" />
+                          <span>{showReopenConfirm ? 'Confirm Reopen?' : (dayShiftOnly ? 'Reopen Day Shift' : 'Reopen Group')}</span>
+                        </button>
+                      )}
                     </div>
                   ) : isGroupReady ? (
-                    <div className="px-3 py-1.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold flex items-center gap-2 shadow-2xs">
-                      <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                      <span>Ready for Supervisor Authorization</span>
+                    <div className="px-3 py-1.5 bg-blue-50 text-blue-800 border border-blue-200 rounded-xl text-xs font-bold flex items-center gap-2 shadow-2xs">
+                      <CheckCircle2 className="w-4 h-4 text-blue-600" />
+                      <span>Ready for Shift Verification & Closure</span>
                     </div>
                   ) : (
                     <div className="px-3 py-1.5 bg-amber-50 text-amber-800 border border-amber-200 rounded-xl text-xs font-semibold flex items-center gap-2 shadow-2xs">
                       <AlertTriangle className="w-4 h-4 text-amber-600" />
-                      <span>{pendingItemsList.length} Checks Still Pending</span>
+                      <span>{pendingItemsList.length} Checks In-Progress / Pending</span>
                     </div>
                   )}
                 </div>
@@ -349,216 +375,294 @@ export function SupervisorDiagnosisModal({
                 </div>
               )}
 
-              {/* Section 4: Supervisor Authorization Actions */}
-              <div className="p-5 bg-white border border-slate-200 rounded-2xl space-y-4 shadow-2xs">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-900 flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-sky-600" />
-                  <span>Supervisor Sign-off Authority for {currentGroup.name}</span>
-                </h4>
+              {/* Section 4: Individual Group Authorization (Only for multi-group navigation) */}
+              {!dayShiftOnly && (
+                <div className="p-5 bg-white border border-slate-200 rounded-2xl space-y-4 shadow-2xs">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-900 flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-sky-600" />
+                    <span>Individual Tab Sign-off Authority: {currentGroup.name}</span>
+                  </h4>
 
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                    Supervisor Verification Log / Endorsement Notes:
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Verified turnaround timeline, aircraft pushback on schedule, no discrepancies found."
-                    value={supervisorNotes}
-                    onChange={(e) => setSupervisorNotes(e.target.value)}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 focus:bg-white transition"
-                  />
-                </div>
-
-                <div className="flex items-center justify-between flex-wrap gap-3 pt-2">
                   <div>
-                    {currentGroup.isVerified ? (
-                      <button
-                        id="btn-reopen-group"
-                        type="button"
-                        onClick={handleReopen}
-                        className="px-4 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-2xs"
-                      >
-                        <Unlock className="w-4 h-4" />
-                        <span>Reopen Group for Rework</span>
-                      </button>
-                    ) : (
-                      <span className="text-xs text-slate-500">
-                        {isGroupReady
-                          ? 'Group completed by ground crew. Authorize below.'
-                          : 'Group has pending checks. Verification will stamp current state.'}
-                      </span>
-                    )}
+                    <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                      Supervisor Tab Notes:
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Verified turnaround timeline, aircraft pushback on schedule, no discrepancies found."
+                      value={supervisorNotes}
+                      onChange={(e) => setSupervisorNotes(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-xs focus:outline-none focus:ring-2 focus:ring-amber-500 focus:bg-white transition"
+                    />
                   </div>
 
-                  <button
-                    id="btn-authorize-group"
-                    type="button"
-                    onClick={handleVerify}
-                    className="px-5 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider shadow-sm flex items-center gap-2 transition"
-                  >
-                    <ShieldCheck className="w-4 h-4" />
-                    <span>{currentGroup.isVerified ? 'Update Verification Stamp' : 'Authorize & Lock Group'}</span>
-                  </button>
+                  <div className="flex items-center justify-between flex-wrap gap-3 pt-2">
+                    <div>
+                      {currentGroup.isVerified ? (
+                        <button
+                          id="btn-reopen-group"
+                          type="button"
+                          onClick={handleReopen}
+                          className="px-4 py-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-2xs"
+                        >
+                          <Unlock className="w-4 h-4" />
+                          <span>Reopen Group for Rework</span>
+                        </button>
+                      ) : (
+                        <span className="text-xs text-slate-500">
+                          {isGroupReady
+                            ? 'Group completed by ground crew. Authorize below.'
+                            : 'Group has pending checks. Verification will stamp current state.'}
+                        </span>
+                      )}
+                    </div>
+
+                    <button
+                      id="btn-authorize-group"
+                      type="button"
+                      onClick={handleVerify}
+                      className="px-5 py-2.5 bg-sky-600 hover:bg-sky-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider shadow-sm flex items-center gap-2 transition"
+                    >
+                      <ShieldCheck className="w-4 h-4" />
+                      <span>{currentGroup.isVerified ? 'Update Tab Verification' : 'Authorize & Lock Tab'}</span>
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
           ) : null}
         </div>
 
-        {/* Exceptions Verification Banner when there are pending checklists */}
-        {!(dayShiftOnly ? currentGroup?.isVerified : dayData.isShiftClosed) && (() => {
-          const pendingChecklists: { groupName: string; subName: string; chkTitle: string; pendingItemsCount: number }[] = [];
-          const groupsToCheck = dayShiftOnly ? groupsList : (dayData.groups || []).filter(g => !g.name.includes('Day Shift') && g.code !== 'DAY-OPS');
-          for (const grp of groupsToCheck) {
+        {/* Shift Closure Sign-off Section followed by Verify and Accept Skipped or Not Done Items & Button */}
+        {!(dayShiftOnly ? currentGroup?.isVerified : dayData.isShiftClosed) ? (() => {
+          // Calculate all skipped and incomplete/not done items across target scope
+          const targetGroupsList = dayShiftOnly
+            ? (currentGroup ? [currentGroup] : groupsList)
+            : (dayData.groups || []).filter(g => !g.name.includes('Day Shift') && g.code !== 'DAY-OPS');
+
+          const allExceptionsList: { groupName: string; subName: string; chkTitle: string; itemText: string; status: string; reason?: string }[] = [];
+          
+          for (const grp of targetGroupsList) {
             for (const sub of grp.subGroups || []) {
               for (const chk of sub.checklists || []) {
-                if (chk.status !== 'completed') {
-                  const incompleteCount = (chk.items || []).filter(
-                    (item) => item.status === 'not_done' || item.status === 'pinned'
-                  ).length;
-                  pendingChecklists.push({
-                    groupName: grp.name,
-                    subName: sub.name,
-                    chkTitle: chk.title,
-                    pendingItemsCount: incompleteCount,
-                  });
+                for (const item of chk.items || []) {
+                  if (item.status === 'skipped' || item.status === 'not_done' || item.status === 'pinned') {
+                    allExceptionsList.push({
+                      groupName: grp.name,
+                      subName: sub.name,
+                      chkTitle: chk.title,
+                      itemText: item.text,
+                      status: item.status,
+                      reason: item.skipReason,
+                    });
+                  }
                 }
               }
             }
           }
 
-          if (pendingChecklists.length === 0) return null;
+          const hasExceptions = allExceptionsList.length > 0;
+          const skippedCount = allExceptionsList.filter(e => e.status === 'skipped').length;
+          const notDoneCount = allExceptionsList.filter(e => e.status === 'not_done' || e.status === 'pinned').length;
+          
+          const isBlocked = (hasExceptions && !verifiedExceptions) || signoffUNumber.trim() === '' || signoffName.trim() === '';
 
           return (
-            <div className="px-4 sm:px-6 py-3 bg-amber-50 border-t border-b border-amber-200 text-amber-950 text-xs">
-              <div className="flex items-start gap-2.5">
-                <AlertTriangle className="w-4 h-4 text-amber-600 mt-0.5 shrink-0" />
-                <div className="space-y-2 flex-1">
-                  <p className="font-bold">
-                    Shift Closure Exception: There are {pendingChecklists.length} pending / incomplete checklists remaining!
-                  </p>
-                  <div className="max-h-24 overflow-y-auto border border-amber-200 rounded-lg p-2 bg-white space-y-1 divide-y divide-slate-100">
-                    {pendingChecklists.map((exc, eIdx) => (
-                      <div key={eIdx} className="pt-1 first:pt-0 flex items-center justify-between text-[11px] text-slate-600">
-                        <span>
-                          <strong className="text-slate-800">[{exc.groupName}]</strong> &raquo; {exc.subName} &raquo; <strong className="text-slate-700">{exc.chkTitle}</strong>
-                        </span>
-                        <span className="font-mono bg-amber-50 text-amber-800 px-1.5 py-0.5 rounded-sm border border-amber-100 text-[10px]">
-                          {exc.pendingItemsCount} pending
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                  <label className="flex items-center gap-2 font-semibold text-amber-950 cursor-pointer select-none">
+            <div className="bg-slate-50 border-t border-slate-200 divide-y divide-slate-200">
+              {/* Step 1: Shift Closure Sign-off Details */}
+              <div className="p-4 sm:p-5 space-y-3 bg-white">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-800 flex items-center gap-2">
+                    <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                    <span>{dayShiftOnly ? 'Day Shift Closure Sign-off' : 'Shift Closure Sign-off'}</span>
+                  </h4>
+                  <span className="text-[11px] text-slate-500 font-mono">Supervisor Authorization Required</span>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      U-Number <span className="text-rose-500">*</span>
+                    </label>
                     <input
-                      id="chk-verify-exceptions"
-                      type="checkbox"
-                      checked={verifiedExceptions}
-                      onChange={(e) => setVerifiedExceptions(e.target.checked)}
-                      className="w-4 h-4 rounded border-amber-300 text-amber-600 focus:ring-amber-500 cursor-pointer"
+                      id="input-signoff-unumber"
+                      type="text"
+                      placeholder="e.g. U12345"
+                      value={signoffUNumber}
+                      onChange={(e) => setSignoffUNumber(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
                     />
-                    <span>Verify and acknowledge these pending checklist exceptions to authorize shift closure.</span>
-                  </label>
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      Full Name <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      id="input-signoff-name"
+                      type="text"
+                      placeholder="e.g. John Doe (Duty Supervisor)"
+                      value={signoffName}
+                      onChange={(e) => setSignoffName(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      Final Handover Remarks (Optional)
+                    </label>
+                    <input
+                      id="input-signoff-remarks"
+                      type="text"
+                      placeholder="e.g. Operations executed smoothly, shift handed over."
+                      value={shiftClosureRemarks}
+                      onChange={(e) => setShiftClosureRemarks(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Step 2: Verify and Accept Skipped or Not Done Items (After Shift Closure Sign-off) */}
+              <div className="p-4 sm:p-5 bg-amber-50/70 space-y-3">
+                <div className="flex items-start justify-between gap-3 flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <h5 className="text-xs font-bold uppercase tracking-wider text-amber-950">
+                      Verify & Accept Exceptions (Skipped or Not Done Items)
+                    </h5>
+                  </div>
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="px-2 py-0.5 bg-amber-100 text-amber-900 border border-amber-200 rounded-md font-mono text-[11px] font-bold">
+                      {skippedCount} Skipped
+                    </span>
+                    <span className="px-2 py-0.5 bg-rose-100 text-rose-900 border border-rose-200 rounded-md font-mono text-[11px] font-bold">
+                      {notDoneCount} Not Done
+                    </span>
+                  </div>
+                </div>
+
+                {hasExceptions ? (
+                  <div className="space-y-2">
+                    <div className="max-h-32 overflow-y-auto border border-amber-200 rounded-xl p-2.5 bg-white space-y-1.5 divide-y divide-slate-100">
+                      {allExceptionsList.map((exc, eIdx) => (
+                        <div key={eIdx} className="pt-1.5 first:pt-0 flex items-start justify-between text-xs gap-2">
+                          <div className="space-y-0.5">
+                            <span className="text-slate-800 font-medium">
+                              <strong className="text-slate-900">[{exc.chkTitle}]</strong> {exc.itemText}
+                            </span>
+                            {exc.reason && (
+                              <p className="text-[11px] text-amber-800 italic">Reason: {exc.reason}</p>
+                            )}
+                          </div>
+                          <span className={`font-mono text-[10px] uppercase px-1.5 py-0.5 rounded-sm font-bold shrink-0 ${
+                            exc.status === 'skipped'
+                              ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                              : 'bg-rose-50 text-rose-800 border border-rose-200'
+                          }`}>
+                            {exc.status === 'skipped' ? 'SKIPPED' : 'NOT DONE'}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Checkbox to verify and accept skipped or not done items */}
+                    <div className="pt-1">
+                      <label className="flex items-center gap-2.5 font-bold text-xs text-amber-950 cursor-pointer select-none bg-white p-3 rounded-xl border border-amber-300 shadow-2xs hover:bg-amber-50/50 transition">
+                        <input
+                          id="chk-verify-exceptions"
+                          type="checkbox"
+                          checked={verifiedExceptions}
+                          onChange={(e) => setVerifiedExceptions(e.target.checked)}
+                          className="w-4 h-4 rounded border-amber-400 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                        />
+                        <span>Verify and accept skipped or not done items</span>
+                      </label>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3 bg-emerald-50/80 border border-emerald-200 rounded-xl text-xs text-emerald-900 flex items-center gap-2 font-medium">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>All checklist items executed and complete. Zero skipped or not done exceptions found.</span>
+                  </div>
+                )}
+
+                {/* Step 3: Button for Shift Verify and Close (directly following checkbox) */}
+                <div className="pt-2 flex items-center justify-between flex-wrap gap-3">
+                  <span className="text-[11px] text-slate-500">
+                    {isBlocked 
+                      ? hasExceptions && !verifiedExceptions 
+                        ? 'Check the box above to accept skipped / not done items.'
+                        : 'Please enter Supervisor U-Number and Name above.'
+                      : 'All requirements satisfied. Ready to finalize.'}
+                  </span>
+
+                  <button
+                    id="btn-shift-verify-and-close"
+                    type="button"
+                    disabled={isBlocked}
+                    onClick={handleShiftCloseAction}
+                    className={`px-6 py-3 rounded-xl text-xs font-bold uppercase tracking-wider shadow-sm flex items-center gap-2 transition cursor-pointer ${
+                      isBlocked
+                        ? 'bg-slate-200 text-slate-400 border border-slate-300 cursor-not-allowed shadow-none'
+                        : 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20'
+                    }`}
+                  >
+                    <Lock className="w-4 h-4" />
+                    <span>{dayShiftOnly ? 'Shift Verify and Close' : 'Shift Verify and Close'}</span>
+                  </button>
                 </div>
               </div>
             </div>
           );
-        })()}
-
-        {/* Explicit Sign-off Section */}
-        {!dayData.isShiftClosed && (
-          <div className="px-4 py-3 bg-slate-50 border-t border-slate-200 space-y-2">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">Shift Closure Sign-off</h4>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-              <input
-                type="text"
-                placeholder="U-Number (e.g. U12345)"
-                value={signoffUNumber}
-                onChange={(e) => setSignoffUNumber(e.target.value)}
-                className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500"
-              />
-              <input
-                type="text"
-                placeholder="Full Name"
-                value={signoffName}
-                onChange={(e) => setSignoffName(e.target.value)}
-                className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500"
-              />
-              <input
-                type="text"
-                placeholder="Final Remarks (Optional)"
-                value={shiftClosureRemarks}
-                onChange={(e) => setShiftClosureRemarks(e.target.value)}
-                className="w-full bg-white border border-slate-200 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-sky-500"
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Global Shift Closure Footer */}
-        <div className="p-4 sm:p-5 bg-white border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
-          <div className="text-xs text-slate-500">
-            Shift Progress: <strong className="text-slate-900 font-semibold">{overall.verifiedGroups}/{overall.totalGroups} groups verified</strong> · {overall.percent}% overall checks done
-          </div>
-
-          <div className="flex items-center gap-3">
-            {!(dayShiftOnly ? currentGroup?.isVerified : dayData.isShiftClosed) ? (() => {
-              const pendingChecklistsCount = (dayShiftOnly && currentGroup ? currentGroup.subGroups : (dayData.groups || []))
-                .flatMap(g => 'subGroups' in g ? g.subGroups : [g])
-                .flatMap(s => s.checklists || [])
-                .filter(c => c.status !== 'completed').length;
-              const hasExceptions = pendingChecklistsCount > 0 && !verifiedExceptions;
-              const isBlocked = hasExceptions || signoffUNumber.trim() === "" || signoffName.trim() === "";
-
-              return (
-                <button
-                  id="btn-close-entire-shift"
-                  type="button"
-                  disabled={isBlocked}
-                  onClick={handleShiftCloseAction}
-                  className={`px-5 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider shadow-sm flex items-center gap-2 transition ${
-                    isBlocked
-                      ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed shadow-none'
-                      : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                  }`}
-                >
-                  <Lock className="w-4 h-4" />
-                  <span>{dayShiftOnly ? 'Close Day Shift (Duty 2) & Sign-off' : 'Official Shift Closure & Sign-off'}</span>
-                </button>
-              );
-            })() : (
-              <div className="flex items-center gap-3 flex-wrap">
-                <div className="text-xs text-emerald-700 font-bold flex items-center gap-1.5">
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>{dayShiftOnly ? 'Day Shift (Duty 2) Verified & Closed' : 'Operational Shift Officially Closed & Archived'}</span>
+        })() : (
+          <div className="p-5 bg-emerald-50 border-t border-emerald-200 flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="text-xs text-emerald-900 font-bold flex items-center gap-2">
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+              <div>
+                <div className="text-sm font-extrabold text-emerald-950">
+                  {dayShiftOnly ? 'Day Shift Operations Verified and Closed' : 'Shift Verified and Closed'}
                 </div>
-                {(currentUser?.role === 'SUPERVISOR' || currentUser?.role === 'ADMIN') && onReopenShift && (
-                  <button
-                    id="btn-reopen-entire-shift"
-                    type="button"
-                    onClick={() => {
-                      if (!showReopenConfirm) {
-                        setShowReopenConfirm(true);
-                        setTimeout(() => setShowReopenConfirm(false), 5000);
-                      } else {
-                        onReopenShift();
-                        setShowReopenConfirm(false);
-                      }
-                    }}
-                    className={`px-3 py-1.5 border rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-2xs cursor-pointer ${
-                      showReopenConfirm
-                        ? 'bg-amber-500 hover:bg-amber-600 border-amber-600 text-slate-950 animate-pulse font-extrabold'
-                        : 'bg-rose-50 hover:bg-rose-100 border-rose-200 text-rose-700'
-                    }`}
-                  >
-                    <Unlock className="w-3.5 h-3.5" />
-                    <span>{showReopenConfirm ? 'Confirm Reopen' : 'Reopen Shift'}</span>
-                  </button>
-                )}
+                <div className="text-xs text-emerald-800 font-normal">
+                  {dayShiftOnly 
+                    ? `Day Shift Operations closed & verified by ${currentGroup?.verifiedBy || 'Supervisor'}.`
+                    : `Operational shift closed & verified by ${dayData.closedBy || 'Supervisor'}.`}
+                </div>
               </div>
+            </div>
+
+            {(currentUser?.role === 'SUPERVISOR' || currentUser?.role === 'ADMIN') && (
+              <button
+                id="btn-reopen-entire-shift"
+                type="button"
+                onClick={() => {
+                  if (!showReopenConfirm) {
+                    setShowReopenConfirm(true);
+                    setTimeout(() => setShowReopenConfirm(false), 5000);
+                  } else {
+                    if (dayShiftOnly && currentGroup) {
+                      handleReopen();
+                    } else if (onReopenShift) {
+                      onReopenShift();
+                    }
+                    setShowReopenConfirm(false);
+                  }
+                }}
+                className={`px-4 py-2 border rounded-xl text-xs font-bold flex items-center gap-1.5 transition shadow-2xs cursor-pointer ${
+                  showReopenConfirm
+                    ? 'bg-amber-500 hover:bg-amber-600 border-amber-600 text-slate-950 animate-pulse font-extrabold'
+                    : 'bg-rose-50 hover:bg-rose-100 border-rose-200 text-rose-700'
+                }`}
+              >
+                <Unlock className="w-3.5 h-3.5" />
+                <span>
+                  {showReopenConfirm 
+                    ? (dayShiftOnly ? 'Confirm Reopen Day Shift?' : 'Confirm Reopen Shift?') 
+                    : (dayShiftOnly ? 'Reopen Day Shift Operations' : 'Reopen for Rework')}
+                </span>
+              </button>
             )}
           </div>
-        </div>
+        )}
       </div>
     </div>
   );

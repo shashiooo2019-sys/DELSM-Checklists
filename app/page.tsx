@@ -360,12 +360,15 @@ export default function AviationGroundOpsPage() {
     setDayData(newDayData);
 
     const targetGroup = dayData.groups.find((g) => g.id === groupId);
+    const isDayShift = targetGroup ? (targetGroup.name.includes('Day Shift') || targetGroup.code === 'DAY-OPS') : false;
     addAuditLog(
       currentUser.uNumber,
       currentUser.name,
       currentUser.role,
-      'SUPERVISOR_VERIFY_GROUP',
-      `Authorized and locked Operational Group "${targetGroup?.name || groupId}". Notes: ${notes || 'None'}`,
+      isDayShift ? 'DAY_SHIFT_VERIFY_CLOSE' : 'SUPERVISOR_VERIFY_GROUP',
+      isDayShift
+        ? `Closed and updated Day Shift Operations status to "Shift Verified and Closed". ${notes ? `Notes: ${notes}` : ''}`
+        : `Authorized and locked Operational Group "${targetGroup?.name || groupId}". Notes: ${notes || 'None'}`,
       selectedDate
     );
   };
@@ -394,12 +397,15 @@ export default function AviationGroundOpsPage() {
     setDayData(newDayData);
 
     const targetGroup = dayData.groups.find((g) => g.id === groupId);
+    const isDayShift = targetGroup ? (targetGroup.name.includes('Day Shift') || targetGroup.code === 'DAY-OPS') : false;
     addAuditLog(
       currentUser.uNumber,
       currentUser.name,
       currentUser.role,
-      'SUPERVISOR_REOPEN_GROUP',
-      `Reopened Operational Group "${targetGroup?.name || groupId}" for ground rework.`,
+      isDayShift ? 'DAY_SHIFT_REOPEN' : 'SUPERVISOR_REOPEN_GROUP',
+      isDayShift
+        ? `Reopened Day Shift Operations for ground rework and editing.`
+        : `Reopened Operational Group "${targetGroup?.name || groupId}" for ground rework.`,
       selectedDate
     );
   };
@@ -891,6 +897,7 @@ export default function AviationGroundOpsPage() {
                 }}
                 onOpenDayShiftWhatsApp={() => setIsDayShiftWhatsAppOpen(true)}
                 onResetChecklist={handleResetChecklist}
+                onReopenGroup={handleReopenGroup}
               />
             ))
           )}

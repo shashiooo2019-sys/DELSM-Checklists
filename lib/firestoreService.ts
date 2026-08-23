@@ -692,6 +692,21 @@ export async function loadDayDataFromFirestore(dateStr: string): Promise<DayOper
         const parsed = JSON.parse(shiftData.raw_data) as DayOperationalData;
         if (parsed && parsed.groups && parsed.groups.length > 0) {
           parsed.groups = cleanSampleSubGroups(parsed.groups);
+          const defaults = generateDefaultGroups();
+          let needsUpdate = false;
+          parsed.groups = parsed.groups.map((g) => {
+            if (!g.subGroups || g.subGroups.length === 0) {
+              const match = defaults.find((d) => d.id === g.id || d.code === g.code);
+              if (match && match.subGroups && match.subGroups.length > 0) {
+                needsUpdate = true;
+                return { ...g, subGroups: match.subGroups };
+              }
+            }
+            return g;
+          });
+          if (needsUpdate) {
+            saveDayDataToFirestore(parsed);
+          }
           return parsed;
         }
       } catch (parseErr) {
