@@ -104,10 +104,10 @@ export function ShiftOverviewBanner({
               id="btn-open-diagnosis"
               onClick={() => onOpenDiagnosis()}
               className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl text-xs font-bold transition shadow-2xs"
-              title="Supervisor Diagnosis Mode"
+              title="Close Shift"
             >
               <Stethoscope className="w-4 h-4 text-amber-600" />
-              <span>Diagnosis Mode</span>
+              <span>Close Shift</span>
             </button>
           )}
 

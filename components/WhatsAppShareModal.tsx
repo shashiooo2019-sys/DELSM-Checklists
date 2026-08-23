@@ -29,6 +29,7 @@ export function WhatsAppShareModal({
   onClose,
 }: WhatsAppShareModalProps) {
   const [copied, setCopied] = useState<boolean>(false);
+  const [includeDayShift, setIncludeDayShift] = useState<boolean>(false);
 
   if (!isOpen) return null;
 
@@ -52,6 +53,7 @@ export function WhatsAppShareModal({
     // Calculate checklist exceptions (if any items have status 'not_done' or 'pinned' in a closed shift, this is an exception)
     let checklistExceptions = 0;
     for (const grp of dayData.groups) {
+      if (!includeDayShift && (grp.name.includes('Day Shift') || grp.code === 'DAY-OPS')) continue;
       for (const sub of grp.subGroups) {
         for (const chk of sub.checklists) {
           if (chk.status !== 'completed') checklistExceptions++;
@@ -71,6 +73,7 @@ export function WhatsAppShareModal({
     text += `\n🏢 *TERMINAL & INFRASTRUCTURE GROUPS:*\n`;
     for (const grp of dayData.groups) {
       if (!grp.isFlightGroup) {
+        if (!includeDayShift && (grp.name.includes('Day Shift') || grp.code === 'DAY-OPS')) continue;
         text += `  ✅ *${grp.name}* - Complete 🟢\n`;
       }
     }
@@ -88,6 +91,7 @@ export function WhatsAppShareModal({
     text += `📊 *OPERATIONAL GROUPS BREAKDOWN:*\n`;
 
     for (const grp of dayData.groups) {
+      if (!includeDayShift && (grp.name.includes('Day Shift') || grp.code === 'DAY-OPS')) continue;
       const complete = isGroupComplete(grp);
       let done = 0;
       let total = 0;
@@ -153,9 +157,18 @@ export function WhatsAppShareModal({
 
         {/* Body Preview */}
         <div className="p-4 sm:p-6 flex-1 overflow-y-auto space-y-4 bg-slate-50/50">
-          <div className="flex items-center justify-between text-xs text-slate-500">
-            <span className="font-semibold uppercase tracking-wider">Message Preview:</span>
-            <span className="font-mono text-[11px]">{text.length} characters</span>
+          <div className="flex items-center justify-between">
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                id="checkbox-include-day-shift"
+                checked={includeDayShift}
+                onChange={(e) => setIncludeDayShift(e.target.checked)}
+                className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500"
+              />
+              <span className="text-xs font-bold text-slate-700">Include Day Shift Operations (Day Shift Only mode)</span>
+            </label>
+            <span className="font-mono text-[11px] text-slate-500">{text.length} characters</span>
           </div>
 
           <div className="p-4 bg-white border border-slate-200 rounded-xl font-mono text-xs text-emerald-950 whitespace-pre-wrap leading-relaxed shadow-2xs max-h-72 overflow-y-auto">

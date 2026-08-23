@@ -52,6 +52,11 @@ export function SupervisorDiagnosisModal({
   const [showReopenConfirm, setShowReopenConfirm] = useState<boolean>(false);
   const [isNavExpanded, setIsNavExpanded] = useState<boolean>(false);
 
+  // Sign-off details
+  const [signoffUNumber, setSignoffUNumber] = useState<string>('');
+  const [signoffName, setSignoffName] = useState<string>('');
+  const [shiftClosureRemarks, setShiftClosureRemarks] = useState<string>('');
+
   if (!isOpen) return null;
 
   const currentGroup = dayData.groups.find((g) => g.id === selectedGroupId) || dayData.groups[0];
@@ -110,8 +115,12 @@ export function SupervisorDiagnosisModal({
   };
 
   const handleShiftCloseAction = () => {
-    onCloseShift(supervisorNotes || 'Full shift verified and closed by Duty Supervisor.');
+    const finalNotes = `Sign-off by: ${signoffName.trim()} (U-Number: ${signoffUNumber.trim()})\nRemarks: ${shiftClosureRemarks.trim() || 'Full shift verified and closed by Duty Supervisor.'}`;
+    onCloseShift(finalNotes);
     setSupervisorNotes('');
+    setSignoffUNumber('');
+    setSignoffName('');
+    setShiftClosureRemarks('');
     onClose();
   };
 
@@ -438,6 +447,36 @@ export function SupervisorDiagnosisModal({
           );
         })()}
 
+        {/* Explicit Sign-off Section */}
+        {!dayData.isShiftClosed && (
+          <div className="p-4 sm:p-5 bg-slate-50 border-t border-slate-200 shrink-0 space-y-3">
+            <h4 className="text-sm font-bold text-slate-800">Shift Closure Sign-off</h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <input
+                type="text"
+                placeholder="U-Number (e.g. U1234567X)"
+                value={signoffUNumber}
+                onChange={(e) => setSignoffUNumber(e.target.value)}
+                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+              />
+              <input
+                type="text"
+                placeholder="Full Name"
+                value={signoffName}
+                onChange={(e) => setSignoffName(e.target.value)}
+                className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+              />
+              <input
+                type="text"
+                placeholder="Final Remarks (Optional)"
+                value={shiftClosureRemarks}
+                onChange={(e) => setShiftClosureRemarks(e.target.value)}
+                className="w-full sm:col-span-2 bg-white border border-slate-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+              />
+            </div>
+          </div>
+        )}
+
         {/* Global Shift Closure Footer */}
         <div className="p-4 sm:p-5 bg-white border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
           <div className="text-xs text-slate-500">
@@ -447,7 +486,8 @@ export function SupervisorDiagnosisModal({
           <div className="flex items-center gap-3">
             {!dayData.isShiftClosed ? (() => {
               const pendingChecklistsCount = (dayData.groups || []).flatMap(g => g.subGroups || []).flatMap(s => s.checklists || []).filter(c => c.status !== 'completed').length;
-              const isBlocked = pendingChecklistsCount > 0 && !verifiedExceptions;
+              const hasExceptions = pendingChecklistsCount > 0 && !verifiedExceptions;
+              const isBlocked = hasExceptions || signoffUNumber.trim() === "" || signoffName.trim() === "";
 
               return (
                 <button
