@@ -26,6 +26,8 @@ import {
 interface GroupCardProps {
   group: OperationalGroup;
   currentUser: UserAccount | null;
+  isExpanded?: boolean;
+  onToggleExpand?: () => void;
   onOpenChecklist: (group: OperationalGroup, subGroup: SubOperationalGroup, checklist: Checklist) => void;
   onOpenDiagnosis: (groupId: string) => void;
   onResetChecklist?: (group: OperationalGroup, subGroup: SubOperationalGroup, checklist: Checklist) => void;
@@ -36,13 +38,17 @@ interface GroupCardProps {
 export function GroupCard({
   group,
   currentUser,
+  isExpanded: propIsExpanded,
+  onToggleExpand,
   onOpenChecklist,
   onOpenDiagnosis,
   onResetChecklist,
   onOpenDayShiftDiagnosis,
   onOpenDayShiftWhatsApp,
 }: GroupCardProps) {
-  const [isExpanded, setIsExpanded] = useState<boolean>(true);
+  const [localIsExpanded, setLocalIsExpanded] = useState<boolean>(false); // Default collapsed mode
+  const isExpanded = propIsExpanded !== undefined ? propIsExpanded : localIsExpanded;
+  const handleToggle = onToggleExpand || (() => setLocalIsExpanded((prev) => !prev));
   const [expandedSubGroups, setExpandedSubGroups] = useState<Record<string, boolean>>({});
 
   const groupComplete = isGroupComplete(group);
@@ -194,7 +200,7 @@ export function GroupCard({
           <button
             id={`btn-toggle-group-${group.id}`}
             type="button"
-            onClick={() => setIsExpanded(!isExpanded)}
+            onClick={handleToggle}
             className="p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl border border-slate-200 transition"
             title={isExpanded ? 'Collapse' : 'Expand'}
           >

@@ -52,7 +52,9 @@ import {
   Lock,
   User,
   ArrowRight,
-  Loader2
+  Loader2,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 
 export default function AviationGroundOpsPage() {
@@ -144,6 +146,7 @@ export default function AviationGroundOpsPage() {
   const [filterCategory, setFilterCategory] = useState<'all' | 'flights' | 'terminal' | 'pending' | 'completed'>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isMobileFilterMenuOpen, setIsMobileFilterMenuOpen] = useState<boolean>(false);
+  const [groupExpansion, setGroupExpansion] = useState<Record<string, boolean>>({});
 
   // Real-time Firestore & Local Day Data Sync
   useEffect(() => {
@@ -807,6 +810,44 @@ export default function AviationGroundOpsPage() {
 
         {/* Operational Groups Hierarchical List */}
         <div className="space-y-4">
+          <div className="flex items-center justify-between flex-wrap gap-3 pb-1">
+            <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+              Operational Groups ({filteredGroups.length})
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                id="btn-expand-all"
+                type="button"
+                onClick={() => {
+                  const newMap: Record<string, boolean> = {};
+                  filteredGroups.forEach((g) => {
+                    newMap[g.id] = true;
+                  });
+                  setGroupExpansion(newMap);
+                }}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1 shadow-2xs"
+              >
+                <ChevronDown className="w-3.5 h-3.5" />
+                <span>Expand All</span>
+              </button>
+              <button
+                id="btn-collapse-all"
+                type="button"
+                onClick={() => {
+                  const newMap: Record<string, boolean> = {};
+                  filteredGroups.forEach((g) => {
+                    newMap[g.id] = false;
+                  });
+                  setGroupExpansion(newMap);
+                }}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1 shadow-2xs"
+              >
+                <ChevronUp className="w-3.5 h-3.5" />
+                <span>Collapse All</span>
+              </button>
+            </div>
+          </div>
+
           {filteredGroups.length === 0 ? (
             <div className="p-12 text-center bg-white border border-slate-200 rounded-2xl space-y-3 shadow-sm">
               <AlertCircle className="w-8 h-8 text-slate-400 mx-auto" />
@@ -821,6 +862,13 @@ export default function AviationGroundOpsPage() {
                 key={group.id}
                 group={group}
                 currentUser={currentUser}
+                isExpanded={groupExpansion[group.id] === true}
+                onToggleExpand={() => {
+                  setGroupExpansion((prev) => ({
+                    ...prev,
+                    [group.id]: prev[group.id] === true ? false : true,
+                  }));
+                }}
                 onOpenChecklist={(grp, sub, chk) => {
                   setActiveChecklistModal({
                     isOpen: true,
