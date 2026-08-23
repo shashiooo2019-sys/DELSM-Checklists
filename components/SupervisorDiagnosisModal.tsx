@@ -360,6 +360,15 @@ export function SupervisorDiagnosisModal({
           for (const grp of dayData.groups || []) {
             for (const sub of grp.subGroups || []) {
               for (const chk of sub.checklists || []) {
+                // Exclude Duty 2 Checklist from exceptions since it's closed in a separate shift
+                if (
+                  (grp.name.includes('Day Shift')) &&
+                  sub.name === 'General Operations' &&
+                  chk.title === 'Duty 2 Checklist'
+                ) {
+                  continue;
+                }
+
                 if (chk.status !== 'completed') {
                   const incompleteCount = (chk.items || []).filter(
                     (item) => item.status === 'not_done' || item.status === 'pinned'

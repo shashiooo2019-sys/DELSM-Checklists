@@ -584,14 +584,24 @@ export function getChecklistProgress(chk: Checklist): { done: number; total: num
   return { done, total, skipped, pinned, pending, percent };
 }
 
-export function isSubGroupComplete(sub: SubOperationalGroup): boolean {
+export function isSubGroupComplete(sub: SubOperationalGroup, groupName?: string): boolean {
   if (!sub.checklists || sub.checklists.length === 0) return true;
-  return sub.checklists.every((chk) => chk.status === 'completed');
+  return sub.checklists.every((chk) => {
+    // Exclude Duty 2 Checklist in General Operations under Day Shift from closure logic
+    if (
+      (groupName && groupName.includes('Day Shift')) &&
+      sub.name === 'General Operations' &&
+      chk.title === 'Duty 2 Checklist'
+    ) {
+      return true;
+    }
+    return chk.status === 'completed';
+  });
 }
 
 export function isGroupComplete(grp: OperationalGroup): boolean {
   if (!grp.subGroups || grp.subGroups.length === 0) return true;
-  return grp.subGroups.every((sub) => isSubGroupComplete(sub));
+  return grp.subGroups.every((sub) => isSubGroupComplete(sub, grp.name));
 }
 
 export function isDayShiftFullyCompleteAndVerified(dayData: DayOperationalData): boolean {
@@ -626,6 +636,13 @@ export function getDayOverallProgress(dayData: DayOperationalData): {
 
     for (const sub of grp.subGroups || []) {
       for (const chk of sub.checklists || []) {
+        if (
+          (grp.name.includes('Day Shift')) &&
+          sub.name === 'General Operations' &&
+          chk.title === 'Duty 2 Checklist'
+        ) {
+          continue; // Exclude from overall progress
+        }
         for (const item of chk.items || []) {
           totalItems++;
           if (item.status === 'done') doneItems++;
