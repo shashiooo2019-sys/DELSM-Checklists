@@ -57,7 +57,8 @@ import {
   ArrowRight,
   Loader2,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  MoreHorizontal
 } from 'lucide-react';
 
 export default function AviationGroundOpsPage() {
@@ -146,9 +147,10 @@ export default function AviationGroundOpsPage() {
   const [isAuditLogOpen, setIsAuditLogOpen] = useState<boolean>(false);
 
   // Group Filters
-  const [filterCategory, setFilterCategory] = useState<'all' | 'flights' | 'terminal' | 'pending' | 'completed'>('all');
+  const [filterCategory, setFilterCategory] = useState<'all' | 'flights' | 'terminal' | 'pending' | 'completed' | 'non-compliance'>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isMobileFilterMenuOpen, setIsMobileFilterMenuOpen] = useState<boolean>(false);
+  const [isFilterOverflowOpen, setIsFilterOverflowOpen] = useState<boolean>(false);
   const [groupExpansion, setGroupExpansion] = useState<Record<string, boolean>>({});
 
   // Real-time Firestore & Local Day Data Sync
@@ -494,6 +496,16 @@ export default function AviationGroundOpsPage() {
     );
   };
 
+  const groupHasNonCompliance = (grp: OperationalGroup): boolean => {
+    return grp.subGroups.some((sub) =>
+      sub.checklists.some((chk) =>
+        chk.items.some((item) => item.status === 'missed' || item.status === 'incorrectly_executed')
+      )
+    );
+  };
+
+  const nonComplianceGroupCount = dayData.groups.filter(groupHasNonCompliance).length;
+
   // Filter groups
   const filteredGroups = dayData.groups.filter((grp) => {
     // Search query filter
@@ -510,6 +522,7 @@ export default function AviationGroundOpsPage() {
     if (filterCategory === 'terminal') return !grp.isFlightGroup;
     if (filterCategory === 'pending') return !complete;
     if (filterCategory === 'completed') return complete;
+    if (filterCategory === 'non-compliance') return groupHasNonCompliance(grp);
     return true;
   });
 
@@ -726,114 +739,266 @@ export default function AviationGroundOpsPage() {
         />
 
         {/* Operational Filter & Search Bar */}
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 bg-white border border-slate-200 p-3 rounded-2xl shadow-sm">
-          {/* Quick Filter Tabs */}
-          <div className="flex flex-col sm:flex-row items-stretch gap-1.5 w-full sm:w-auto">
-            <button
-              type="button"
-              onClick={() => setIsMobileFilterMenuOpen(!isMobileFilterMenuOpen)}
-              className="sm:hidden w-full flex items-center justify-between px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl font-bold text-xs uppercase tracking-wider transition hover:bg-slate-200"
-            >
-              <div className="flex items-center gap-2">
-                <Filter className="w-4 h-4" />
-                <span>Filters ({filterCategory})</span>
+        <div className="flex flex-col gap-3 bg-white border border-slate-200 p-3 rounded-2xl shadow-sm overflow-hidden">
+          <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+            {/* Quick Filter Tabs */}
+            <div className="flex flex-row items-center gap-1.5 w-full lg:w-auto min-w-0 flex-1 overflow-hidden relative group">
+              <button
+                type="button"
+                onClick={() => setIsFilterOverflowOpen(!isFilterOverflowOpen)}
+                className="sm:hidden flex items-center justify-between px-3 py-2 bg-slate-100 text-slate-700 rounded-xl font-bold text-xs uppercase tracking-wider transition hover:bg-slate-200 shrink-0 gap-2 border border-slate-200"
+              >
+                <Filter className="w-3.5 h-3.5" />
+                <span className="capitalize">{filterCategory}</span>
+              </button>
+
+              <div className="flex flex-row items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 px-0.5 pr-2 scroll-smooth max-w-full touch-pan-x flex-1">
+                <button
+                  id="filter-tab-all"
+                  type="button"
+                  onClick={() => setFilterCategory('all')}
+                  className={`px-4 py-2.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition whitespace-nowrap shrink-0 text-center ${
+                    filterCategory === 'all'
+                      ? 'bg-slate-900 text-white shadow-sm'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
+                  }`}
+                >
+                  All Operations ({dayData.groups.length})
+                </button>
+
+                <button
+                  id="filter-tab-flights"
+                  type="button"
+                  onClick={() => setFilterCategory('flights')}
+                  className={`px-4 py-2.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition whitespace-nowrap shrink-0 flex items-center justify-center gap-1.5 ${
+                    filterCategory === 'flights'
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
+                  }`}
+                >
+                  <Plane className="w-3.5 h-3.5 shrink-0" />
+                  <span>Flight Turnarounds (4)</span>
+                </button>
+
+                <button
+                  id="filter-tab-terminal"
+                  type="button"
+                  onClick={() => setFilterCategory('terminal')}
+                  className={`px-4 py-2.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition whitespace-nowrap shrink-0 flex items-center justify-center gap-1.5 ${
+                    filterCategory === 'terminal'
+                      ? 'bg-blue-600 text-white shadow-sm'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
+                  }`}
+                >
+                  <Building2 className="w-3.5 h-3.5 shrink-0" />
+                  <span>Terminal & Infrastructure</span>
+                </button>
+
+                <button
+                  id="filter-tab-pending"
+                  type="button"
+                  onClick={() => setFilterCategory('pending')}
+                  className={`px-4 py-2.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition whitespace-nowrap shrink-0 text-center ${
+                    filterCategory === 'pending'
+                      ? 'bg-amber-500 text-slate-950 shadow-sm'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
+                  }`}
+                >
+                  Pending Checks
+                </button>
+
+                <button
+                  id="filter-tab-completed"
+                  type="button"
+                  onClick={() => setFilterCategory('completed')}
+                  className={`px-4 py-2.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition whitespace-nowrap shrink-0 text-center ${
+                    filterCategory === 'completed'
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
+                  }`}
+                >
+                  Completed
+                </button>
+
+                <button
+                  id="filter-tab-non-compliance"
+                  type="button"
+                  onClick={() => setFilterCategory('non-compliance')}
+                  className={`px-4 py-2.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition whitespace-nowrap shrink-0 flex items-center justify-center gap-1.5 ${
+                    filterCategory === 'non-compliance'
+                      ? 'bg-rose-600 text-white shadow-sm ring-2 ring-rose-500/30'
+                      : 'bg-rose-50 text-rose-800 hover:bg-rose-100 border border-rose-200/80'
+                  }`}
+                >
+                  <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                  <span>Non-Compliance ({nonComplianceGroupCount}) ❌</span>
+                </button>
               </div>
-              <span className="text-lg leading-none">{isMobileFilterMenuOpen ? '−' : '+'}</span>
-            </button>
 
-            <div className={`${isMobileFilterMenuOpen ? 'flex' : 'hidden'} sm:flex flex-col sm:flex-row items-stretch sm:items-center gap-1.5`}>
+              {/* Overflow Ellipsis Button */}
               <button
-                id="filter-tab-all"
+                id="filter-overflow-menu-btn"
                 type="button"
-                onClick={() => setFilterCategory('all')}
-                className={`px-4 py-2.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition whitespace-nowrap text-left sm:text-center ${
-                  filterCategory === 'all'
-                    ? 'bg-slate-900 text-white shadow-sm'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
+                onClick={() => setIsFilterOverflowOpen(!isFilterOverflowOpen)}
+                title="Expand all filter options in grid menu"
+                aria-label="Expand all filter options in grid menu"
+                className={`p-2.5 rounded-xl border text-xs font-bold transition flex items-center justify-center shrink-0 ${
+                  isFilterOverflowOpen
+                    ? 'bg-slate-900 text-white border-slate-900 ring-2 ring-slate-900/20 shadow-sm'
+                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border-slate-200'
                 }`}
               >
-                All Operations ({dayData.groups.length})
+                <MoreHorizontal className="w-4 h-4 shrink-0" />
               </button>
 
-              <button
-                id="filter-tab-flights"
-                type="button"
-                onClick={() => setFilterCategory('flights')}
-                className={`px-4 py-2.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition whitespace-nowrap flex items-center justify-start sm:justify-center gap-1.5 ${
-                  filterCategory === 'flights'
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
-                }`}
-              >
-                <Plane className="w-3.5 h-3.5" />
-                <span>Flight Turnarounds (4)</span>
-              </button>
+              {/* Subtle right-hand fade gradient overlay indicating scrollability */}
+              <div className="pointer-events-none absolute right-10 top-0 bottom-0 w-8 bg-gradient-to-l from-white via-white/80 to-transparent hidden sm:block z-10" />
+            </div>
+
+            {/* Search Input & Audit Log Trigger */}
+            <div className="flex items-center gap-2">
+              <div className="relative flex-1 sm:w-60">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
+                <input
+                  id="input-group-search"
+                  type="text"
+                  placeholder="Search flight or group..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white font-mono transition"
+                />
+              </div>
 
               <button
-                id="filter-tab-terminal"
-                type="button"
-                onClick={() => setFilterCategory('terminal')}
-                className={`px-4 py-2.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition whitespace-nowrap flex items-center justify-start sm:justify-center gap-1.5 ${
-                  filterCategory === 'terminal'
-                    ? 'bg-blue-600 text-white shadow-sm'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
-                }`}
+                id="btn-open-audit-trail"
+                onClick={() => setIsAuditLogOpen(true)}
+                className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl border border-slate-200 transition shadow-2xs"
+                title="View Real-Time Audit Log"
               >
-                <Building2 className="w-3.5 h-3.5" />
-                <span>Terminal & Infrastructure</span>
-              </button>
-
-              <button
-                id="filter-tab-pending"
-                type="button"
-                onClick={() => setFilterCategory('pending')}
-                className={`px-4 py-2.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition whitespace-nowrap text-left sm:text-center ${
-                  filterCategory === 'pending'
-                    ? 'bg-amber-500 text-slate-950 shadow-sm'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
-                }`}
-              >
-                Pending Checks
-              </button>
-
-              <button
-                id="filter-tab-completed"
-                type="button"
-                onClick={() => setFilterCategory('completed')}
-                className={`px-4 py-2.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition whitespace-nowrap text-left sm:text-center ${
-                  filterCategory === 'completed'
-                    ? 'bg-emerald-600 text-white shadow-sm'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
-                }`}
-              >
-                Completed
+                <History className="w-4 h-4" />
               </button>
             </div>
           </div>
 
-          {/* Search Input & Audit Log Trigger */}
-          <div className="flex items-center gap-2">
-            <div className="relative flex-1 sm:w-60">
-              <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
-              <input
-                id="input-group-search"
-                type="text"
-                placeholder="Search flight or group..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white font-mono transition"
-              />
-            </div>
+          {/* Grid Layout Expansion when Overflow Menu Button (ellipsis) is clicked */}
+          {isFilterOverflowOpen && (
+            <div className="w-full pt-3 pb-1 px-1 border-t border-slate-200/80 animate-in fade-in slide-in-from-top-1 duration-150">
+              <div className="flex items-center justify-between mb-2.5 px-1">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                  <Filter className="w-3 h-3 text-slate-600" />
+                  All Available Filter Categories
+                </span>
+                <span className="text-[10px] text-slate-400 font-medium">Select to apply</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterCategory('all');
+                    setIsFilterOverflowOpen(false);
+                  }}
+                  className={`px-3 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition flex items-center justify-between border text-left ${
+                    filterCategory === 'all'
+                      ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
+                      : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border-slate-200'
+                  }`}
+                >
+                  <span className="truncate">All Operations</span>
+                  <span className="text-[10px] font-mono opacity-80 shrink-0">({dayData.groups.length})</span>
+                </button>
 
-            <button
-              id="btn-open-audit-trail"
-              onClick={() => setIsAuditLogOpen(true)}
-              className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl border border-slate-200 transition shadow-2xs"
-              title="View Real-Time Audit Log"
-            >
-              <History className="w-4 h-4" />
-            </button>
-          </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterCategory('flights');
+                    setIsFilterOverflowOpen(false);
+                  }}
+                  className={`px-3 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition flex items-center justify-between border text-left ${
+                    filterCategory === 'flights'
+                      ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                      : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <Plane className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">Flight Turnarounds</span>
+                  </div>
+                  <span className="text-[10px] font-mono opacity-80 shrink-0">(4)</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterCategory('terminal');
+                    setIsFilterOverflowOpen(false);
+                  }}
+                  className={`px-3 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition flex items-center justify-between border text-left ${
+                    filterCategory === 'terminal'
+                      ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+                      : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border-slate-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <Building2 className="w-3.5 h-3.5 shrink-0" />
+                    <span className="truncate">Terminal Ops</span>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterCategory('pending');
+                    setIsFilterOverflowOpen(false);
+                  }}
+                  className={`px-3 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition flex items-center justify-between border text-left ${
+                    filterCategory === 'pending'
+                      ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-sm'
+                      : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border-slate-200'
+                  }`}
+                >
+                  <span className="truncate">Pending Checks</span>
+                  <Clock className="w-3 h-3 opacity-70 shrink-0" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterCategory('completed');
+                    setIsFilterOverflowOpen(false);
+                  }}
+                  className={`px-3 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition flex items-center justify-between border text-left ${
+                    filterCategory === 'completed'
+                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                      : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border-slate-200'
+                  }`}
+                >
+                  <span className="truncate">Completed</span>
+                  <CheckCircle2 className="w-3 h-3 opacity-70 shrink-0" />
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterCategory('non-compliance');
+                    setIsFilterOverflowOpen(false);
+                  }}
+                  className={`px-3 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition flex items-center justify-between border text-left ${
+                    filterCategory === 'non-compliance'
+                      ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
+                      : 'bg-rose-50 text-rose-800 hover:bg-rose-100 border-rose-200'
+                  }`}
+                >
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                    <span className="truncate">Non-Compliance</span>
+                  </div>
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 shrink-0">
+                    {nonComplianceGroupCount}
+                  </span>
+                </button>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Operational Groups Hierarchical List */}

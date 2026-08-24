@@ -603,28 +603,150 @@ export function addAuditLog(
   }
 }
 
+// Re-export fetchShiftsForDateRange
+export { fetchShiftsForDateRange } from './firestoreService';
+
+// Non-Compliance Record interface for date range analysis & export
+export interface NonComplianceRecord {
+  date: string;
+  groupId: string;
+  groupName: string;
+  groupCode: string;
+  isFlightGroup: boolean;
+  subGroupName: string;
+  checklistTitle: string;
+  seqNo: number;
+  itemText: string;
+  isMandatory: boolean;
+  status: 'missed' | 'incorrectly_executed';
+  remark: string;
+  actionBy: string;
+  actionAt: string;
+}
+
+// Compile all missed and incorrectly executed checklist items across multiple historical shifts
+export function compileNonComplianceRecords(shifts: DayOperationalData[]): NonComplianceRecord[] {
+  const records: NonComplianceRecord[] = [];
+
+  for (const shift of shifts) {
+    if (!shift || !shift.groups) continue;
+    for (const group of shift.groups) {
+      if (!group || !group.subGroups) continue;
+      for (const sub of group.subGroups) {
+        if (!sub || !sub.checklists) continue;
+        for (const chk of sub.checklists) {
+          if (!chk || !chk.items) continue;
+          for (const item of chk.items) {
+            if (item.status === 'missed' || item.status === 'incorrectly_executed') {
+              records.push({
+                date: shift.date,
+                groupId: group.id,
+                groupName: group.name,
+                groupCode: group.code,
+                isFlightGroup: group.isFlightGroup,
+                subGroupName: sub.name,
+                checklistTitle: chk.title,
+                seqNo: item.sequenceOrder,
+                itemText: item.text,
+                isMandatory: item.isMandatory,
+                status: item.status,
+                remark: item.remark || '',
+                actionBy: item.actionBy || '',
+                actionAt: item.actionAt || '',
+              });
+            }
+          }
+        }
+      }
+    }
+  }
+
+  // Sort descending by date
+  records.sort((a, b) => b.date.localeCompare(a.date) || a.seqNo - b.seqNo);
+
+  return records;
+}
+
 // ----------------- HIERARCHICAL STATUS CALCULATIONS -----------------
 
 export function isChecklistComplete(chk: Checklist): boolean {
   if (!chk.items || chk.items.length === 0) return true;
-  // All items must be 'done' or 'skipped' (and no item may be 'pinned' or 'not_done' if mandatory)
+  // All items must be processed (i.e. 'done', 'skipped', 'missed', or 'incorrectly_executed')
   return chk.items.every((item) => {
-    if (item.isMandatory) {
-      return item.status === 'done'; // mandatory must be done
-    }
-    return item.status === 'done' || item.status === 'skipped';
+    return (
+      item.status === 'done' ||
+      item.status === 'skipped' ||
+      item.status === 'missed' ||
+      item.status === 'incorrectly_executed'
+    );
   });
 }
 
-export function getChecklistProgress(chk: Checklist): { done: number; total: number; skipped: number; pinned: number; pending: number; percent: number } {
+export function getChecklistProgress(chk: Checklist): {
+  done: number;
+  total: number;
+  skipped: number;
+  pinned: number;
+  missed: number;
+  incorrectlyExecuted: number;
+  pending: number;
+  percent: number;
+} {
   const items = chk.items || [];
   const total = items.length;
   const done = items.filter((i) => i.status === 'done').length;
   const skipped = items.filter((i) => i.status === 'skipped').length;
   const pinned = items.filter((i) => i.status === 'pinned').length;
+  const missed = items.filter((i) => i.status === 'missed').length;
+  const incorrectlyExecuted = items.filter((i) => i.status === 'incorrectly_executed').length;
   const pending = items.filter((i) => i.status === 'not_done').length;
-  const percent = total > 0 ? Math.round((done / total) * 100) : 100;
-  return { done, total, skipped, pinned, pending, percent };
+  const processed = done + skipped + missed + incorrectlyExecuted;
+  const percent = total > 0 ? Math.round((processed / total) * 100) : 100;
+  return { done, total, skipped, pinned, missed, incorrectlyExecuted, pending, percent };
+}
+
+export function getChecklistStatusDisplay(chk: Checklist): {
+  label: string;
+  isComplete: boolean;
+  hasNonCompliance: boolean;
+  missedCount: number;
+  incorrectCount: number;
+} {
+  const prog = getChecklistProgress(chk);
+  const isComplete = chk.status === 'completed';
+  const missedCount = prog.missed;
+  const incorrectCount = prog.incorrectlyExecuted;
+  const hasNonCompliance = missedCount > 0 || incorrectCount > 0;
+
+  if (isComplete) {
+    if (hasNonCompliance) {
+      const parts: string[] = [];
+      if (missedCount > 0) parts.push(`${missedCount} Missed`);
+      if (incorrectCount > 0) parts.push(`${incorrectCount} Incorrectly Executed`);
+      return {
+        label: `Completed (${parts.join(', ')})`,
+        isComplete: true,
+        hasNonCompliance: true,
+        missedCount,
+        incorrectCount,
+      };
+    }
+    return {
+      label: 'Completed',
+      isComplete: true,
+      hasNonCompliance: false,
+      missedCount: 0,
+      incorrectCount: 0,
+    };
+  }
+
+  return {
+    label: prog.done > 0 ? `In-Progress (${prog.done}/${prog.total})` : `Pending (${prog.total} items)`,
+    isComplete: false,
+    hasNonCompliance: false,
+    missedCount,
+    incorrectCount,
+  };
 }
 
 export function isSubGroupComplete(sub: SubOperationalGroup, groupName?: string): boolean {
@@ -650,6 +772,8 @@ export function getDayOverallProgress(dayData: DayOperationalData): {
   doneItems: number;
   skippedItems: number;
   pinnedItems: number;
+  missedItems: number;
+  incorrectItems: number;
   percent: number;
   completedGroups: number;
   totalGroups: number;
@@ -659,6 +783,8 @@ export function getDayOverallProgress(dayData: DayOperationalData): {
   let doneItems = 0;
   let skippedItems = 0;
   let pinnedItems = 0;
+  let missedItems = 0;
+  let incorrectItems = 0;
   let completedGroups = 0;
   let verifiedGroups = 0;
 
@@ -683,18 +809,23 @@ export function getDayOverallProgress(dayData: DayOperationalData): {
           if (item.status === 'done') doneItems++;
           else if (item.status === 'skipped') skippedItems++;
           else if (item.status === 'pinned') pinnedItems++;
+          else if (item.status === 'missed') missedItems++;
+          else if (item.status === 'incorrectly_executed') incorrectItems++;
         }
       }
     }
   }
 
-  const percent = totalItems > 0 ? Math.round((doneItems / totalItems) * 100) : 0;
+  const processedItems = doneItems + skippedItems + missedItems + incorrectItems;
+  const percent = totalItems > 0 ? Math.round((processedItems / totalItems) * 100) : 0;
 
   return {
     totalItems,
     doneItems,
     skippedItems,
     pinnedItems,
+    missedItems,
+    incorrectItems,
     percent,
     completedGroups,
     totalGroups,
@@ -899,6 +1030,8 @@ export function exportShiftToExcel(dayData: DayOperationalData): void {
     ['Items Done:', summary.doneItems],
     ['Items Skipped (Optional):', summary.skippedItems],
     ['Items Pinned:', summary.pinnedItems],
+    ['Items Missed:', summary.missedItems],
+    ['Items Incorrectly Executed:', summary.incorrectItems],
     [],
     ['Detailed Item Execution Breakdown: See next sheet'],
   ];
@@ -921,7 +1054,7 @@ export function exportShiftToExcel(dayData: DayOperationalData): void {
       'Status',
       'Executed By',
       'Executed At',
-      'Skip Reason / Remarks',
+      'Operator Free-Text Remark / Reason',
     ],
   ];
 
@@ -941,7 +1074,7 @@ export function exportShiftToExcel(dayData: DayOperationalData): void {
             item.status.toUpperCase(),
             item.actionBy || chk.completedBy || 'N/A',
             item.actionAt || chk.completedAt || 'N/A',
-            item.skipReason || chk.remarks || '',
+            item.remark || item.skipReason || chk.remarks || '',
           ]);
         }
       }
@@ -958,12 +1091,95 @@ export function exportShiftToExcel(dayData: DayOperationalData): void {
     { wch: 8 },
     { wch: 50 },
     { wch: 12 },
-    { wch: 12 },
+    { wch: 18 },
     { wch: 20 },
     { wch: 24 },
-    { wch: 30 },
+    { wch: 40 },
   ];
   XLSX.utils.book_append_sheet(wb, wsItems, 'Detailed_Audit_Log');
 
   XLSX.writeFile(wb, `Aviation_Ground_Ops_Audit_${dayData.date}.xlsx`);
+}
+
+// Export Non-Compliance Report (Missed & Incorrectly Executed Items) Over Date Range to Excel
+export function exportNonComplianceReportToExcel(
+  records: NonComplianceRecord[],
+  startDate: string,
+  endDate: string
+): void {
+  const wb = XLSX.utils.book_new();
+
+  const missedCount = records.filter((r) => r.status === 'missed').length;
+  const incorrectCount = records.filter((r) => r.status === 'incorrectly_executed').length;
+
+  // Sheet 1: Executive Non-Compliance Summary
+  const summaryRows = [
+    ['AVIATION GROUND OPERATIONS - NON-COMPLIANCE AUDIT REPORT'],
+    ['Report Date Range:', `${startDate} to ${endDate}`],
+    ['Export Timestamp:', new Date().toLocaleString()],
+    ['Total Non-Compliance Occurrences:', records.length],
+    ['Total Missed Items:', missedCount],
+    ['Total Incorrectly Executed Items:', incorrectCount],
+    [],
+    ['Detailed Item Log: See "Non_Compliance_Log" sheet'],
+  ];
+
+  const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
+  wsSummary['!cols'] = [{ wch: 35 }, { wch: 45 }];
+  XLSX.utils.book_append_sheet(wb, wsSummary, 'Audit_Summary');
+
+  // Sheet 2: Detailed Non-Compliance Log
+  const logRows: any[][] = [
+    [
+      'Date',
+      'Flight / Op Group',
+      'Group Type',
+      'Sub-Group',
+      'Checklist Title',
+      'Seq No',
+      'Checklist Item Text',
+      'Mandatory?',
+      'Execution Status',
+      'Operator / Auditor',
+      'Action Timestamp',
+      'Free-Text Remark / Operational Reason',
+    ],
+  ];
+
+  records.forEach((rec) => {
+    logRows.push([
+      rec.date,
+      rec.groupName,
+      rec.isFlightGroup ? 'Flight Turnaround' : 'Terminal / General Ops',
+      rec.subGroupName,
+      rec.checklistTitle,
+      rec.seqNo,
+      rec.itemText,
+      rec.isMandatory ? 'YES' : 'NO',
+      rec.status === 'missed' ? 'MISSED' : 'INCORRECTLY EXECUTED',
+      rec.actionBy || 'N/A',
+      rec.actionAt ? new Date(rec.actionAt).toLocaleString() : 'N/A',
+      rec.remark || 'No remark entered',
+    ]);
+  });
+
+  const wsLog = XLSX.utils.aoa_to_sheet(logRows);
+  wsLog['!cols'] = [
+    { wch: 14 },
+    { wch: 22 },
+    { wch: 20 },
+    { wch: 26 },
+    { wch: 30 },
+    { wch: 8 },
+    { wch: 50 },
+    { wch: 12 },
+    { wch: 22 },
+    { wch: 22 },
+    { wch: 22 },
+    { wch: 50 },
+  ];
+
+  XLSX.utils.book_append_sheet(wb, wsLog, 'Non_Compliance_Log');
+
+  XLSX.writeFile(wb, `Aviation_NonCompliance_Report_${startDate}_to_${endDate}.xlsx`);
 }

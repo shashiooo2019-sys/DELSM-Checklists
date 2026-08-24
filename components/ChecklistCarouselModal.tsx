@@ -85,6 +85,13 @@ function ChecklistCarouselContent({
   const [skipAlert, setSkipAlert] = useState<string | null>(null);
   const [isSkipReasonModalOpen, setIsSkipReasonModalOpen] = useState<boolean>(false);
   const [skipReasonText, setSkipReasonText] = useState<string>('');
+  
+  // Non-compliance (Missed / Incorrectly Executed) remark sub-modal
+  const [isNonComplianceModalOpen, setIsNonComplianceModalOpen] = useState<boolean>(false);
+  const [nonComplianceType, setNonComplianceType] = useState<'missed' | 'incorrectly_executed'>('missed');
+  const [nonComplianceRemarkText, setNonComplianceRemarkText] = useState<string>('');
+  const [nonComplianceError, setNonComplianceError] = useState<string | null>(null);
+
   const [isViewAllModalOpen, setIsViewAllModalOpen] = useState<boolean>(false);
   
   // Free-text remarks modal upon completion
@@ -202,9 +209,43 @@ function ChecklistCarouselContent({
     }
   };
 
+  const handleOpenNonComplianceModal = (type: 'missed' | 'incorrectly_executed') => {
+    if (!currentItem) return;
+    setNonComplianceType(type);
+    setNonComplianceRemarkText(currentItem.remark || '');
+    setNonComplianceError(null);
+    setIsNonComplianceModalOpen(true);
+  };
+
+  const handleConfirmNonCompliance = () => {
+    if (!currentItem) return;
+    if (!nonComplianceRemarkText.trim()) {
+      setNonComplianceError(`A remark is required when marking an item as ${nonComplianceType === 'missed' ? 'Missed' : 'Incorrectly Executed'}. Please enter details.`);
+      return;
+    }
+
+    const updated = [...items];
+    updated[currentIndex] = {
+      ...currentItem,
+      status: nonComplianceType,
+      remark: nonComplianceRemarkText.trim(),
+      actionBy: currentUser ? `${currentUser.name} (${currentUser.uNumber})` : 'Airside Operator',
+      actionAt: new Date().toISOString(),
+    };
+    setItems(updated);
+    setIsNonComplianceModalOpen(false);
+    setNonComplianceRemarkText('');
+    setNonComplianceError(null);
+    setSkipAlert(null);
+
+    if (currentIndex < totalItems - 1) {
+      setCurrentIndex((prev) => prev + 1);
+    }
+  };
+
   // Keyboard navigation & shortcuts
   useEffect(() => {
-    if (isRemarksModalOpen || isSkipReasonModalOpen) return;
+    if (isRemarksModalOpen || isSkipReasonModalOpen || isNonComplianceModalOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'ArrowRight') {
@@ -218,6 +259,10 @@ function ChecklistCarouselContent({
           handlePinItem();
         } else if (e.key.toLowerCase() === 's') {
           handleAttemptSkip();
+        } else if (e.key.toLowerCase() === 'm') {
+          handleOpenNonComplianceModal('missed');
+        } else if (e.key.toLowerCase() === 'i') {
+          handleOpenNonComplianceModal('incorrectly_executed');
         }
       }
     };
@@ -228,11 +273,14 @@ function ChecklistCarouselContent({
 
   // Validation calculations for submit
   const pinnedCount = items.filter((i) => i.status === 'pinned').length;
-  const unprocessedMandatoryCount = items.filter((i) => i.isMandatory && i.status !== 'done').length;
+  const notDoneCount = items.filter((i) => i.status === 'not_done').length;
   const doneCount = items.filter((i) => i.status === 'done').length;
   const skippedCount = items.filter((i) => i.status === 'skipped').length;
+  const missedCount = items.filter((i) => i.status === 'missed').length;
+  const incorrectlyCount = items.filter((i) => i.status === 'incorrectly_executed').length;
   
-  const canSubmit = pinnedCount === 0 && unprocessedMandatoryCount === 0;
+  // A checklist can be submitted when all items are processed (none are pinned or not_done)
+  const canSubmit = pinnedCount === 0 && notDoneCount === 0;
 
   const handleOpenRemarksModal = () => {
     if (!canSubmit) return;
@@ -397,14 +445,30 @@ function ChecklistCarouselContent({
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="text-[11px] text-slate-500">
-              Done: <strong className="text-emerald-700 font-bold">{doneCount}</strong> | Skipped: <strong className="text-slate-700 font-semibold">{skippedCount}</strong>
+            <span className="text-[11px] text-slate-500 flex items-center gap-2 flex-wrap">
+              <span>Done: <strong className="text-emerald-700 font-bold">{doneCount}</strong></span>
+              <span>·</span>
+              <span>Skipped: <strong className="text-slate-700 font-semibold">{skippedCount}</strong></span>
+              {(missedCount > 0 || incorrectlyCount > 0) && (
+                <>
+                  <span>·</span>
+                  <span className="text-rose-700 font-bold">Missed: {missedCount}</span>
+                  <span>·</span>
+                  <span className="text-rose-800 font-bold">Incorrect: {incorrectlyCount}</span>
+                </>
+              )}
             </span>
-            <div className="w-24 h-2 bg-slate-200 rounded-full overflow-hidden">
+            <div className="w-24 h-2 bg-slate-200 rounded-full overflow-hidden flex">
               <div 
                 className="h-full bg-emerald-600 transition-all duration-300"
                 style={{ width: `${Math.round((doneCount / totalItems) * 100)}%` }}
               />
+              {(missedCount > 0 || incorrectlyCount > 0) && (
+                <div 
+                  className="h-full bg-rose-600 transition-all duration-300"
+                  style={{ width: `${Math.round(((missedCount + incorrectlyCount) / totalItems) * 100)}%` }}
+                />
+              )}
             </div>
           </div>
         </div>
@@ -434,7 +498,11 @@ function ChecklistCarouselContent({
               id={`carousel-card-item-${currentIndex}`}
               onTouchStart={handleTouchStart}
               onTouchEnd={handleTouchEnd}
-              className="bg-white border-2 border-slate-200 rounded-2xl p-4 sm:p-6 flex flex-col justify-between shadow-sm relative min-h-[240px] select-none touch-pan-y"
+              className={`bg-white border-2 rounded-2xl p-4 sm:p-6 flex flex-col justify-between shadow-sm relative min-h-[240px] select-none touch-pan-y ${
+                currentItem.status === 'missed' || currentItem.status === 'incorrectly_executed'
+                  ? 'border-rose-300 ring-1 ring-rose-200'
+                  : 'border-slate-200'
+              }`}
             >
               {/* Card Meta Badges */}
               <div className="flex items-center justify-between flex-wrap gap-2 pb-3 border-b border-slate-100">
@@ -473,6 +541,16 @@ function ChecklistCarouselContent({
                       SKIPPED
                     </span>
                   )}
+                  {currentItem.status === 'missed' && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-300 text-xs font-extrabold shadow-2xs">
+                      <X className="w-3.5 h-3.5 text-rose-600 stroke-[3]" /> MISSED ❌
+                    </span>
+                  )}
+                  {currentItem.status === 'incorrectly_executed' && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-100 text-rose-900 border border-rose-300 text-xs font-extrabold shadow-2xs">
+                      <AlertTriangle className="w-3.5 h-3.5 text-rose-600" /> INCORRECTLY EXECUTED ❌
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -485,6 +563,15 @@ function ChecklistCarouselContent({
                   <p className="mt-2.5 text-xs text-slate-600 italic bg-slate-50 p-2.5 rounded-xl border border-slate-200">
                     Skip Note: {currentItem.skipReason}
                   </p>
+                )}
+                {currentItem.remark && (
+                  <div className="mt-2.5 p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-900 space-y-0.5">
+                    <span className="font-bold flex items-center gap-1">
+                      <MessageSquare className="w-3 h-3 text-rose-600" />
+                      Operator Non-Compliance Remark:
+                    </span>
+                    <p className="font-mono text-rose-950 font-medium">{currentItem.remark}</p>
+                  </div>
                 )}
               </div>
 
@@ -500,7 +587,7 @@ function ChecklistCarouselContent({
                 </button>
 
                 <span className="font-mono text-[11px] text-slate-400 text-center">
-                  <span className="hidden sm:inline">Keyboard: [D] Done · [P] Pin · [S] Skip</span>
+                  <span className="hidden sm:inline">Keyboard: [D] Done · [P] Pin · [S] Skip · [M] Missed · [I] Incorrect</span>
                   <span className="inline sm:hidden">Swipe left/right to navigate</span>
                 </span>
 
@@ -517,56 +604,96 @@ function ChecklistCarouselContent({
           )}
 
           {/* Action Control Deck */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {/* DONE Button */}
-            <button
-              id="btn-action-done"
-              type="button"
-              disabled={isShiftClosed}
-              onClick={handleMarkDone}
-              className={`py-3.5 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${
-                currentItem?.status === 'done'
-                  ? 'bg-emerald-700 text-white ring-2 ring-emerald-400'
-                  : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-              }`}
-            >
-              <Check className="w-5 h-5" />
-              <span>DONE (Mark Checked)</span>
-            </button>
+          <div className="space-y-2">
+            {/* Row 1: Primary Actions (DONE, PIN, SKIP) */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+              {/* DONE Button */}
+              <button
+                id="btn-action-done"
+                type="button"
+                disabled={isShiftClosed}
+                onClick={handleMarkDone}
+                className={`py-3 px-3.5 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${
+                  currentItem?.status === 'done'
+                    ? 'bg-emerald-700 text-white ring-2 ring-emerald-400'
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                }`}
+              >
+                <Check className="w-4 h-4" />
+                <span>DONE (Mark Checked)</span>
+              </button>
 
-            {/* PIN Button */}
-            <button
-              id="btn-action-pin"
-              type="button"
-              disabled={isShiftClosed}
-              onClick={handlePinItem}
-              className={`py-3.5 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition disabled:opacity-50 disabled:cursor-not-allowed ${
-                currentItem?.status === 'pinned'
-                  ? 'bg-amber-500 text-slate-950 ring-2 ring-amber-400'
-                  : 'bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800'
-              }`}
-              title="Defer processing to complete later"
-            >
-              <Pin className="w-4 h-4 text-amber-700" />
-              <span>PIN (Defer Card)</span>
-            </button>
+              {/* PIN Button */}
+              <button
+                id="btn-action-pin"
+                type="button"
+                disabled={isShiftClosed}
+                onClick={handlePinItem}
+                className={`py-3 px-3.5 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition disabled:opacity-50 disabled:cursor-not-allowed ${
+                  currentItem?.status === 'pinned'
+                    ? 'bg-amber-500 text-slate-950 ring-2 ring-amber-400'
+                    : 'bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800'
+                }`}
+                title="Defer processing to complete later"
+              >
+                <Pin className="w-4 h-4 text-amber-700" />
+                <span>PIN (Defer Card)</span>
+              </button>
 
-            {/* SKIP Button */}
-            <button
-              id="btn-action-skip"
-              type="button"
-              disabled={isShiftClosed}
-              onClick={handleAttemptSkip}
-              className={`py-3.5 px-4 rounded-xl font-bold text-sm flex items-center justify-center gap-2 transition border disabled:opacity-50 disabled:cursor-not-allowed ${
-                currentItem?.isMandatory
-                  ? 'bg-slate-100 border-slate-200 text-slate-400 hover:border-rose-300 hover:text-rose-600'
-                  : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700'
-              }`}
-              title={currentItem?.isMandatory ? 'Mandatory items cannot be skipped' : 'Skip optional item'}
-            >
-              <SkipForward className="w-4 h-4" />
-              <span>SKIP {currentItem?.isMandatory ? '(Restricted)' : '(Optional)'}</span>
-            </button>
+              {/* SKIP Button */}
+              <button
+                id="btn-action-skip"
+                type="button"
+                disabled={isShiftClosed}
+                onClick={handleAttemptSkip}
+                className={`py-3 px-3.5 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition border disabled:opacity-50 disabled:cursor-not-allowed ${
+                  currentItem?.isMandatory
+                    ? 'bg-slate-100 border-slate-200 text-slate-400 hover:border-rose-300 hover:text-rose-600'
+                    : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700'
+                }`}
+                title={currentItem?.isMandatory ? 'Mandatory items cannot be skipped' : 'Skip optional item'}
+              >
+                <SkipForward className="w-4 h-4" />
+                <span>SKIP {currentItem?.isMandatory ? '(Restricted)' : '(Optional)'}</span>
+              </button>
+            </div>
+
+            {/* Row 2: Non-Compliance Options (Marked with Red Cross) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+              {/* MISSED Button (Red Cross) */}
+              <button
+                id="btn-action-missed"
+                type="button"
+                disabled={isShiftClosed}
+                onClick={() => handleOpenNonComplianceModal('missed')}
+                className={`py-2.5 px-3.5 rounded-xl font-extrabold text-xs flex items-center justify-center gap-2 transition border shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed ${
+                  currentItem?.status === 'missed'
+                    ? 'bg-rose-700 text-white border-rose-800 ring-2 ring-rose-400'
+                    : 'bg-rose-50 hover:bg-rose-100 border-rose-300 text-rose-800 hover:border-rose-400'
+                }`}
+                title="Mark item as Missed with mandatory remark"
+              >
+                <X className="w-4 h-4 text-rose-600 stroke-[3] shrink-0" />
+                <span>❌ MISSED ITEM (Requires Remark)</span>
+              </button>
+
+              {/* INCORRECTLY EXECUTED Button (Red Cross) */}
+              <button
+                id="btn-action-incorrect"
+                type="button"
+                disabled={isShiftClosed}
+                onClick={() => handleOpenNonComplianceModal('incorrectly_executed')}
+                className={`py-2.5 px-3.5 rounded-xl font-extrabold text-xs flex items-center justify-center gap-2 transition border shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed ${
+                  currentItem?.status === 'incorrectly_executed'
+                    ? 'bg-rose-900 text-white border-rose-950 ring-2 ring-rose-400'
+                    : 'bg-amber-50 hover:bg-rose-100 border-rose-300 text-rose-900 hover:border-rose-400'
+                }`}
+                title="Mark item as Incorrectly Executed with mandatory remark"
+              >
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>❌ INCORRECTLY EXECUTED (Requires Remark)</span>
+              </button>
+            </div>
           </div>
 
           {/* Quick Jump Thumbnail Rail */}
@@ -582,6 +709,7 @@ function ChecklistCarouselContent({
                 if (item.status === 'done') bgClass = 'bg-emerald-50 border-emerald-300 text-emerald-800';
                 else if (item.status === 'pinned') bgClass = 'bg-amber-50 border-amber-300 text-amber-900';
                 else if (item.status === 'skipped') bgClass = 'bg-slate-100 border-slate-200 text-slate-400';
+                else if (item.status === 'missed' || item.status === 'incorrectly_executed') bgClass = 'bg-rose-100 border-rose-300 text-rose-900 font-extrabold';
 
                 return (
                   <button
@@ -598,6 +726,7 @@ function ChecklistCarouselContent({
                     <span>{idx + 1}</span>
                     {item.status === 'done' && <Check className="w-3 h-3 text-emerald-600 shrink-0" />}
                     {item.status === 'pinned' && <Pin className="w-2.5 h-2.5 text-amber-600 shrink-0" />}
+                    {(item.status === 'missed' || item.status === 'incorrectly_executed') && <X className="w-3 h-3 text-rose-600 stroke-[3] shrink-0" />}
                   </button>
                 );
               })}
@@ -613,14 +742,21 @@ function ChecklistCarouselContent({
                 <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
                 <span>
                   Cannot submit:{' '}
-                  {unprocessedMandatoryCount > 0 && `${unprocessedMandatoryCount} mandatory pending `}
+                  {notDoneCount > 0 && `${notDoneCount} pending `}
                   {pinnedCount > 0 && `${pinnedCount} pinned unresolved`}
+                </span>
+              </span>
+            ) : (missedCount > 0 || incorrectlyCount > 0) ? (
+              <span className="text-rose-900 font-extrabold flex items-center gap-1.5 bg-rose-50 px-3 py-1.5 rounded-lg border border-rose-200">
+                <X className="w-4 h-4 text-rose-600 stroke-[3] shrink-0" />
+                <span>
+                  Completed with Missed/Incorrect execution ({missedCount > 0 ? `${missedCount} Missed` : ''}{missedCount > 0 && incorrectlyCount > 0 ? ', ' : ''}{incorrectlyCount > 0 ? `${incorrectlyCount} Incorrectly Executed` : ''})
                 </span>
               </span>
             ) : (
               <span className="text-emerald-700 font-bold flex items-center gap-1.5">
                 <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>All mandatory checks satisfied. Ready for sign-off.</span>
+                <span>All checklist items processed. Ready for authorization.</span>
               </span>
             )}
           </div>
@@ -665,6 +801,74 @@ function ChecklistCarouselContent({
           </div>
         </div>
       </div>
+
+      {/* Non-Compliance Remark Sub-Modal (For Missed & Incorrectly Executed) */}
+      {isNonComplianceModalOpen && (
+        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div 
+            id="non-compliance-remark-modal-container"
+            className="w-full max-w-md bg-white border border-rose-300 rounded-2xl p-6 space-y-4 shadow-2xl text-slate-900"
+          >
+            <div className="flex items-center gap-3 pb-3 border-b border-rose-100">
+              <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 border border-rose-300 flex items-center justify-center font-extrabold text-lg">
+                ❌
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">
+                  {nonComplianceType === 'missed' ? 'Record Missed Checklist Item' : 'Record Incorrectly Executed Item'}
+                </h3>
+                <p className="text-xs text-rose-700 font-semibold">
+                  Mandatory Operational Rationale / Failure Details
+                </p>
+              </div>
+            </div>
+
+            {nonComplianceError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-start gap-2">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <span>{nonComplianceError}</span>
+              </div>
+            )}
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-bold text-slate-700">
+                Item: <span className="text-slate-900 font-mono">#{currentItem?.sequenceOrder} {currentItem?.text}</span>
+              </label>
+              <textarea
+                id="input-non-compliance-remark"
+                rows={3}
+                placeholder={
+                  nonComplianceType === 'missed'
+                    ? 'Enter operational rationale for missing this item (e.g., Gate congestion, GSE unavailability, bypass authorized by Duty Manager)...'
+                    : 'Enter details of incorrect execution (e.g., Pressure setting off by 5 PSI, incorrect hose coupled, re-checked and adjusted)...'
+                }
+                value={nonComplianceRemarkText}
+                onChange={(e) => setNonComplianceRemarkText(e.target.value)}
+                className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-rose-500 focus:bg-white placeholder:text-slate-400 font-sans"
+                autoFocus
+              />
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={() => setIsNonComplianceModalOpen(false)}
+                className="px-3.5 py-2 text-xs font-bold text-slate-600 hover:text-slate-900"
+              >
+                Cancel
+              </button>
+              <button
+                id="btn-confirm-non-compliance"
+                type="button"
+                onClick={handleConfirmNonCompliance}
+                className="px-5 py-2 bg-rose-700 hover:bg-rose-800 text-white font-bold text-xs rounded-xl shadow-sm flex items-center gap-1.5"
+              >
+                <span>Save Remark & Mark {nonComplianceType === 'missed' ? 'Missed' : 'Incorrect'}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Optional Skip Reason Sub-Modal */}
       {isSkipReasonModalOpen && (
@@ -719,7 +923,11 @@ function ChecklistCarouselContent({
               </div>
               <div>
                 <h3 className="text-base font-bold text-slate-900">Final Checklist Remarks (Mandatory)</h3>
-                <p className="text-xs text-slate-500">Record operational shift notes before official sign-off</p>
+                <p className="text-xs text-slate-500">
+                  {(missedCount > 0 || incorrectlyCount > 0) 
+                    ? `Summary: Completed with Missed/Incorrect execution (${missedCount} Missed, ${incorrectlyCount} Incorrectly Executed)` 
+                    : 'Record operational shift notes before official sign-off'}
+                </p>
               </div>
             </div>
 
@@ -837,6 +1045,16 @@ function ChecklistCarouselContent({
                           SKIPPED
                         </span>
                       )}
+                      {item.status === 'missed' && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-300 text-xs font-extrabold">
+                          <X className="w-3 h-3 text-rose-600 stroke-[3]" /> MISSED ❌
+                        </span>
+                      )}
+                      {item.status === 'incorrectly_executed' && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-100 text-rose-900 border border-rose-300 text-xs font-extrabold">
+                          <AlertTriangle className="w-3 h-3 text-rose-600" /> INCORRECTLY EXECUTED ❌
+                        </span>
+                      )}
                       {item.status === 'not_done' && (
                         <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-50 text-slate-500 text-xs font-medium border border-slate-200">
                           PENDING
@@ -849,13 +1067,16 @@ function ChecklistCarouselContent({
                     {item.text}
                   </p>
 
-                  {(item.actionBy || item.skipReason || item.actionAt) && (
+                  {(item.actionBy || item.skipReason || item.remark || item.actionAt) && (
                     <div className="pt-2 border-t border-slate-100 text-xs text-slate-500 flex flex-wrap items-center justify-between gap-2">
                       {item.actionBy && (
                         <span>By: <strong className="text-slate-700">{item.actionBy}</strong></span>
                       )}
                       {item.skipReason && (
-                        <span className="text-amber-800 italic">Note: {item.skipReason}</span>
+                        <span className="text-amber-800 italic">Skip Note: {item.skipReason}</span>
+                      )}
+                      {item.remark && (
+                        <span className="text-rose-900 font-medium">Remark: {item.remark}</span>
                       )}
                       {item.actionAt && (
                         <span className="font-mono text-[11px]">

@@ -26,8 +26,11 @@ import {
   subscribeUsers,
   ensureDateWindowInitialized,
   purgeOldShiftsAndAuditLogs,
+  compileNonComplianceRecords,
+  exportNonComplianceReportToExcel,
+  NonComplianceRecord,
 } from '@/lib/storage';
-import { fetchUsersFromFirestore, subscribeToUsersFromFirestore, saveUserToFirestore, saveUsersToFirestoreBatch, deleteUserFromFirestore } from '@/lib/firestoreService';
+import { fetchUsersFromFirestore, subscribeToUsersFromFirestore, saveUserToFirestore, saveUsersToFirestoreBatch, deleteUserFromFirestore, fetchShiftsForDateRange } from '@/lib/firestoreService';
 import { makeItem, FLIGHT_CODES, getNextChecklistVersion } from '@/lib/initialData';
 import { 
   X, 
@@ -74,7 +77,7 @@ interface AdminPanelProps {
   onSaveDayData: (data: DayOperationalData) => void;
 }
 
-type AdminTab = 'groups' | 'checklists' | 'excel' | 'users';
+type AdminTab = 'groups' | 'checklists' | 'excel' | 'users' | 'reports';
 
 let adminGeneralIdCounter = 5000;
 function generateUniqueId(prefix = 'id'): string {
@@ -99,6 +102,44 @@ export function AdminPanel({
   const [usersList, setUsersList] = useState<UserAccount[]>(loadUsers());
   const [userSearch, setUserSearch] = useState<string>('');
   const [feedbackMessage, setFeedbackMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+
+  // Non-Compliance Report & Compilation States
+  const [reportStartDate, setReportStartDate] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 7);
+    return d.toISOString().split('T')[0];
+  });
+  const [reportEndDate, setReportEndDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [isFetchingReport, setIsFetchingReport] = useState<boolean>(false);
+  const [compiledNonComplianceRecords, setCompiledNonComplianceRecords] = useState<NonComplianceRecord[]>([]);
+  const [hasReportBeenFetched, setHasReportBeenFetched] = useState<boolean>(false);
+  const [reportStatusFilter, setReportStatusFilter] = useState<'ALL' | 'missed' | 'incorrectly_executed'>('ALL');
+  const [reportSearchQuery, setReportSearchQuery] = useState<string>('');
+
+  const handleFetchNonComplianceReport = async () => {
+    if (!reportStartDate || !reportEndDate) {
+      alert('Please select both Start Date and End Date for the report range.');
+      return;
+    }
+    setIsFetchingReport(true);
+    try {
+      const shifts = await fetchShiftsForDateRange(reportStartDate, reportEndDate);
+      // Also ensure current day shift is included if within range
+      if (dayData && dayData.date >= reportStartDate && dayData.date <= reportEndDate) {
+        if (!shifts.some((s) => s.date === dayData.date)) {
+          shifts.push(dayData);
+        }
+      }
+      const records = compileNonComplianceRecords(shifts);
+      setCompiledNonComplianceRecords(records);
+      setHasReportBeenFetched(true);
+    } catch (err) {
+      console.error('Error fetching shifts for report:', err);
+      alert('Failed to load historical shift records from database.');
+    } finally {
+      setIsFetchingReport(false);
+    }
+  };
 
   useEffect(() => {
     if (!isOpen) return;
@@ -1965,11 +2006,11 @@ export function AdminPanel({
             onClick={() => setIsMobileNavOpen(!isMobileNavOpen)}
             className="sm:hidden w-full flex items-center justify-between px-3 py-2 bg-white border border-slate-200 text-slate-700 rounded-lg font-bold text-xs uppercase tracking-wider transition hover:bg-slate-50"
           >
-            <span>Nav: {activeTab === 'groups' ? '1. Operational Groups' : activeTab === 'checklists' ? '2. Checklist Builder' : activeTab === 'excel' ? '3. Excel Importer' : '4. Personnel Roster'}</span>
+            <span>Nav: {activeTab === 'groups' ? '1. Operational Groups' : activeTab === 'checklists' ? '2. Checklist Builder' : activeTab === 'excel' ? '3. Excel Importer' : activeTab === 'users' ? '4. Personnel Roster' : '5. Non-Compliance Analysis'}</span>
             <span className="text-lg leading-none">{isMobileNavOpen ? '−' : '+'}</span>
           </button>
 
-          <div className={`${isMobileNavOpen ? 'flex' : 'hidden'} sm:flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mt-2 sm:mt-0`}>
+          <div className={`${isMobileNavOpen ? 'flex' : 'hidden'} sm:flex flex-col sm:flex-row items-stretch sm:items-center gap-2 mt-2 sm:mt-0 overflow-x-auto`}>
             <button
               id="tab-btn-groups"
               type="button"
@@ -2024,6 +2065,20 @@ export function AdminPanel({
             >
               <Users className="w-4 h-4" />
               <span>4. Personnel Roster</span>
+            </button>
+
+            <button
+              id="tab-btn-reports"
+              type="button"
+              onClick={() => { setActiveTab('reports'); setIsMobileNavOpen(false); }}
+              className={`py-3 px-3.5 text-xs font-bold uppercase tracking-wider flex items-center justify-start sm:justify-center gap-2 sm:border-b-2 transition whitespace-nowrap rounded-lg sm:rounded-none ${
+                activeTab === 'reports'
+                  ? 'bg-rose-100 sm:bg-transparent sm:border-rose-600 text-rose-700'
+                  : 'sm:border-transparent text-slate-500 hover:text-slate-900 hover:bg-slate-100 sm:hover:bg-transparent'
+              }`}
+            >
+              <AlertCircle className="w-4 h-4 text-rose-600" />
+              <span>5. Non-Compliance Analysis ❌</span>
             </button>
           </div>
         </div>
@@ -3345,6 +3400,268 @@ export function AdminPanel({
                   </div>
                 </div>
               </div>
+            </div>
+          )}
+
+          {/* TAB 5: NON-COMPLIANCE ANALYSIS & DATE RANGE EXCEL EXPORT */}
+          {activeTab === 'reports' && (
+            <div className="space-y-6">
+              {/* Header Banner */}
+              <div className="p-5 bg-rose-50 border border-rose-200 rounded-2xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4 shadow-2xs">
+                <div className="flex items-start gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 border border-rose-300 flex items-center justify-center shrink-0 font-extrabold text-lg">
+                    ❌
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+                      Non-Compliance & Quality Audit Compilation
+                    </h3>
+                    <p className="text-xs text-slate-600 mt-0.5">
+                      Compile Missed & Incorrectly Executed checklist items over historical Date Ranges with free-text operational remarks and Excel export.
+                    </p>
+                  </div>
+                </div>
+
+                {hasReportBeenFetched && compiledNonComplianceRecords.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (compiledNonComplianceRecords.length === 0) {
+                        alert('No non-compliance records to export.');
+                        return;
+                      }
+                      exportNonComplianceReportToExcel(compiledNonComplianceRecords, reportStartDate, reportEndDate);
+                    }}
+                    className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-sm transition flex items-center gap-2 shrink-0 cursor-pointer"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Export Non-Compliance Report to Excel (.xlsx)</span>
+                  </button>
+                )}
+              </div>
+
+              {/* Date Range Query Controls */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-5 space-y-4 shadow-2xs">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-2">
+                  <Calendar className="w-4 h-4 text-rose-600" />
+                  <span>Select Historical Analysis Date Window</span>
+                </h4>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">From Date (Start):</label>
+                    <input
+                      type="date"
+                      value={reportStartDate}
+                      onChange={(e) => setReportStartDate(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:bg-white focus:ring-2 focus:ring-rose-500"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 mb-1">To Date (End):</label>
+                    <input
+                      type="date"
+                      value={reportEndDate}
+                      onChange={(e) => setReportEndDate(e.target.value)}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:bg-white focus:ring-2 focus:ring-rose-500"
+                    />
+                  </div>
+
+                  <div>
+                    <button
+                      type="button"
+                      onClick={handleFetchNonComplianceReport}
+                      disabled={isFetchingReport}
+                      className="w-full py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-sm transition flex items-center justify-center gap-2 disabled:opacity-50 cursor-pointer"
+                    >
+                      {isFetchingReport ? (
+                        <>
+                          <Clock className="w-4 h-4 animate-spin" />
+                          <span>Fetching Database Shifts...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Filter className="w-4 h-4" />
+                          <span>Compile Non-Compliance Report</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Report Results View */}
+              {hasReportBeenFetched && (
+                <div className="space-y-4">
+                  {/* Summary Metrics Row */}
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-2xs flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-rose-50 text-rose-700 border border-rose-200 flex items-center justify-center font-bold text-lg">
+                        {compiledNonComplianceRecords.length}
+                      </div>
+                      <div>
+                        <div className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Total Non-Compliances</div>
+                        <div className="text-base font-extrabold text-slate-900">
+                          {compiledNonComplianceRecords.length} Occurrences Logged
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-2xs flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-800 border border-rose-300 flex items-center justify-center font-bold text-lg">
+                        {compiledNonComplianceRecords.filter((r) => r.status === 'missed').length}
+                      </div>
+                      <div>
+                        <div className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Missed Items ❌</div>
+                        <div className="text-base font-extrabold text-rose-800">
+                          {compiledNonComplianceRecords.filter((r) => r.status === 'missed').length} Skipped / Unprocessed
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="p-4 bg-white border border-slate-200 rounded-2xl shadow-2xs flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-900 border border-amber-300 flex items-center justify-center font-bold text-lg">
+                        {compiledNonComplianceRecords.filter((r) => r.status === 'incorrectly_executed').length}
+                      </div>
+                      <div>
+                        <div className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Incorrectly Executed ❌</div>
+                        <div className="text-base font-extrabold text-rose-900">
+                          {compiledNonComplianceRecords.filter((r) => r.status === 'incorrectly_executed').length} Execution Errors
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Filter & Search Bar */}
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-4 border border-slate-200 rounded-2xl shadow-2xs">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setReportStatusFilter('ALL')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                          reportStatusFilter === 'ALL'
+                            ? 'bg-slate-900 text-white'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                      >
+                        All ({compiledNonComplianceRecords.length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setReportStatusFilter('missed')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                          reportStatusFilter === 'missed'
+                            ? 'bg-rose-600 text-white'
+                            : 'bg-rose-50 text-rose-700 hover:bg-rose-100'
+                        }`}
+                      >
+                        Missed Only ({compiledNonComplianceRecords.filter((r) => r.status === 'missed').length})
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setReportStatusFilter('incorrectly_executed')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition ${
+                          reportStatusFilter === 'incorrectly_executed'
+                            ? 'bg-rose-900 text-white'
+                            : 'bg-rose-50 text-rose-900 hover:bg-rose-100'
+                        }`}
+                      >
+                        Incorrect Only ({compiledNonComplianceRecords.filter((r) => r.status === 'incorrectly_executed').length})
+                      </button>
+                    </div>
+
+                    <div className="relative w-full sm:w-72">
+                      <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Search flight, checklist, remark, staff..."
+                        value={reportSearchQuery}
+                        onChange={(e) => setReportSearchQuery(e.target.value)}
+                        className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-rose-500"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Non-Compliance Data Table */}
+                  <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-2xs">
+                    {compiledNonComplianceRecords.filter((rec) => {
+                      if (reportStatusFilter !== 'ALL' && rec.status !== reportStatusFilter) return false;
+                      if (reportSearchQuery.trim()) {
+                        const q = reportSearchQuery.toLowerCase();
+                        const matchText = `${rec.date} ${rec.groupName} ${rec.subGroupName} ${rec.checklistTitle} ${rec.itemText} ${rec.actionBy} ${rec.remark || ''}`.toLowerCase();
+                        if (!matchText.includes(q)) return false;
+                      }
+                      return true;
+                    }).length === 0 ? (
+                      <div className="p-8 text-center space-y-2">
+                        <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto" />
+                        <div className="text-sm font-bold text-slate-800">No Non-Compliance Records Found</div>
+                        <p className="text-xs text-slate-500">
+                          {compiledNonComplianceRecords.length === 0
+                            ? 'Zero missed or incorrectly executed checklist items were logged in this date range. Full compliance achieved!'
+                            : 'No records match your selected filter criteria.'}
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto max-h-[500px]">
+                        <table className="w-full text-left text-xs">
+                          <thead className="bg-slate-900 text-white font-mono sticky top-0 z-10">
+                            <tr>
+                              <th className="p-3">Date</th>
+                              <th className="p-3">Flight / Op Group</th>
+                              <th className="p-3">Sub-Group</th>
+                              <th className="p-3">Checklist Title</th>
+                              <th className="p-3">Seq #</th>
+                              <th className="p-3">Item Description</th>
+                              <th className="p-3">Status</th>
+                              <th className="p-3">Operator</th>
+                              <th className="p-3">Operational Rationale / Remark</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {compiledNonComplianceRecords
+                              .filter((rec) => {
+                                if (reportStatusFilter !== 'ALL' && rec.status !== reportStatusFilter) return false;
+                                if (reportSearchQuery.trim()) {
+                                  const q = reportSearchQuery.toLowerCase();
+                                  const matchText = `${rec.date} ${rec.groupName} ${rec.subGroupName} ${rec.checklistTitle} ${rec.itemText} ${rec.actionBy} ${rec.remark || ''}`.toLowerCase();
+                                  if (!matchText.includes(q)) return false;
+                                }
+                                return true;
+                              })
+                              .map((rec, i) => (
+                                <tr key={i} className="hover:bg-slate-50">
+                                  <td className="p-3 font-mono font-bold text-slate-700 whitespace-nowrap">{rec.date}</td>
+                                  <td className="p-3 font-bold text-blue-800 whitespace-nowrap">{rec.groupName}</td>
+                                  <td className="p-3 text-slate-600 whitespace-nowrap">{rec.subGroupName}</td>
+                                  <td className="p-3 font-semibold text-slate-800">{rec.checklistTitle}</td>
+                                  <td className="p-3 font-mono text-slate-500 text-[11px]">#{rec.seqNo}</td>
+                                  <td className="p-3 text-slate-900 font-medium max-w-xs">{rec.itemText}</td>
+                                  <td className="p-3 whitespace-nowrap">
+                                    {rec.status === 'missed' ? (
+                                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-rose-100 text-rose-800 border border-rose-300 text-[11px] font-extrabold">
+                                        MISSED ❌
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-100 text-rose-900 border border-rose-300 text-[11px] font-extrabold">
+                                        INCORRECT ❌
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="p-3 font-mono text-slate-700 whitespace-nowrap">{rec.actionBy}</td>
+                                  <td className="p-3 text-rose-900 font-medium italic max-w-sm">
+                                    {rec.remark || 'No remark provided'}
+                                  </td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           )}
         </div>

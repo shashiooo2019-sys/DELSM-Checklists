@@ -12,7 +12,7 @@ export interface UserAccount {
   isAuthorized?: boolean;
 }
 
-export type ItemStatus = 'not_done' | 'done' | 'skipped' | 'pinned';
+export type ItemStatus = 'not_done' | 'done' | 'skipped' | 'pinned' | 'missed' | 'incorrectly_executed';
 
 export interface ChecklistItem {
   id: string;
@@ -23,6 +23,7 @@ export interface ChecklistItem {
   actionBy?: string; // U-number or Name
   actionAt?: string; // ISO string
   skipReason?: string;
+  remark?: string; // Mandatory or custom remark for missed/incorrectly_executed/general items
 }
 
 export type ChecklistStatus = 'pending' | 'in_progress' | 'completed';

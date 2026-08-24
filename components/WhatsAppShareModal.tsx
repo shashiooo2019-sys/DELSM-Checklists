@@ -59,9 +59,11 @@ export function WhatsAppShareModal({
       let totalDayItems = 0;
       let doneDayItems = 0;
       let skippedDayItems = 0;
+      let missedDayItems = 0;
+      let incorrectDayItems = 0;
       let notDoneDayItems = 0;
       const skippedList: { chk: string; item: string; reason?: string }[] = [];
-      const notDoneList: { chk: string; item: string }[] = [];
+      const nonComplianceList: { chk: string; item: string; status: string; remark?: string }[] = [];
 
       if (dayShiftGroup) {
         for (const sub of dayShiftGroup.subGroups || []) {
@@ -72,9 +74,14 @@ export function WhatsAppShareModal({
               else if (item.status === 'skipped') {
                 skippedDayItems++;
                 skippedList.push({ chk: chk.title, item: item.text, reason: item.skipReason });
+              } else if (item.status === 'missed') {
+                missedDayItems++;
+                nonComplianceList.push({ chk: chk.title, item: item.text, status: 'MISSED ❌', remark: item.remark });
+              } else if (item.status === 'incorrectly_executed') {
+                incorrectDayItems++;
+                nonComplianceList.push({ chk: chk.title, item: item.text, status: 'INCORRECTLY EXECUTED ❌', remark: item.remark });
               } else {
                 notDoneDayItems++;
-                notDoneList.push({ chk: chk.title, item: item.text });
               }
             }
           }
@@ -87,6 +94,8 @@ export function WhatsAppShareModal({
       text += `• Overall Progress: ${percent}%\n`;
       text += `• Total Items Done: ${doneDayItems}/${totalDayItems}\n`;
       text += `• Skipped Items: ${skippedDayItems}\n`;
+      text += `• Missed Items: ${missedDayItems}\n`;
+      text += `• Incorrectly Executed: ${incorrectDayItems}\n`;
       text += `• Not Done Items: ${notDoneDayItems}\n`;
 
       text += `\n📋 *DAY SHIFT SUB-OPERATIONS & CHECKLISTS:*\n`;
@@ -95,12 +104,27 @@ export function WhatsAppShareModal({
           text += `• *${sub.name.toUpperCase()}*\n`;
           for (const chk of sub.checklists || []) {
             const chkDone = (chk.items || []).filter((i) => i.status === 'done').length;
+            const chkMissed = (chk.items || []).filter((i) => i.status === 'missed').length;
+            const chkIncorrect = (chk.items || []).filter((i) => i.status === 'incorrectly_executed').length;
             const chkTotal = (chk.items || []).length;
-            text += `  - ${chk.title}: *${chk.status.toUpperCase()}* (${chkDone}/${chkTotal} done)\n`;
+            
+            let statusLabel = chk.status.toUpperCase();
+            if (chkMissed > 0 || chkIncorrect > 0) {
+              statusLabel = `COMPLETED WITH MISSED/INCORRECT EXECUTION (${chkMissed} Missed, ${chkIncorrect} Incorrect)`;
+            }
+
+            text += `  - ${chk.title}: *${statusLabel}* (${chkDone}/${chkTotal} done)\n`;
           }
         }
       } else {
         text += `  - No checklists assigned yet.\n`;
+      }
+
+      if (nonComplianceList.length > 0) {
+        text += `\n❌ *NON-COMPLIANCE AUDIT (MISSED & INCORRECT):*\n`;
+        for (const nc of nonComplianceList) {
+          text += `  • [${nc.chk}] ${nc.item} -> *${nc.status}*${nc.remark ? `\n    _Remark: ${nc.remark}_` : ''}\n`;
+        }
       }
 
       if (skippedList.length > 0) {
@@ -126,19 +150,37 @@ export function WhatsAppShareModal({
       text += `• Overall Progress: ${summary.percent}%\n`;
       text += `• Total Checklist Items Executed: ${summary.doneItems}/${summary.totalItems}\n`;
       text += `• Total Items Skipped: ${summary.skippedItems}\n`;
-      
+      text += `• Total Items Missed: ${summary.missedItems}\n`;
+      text += `• Total Items Incorrectly Executed: ${summary.incorrectItems}\n`;
+
+      const nonComplianceListAll: { chk: string; item: string; status: string; remark?: string }[] = [];
       let checklistExceptions = 0;
+
       for (const grp of dayData.groups) {
         if (!includeDayShift && (grp.name.includes('Day Shift') || grp.code === 'DAY-OPS')) continue;
         for (const sub of grp.subGroups || []) {
           for (const chk of sub.checklists || []) {
             if (chk.status !== 'completed') checklistExceptions++;
+            for (const item of chk.items || []) {
+              if (item.status === 'missed') {
+                nonComplianceListAll.push({ chk: chk.title, item: item.text, status: 'MISSED ❌', remark: item.remark });
+              } else if (item.status === 'incorrectly_executed') {
+                nonComplianceListAll.push({ chk: chk.title, item: item.text, status: 'INCORRECTLY EXECUTED ❌', remark: item.remark });
+              }
+            }
           }
         }
       }
-      text += `• Checklists with Exceptions: ${checklistExceptions}\n\n`;
+      text += `• Checklists with Exceptions: ${checklistExceptions}\n`;
 
-      text += `✈️ *FLIGHT TURNAROUND STATUS:*\n`;
+      if (nonComplianceListAll.length > 0) {
+        text += `\n❌ *NON-COMPLIANCE AUDIT LOG (MISSED/INCORRECT):*\n`;
+        for (const nc of nonComplianceListAll) {
+          text += `  • [${nc.chk}] ${nc.item} -> *${nc.status}*${nc.remark ? `\n    _Remark: ${nc.remark}_` : ''}\n`;
+        }
+      }
+
+      text += `\n✈️ *FLIGHT TURNAROUND STATUS:*\n`;
       for (const grp of dayData.groups) {
         if (grp.isFlightGroup) {
           text += `  ✅ *${grp.name} (${grp.code})* - Fully Cleared & Ready 🟢 [Verified: ${grp.verifiedBy || 'Supervisor'}]\n`;
@@ -174,13 +216,31 @@ export function WhatsAppShareModal({
           for (const chk of sub.checklists || []) {
             for (const item of chk.items || []) {
               total++;
-              if (item.status === 'done' || item.status === 'skipped') done++;
+              if (item.status === 'done' || item.status === 'skipped' || item.status === 'missed' || item.status === 'incorrectly_executed') done++;
             }
           }
         }
         
         const statusIcon = grp.isVerified ? '🔒 🟢' : complete ? '✅' : '⏳ ⚠️';
         text += `${statusIcon} *${grp.name} (${grp.code})*: ${done}/${total} items done ${grp.isVerified ? '[Shift Verified & Closed]' : complete ? '[Ready for Sup]' : '[In-Progress]'}\n`;
+      }
+
+      if (summary.missedItems > 0 || summary.incorrectItems > 0) {
+        text += `\n❌ *Non-Compliance Alert:* ${summary.missedItems} Missed, ${summary.incorrectItems} Incorrectly Executed.\n`;
+        for (const grp of dayData.groups) {
+          if (!includeDayShift && (grp.name.includes('Day Shift') || grp.code === 'DAY-OPS')) continue;
+          for (const sub of grp.subGroups || []) {
+            for (const chk of sub.checklists || []) {
+              for (const item of chk.items || []) {
+                if (item.status === 'missed') {
+                  text += `  • [${chk.title}] ${item.text} -> *MISSED ❌*${item.remark ? `\n    _Remark: ${item.remark}_` : ''}\n`;
+                } else if (item.status === 'incorrectly_executed') {
+                  text += `  • [${chk.title}] ${item.text} -> *INCORRECTLY EXECUTED ❌*${item.remark ? `\n    _Remark: ${item.remark}_` : ''}\n`;
+                }
+              }
+            }
+          }
+        }
       }
 
       if (summary.pinnedItems > 0) {

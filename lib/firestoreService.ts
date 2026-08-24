@@ -888,7 +888,35 @@ export function subscribeToAuditLogs(
   );
 }
 
-// ----------------- REAL-TIME DAY DATA SUBSCRIPTION -----------------
+// ----------------- REAL-TIME DAY DATA SUBSCRIPTION & RANGE FETCH -----------------
+
+export async function fetchShiftsForDateRange(startDateStr: string, endDateStr: string): Promise<DayOperationalData[]> {
+  try {
+    const shiftsCol = collection(db, 'daily_shifts');
+    const q = query(shiftsCol, where('date', '>=', startDateStr), where('date', '<=', endDateStr));
+    const snapshot = await getDocs(q);
+    const results: DayOperationalData[] = [];
+    snapshot.docs.forEach((d) => {
+      const data = d.data();
+      if (data && data.raw_data) {
+        try {
+          const parsed = JSON.parse(data.raw_data) as DayOperationalData;
+          if (parsed && parsed.groups) {
+            results.push(parsed);
+          }
+        } catch (e) {
+          console.warn('Error parsing raw_data for date range shift:', d.id, e);
+        }
+      }
+    });
+    // Sort ascending by date
+    results.sort((a, b) => a.date.localeCompare(b.date));
+    return results;
+  } catch (err) {
+    console.warn('fetchShiftsForDateRange error:', err);
+    return [];
+  }
+}
 
 export function subscribeToDayData(
   dateStr: string,

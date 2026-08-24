@@ -404,6 +404,7 @@ export function GroupCard({
                     {subGroup.checklists.map((chk) => {
                       const prog = getChecklistProgress(chk);
                       const isComplete = chk.status === 'completed';
+                      const hasNonCompliance = prog.missed > 0 || prog.incorrectlyExecuted > 0;
 
                       return (
                         <div
@@ -411,7 +412,9 @@ export function GroupCard({
                           id={`checklist-card-${chk.id}`}
                           className={`p-3.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition ${
                             isComplete
-                              ? 'bg-emerald-50/30 border-emerald-200 hover:border-emerald-300'
+                              ? hasNonCompliance
+                                ? 'bg-rose-50/20 border-rose-300 hover:border-rose-400'
+                                : 'bg-emerald-50/30 border-emerald-200 hover:border-emerald-300'
                               : 'bg-slate-50/50 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
                           }`}
                         >
@@ -422,10 +425,19 @@ export function GroupCard({
                                 {chk.version || 'v1.0'}
                               </span>
                               {isComplete ? (
-                                <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                  COMPLETED
-                                </span>
+                                (prog.missed > 0 || prog.incorrectlyExecuted > 0) ? (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-800 border border-rose-300 shadow-2xs">
+                                    <AlertTriangle className="w-3 h-3 text-rose-600 shrink-0" />
+                                    <span>
+                                      COMPLETED ({prog.missed > 0 ? `${prog.missed} MISSED` : ''}{prog.missed > 0 && prog.incorrectlyExecuted > 0 ? ', ' : ''}{prog.incorrectlyExecuted > 0 ? `${prog.incorrectlyExecuted} INCORRECTLY EXECUTED` : ''})
+                                    </span>
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                    <CheckCircle2 className="w-3 h-3 text-emerald-600 shrink-0" />
+                                    <span>COMPLETED</span>
+                                  </span>
+                                )
                               ) : prog.done > 0 ? (
                                 <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
                                   <Clock className="w-3 h-3 text-amber-600" />
@@ -454,6 +466,12 @@ export function GroupCard({
                                 {chk.completedAt && (
                                   <span className="font-mono text-slate-500 font-medium">
                                     {new Date(chk.completedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false })}
+                                  </span>
+                                )}
+                                {hasNonCompliance && (
+                                  <span className="inline-flex items-center gap-1 text-rose-800 bg-rose-50 px-2 py-0.5 rounded border border-rose-200 text-[11px] font-bold">
+                                    <AlertTriangle className="w-3 h-3 text-rose-600 shrink-0" />
+                                    <span>Non-Compliance Recorded: {prog.missed > 0 ? `${prog.missed} Missed` : ''}{prog.missed > 0 && prog.incorrectlyExecuted > 0 ? ', ' : ''}{prog.incorrectlyExecuted > 0 ? `${prog.incorrectlyExecuted} Incorrectly Executed` : ''}</span>
                                   </span>
                                 )}
                                 {chk.remarks && (
