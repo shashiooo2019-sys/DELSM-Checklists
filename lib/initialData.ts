@@ -1047,159 +1047,77 @@ export function mergeMasterHierarchyWithExisting(
     changed = true;
   }
 
-  const mergedGroups: OperationalGroup[] = masterGroups.map((masterGroup) => {
-    const existingGroup = cleanedExistingGroups.find(
-      (g) => g.id === masterGroup.id || g.code.toUpperCase() === masterGroup.code.toUpperCase()
+  // Preserve existing user-saved groups, subgroups, checklists, and items as authoritative
+  const mergedGroups: OperationalGroup[] = cleanedExistingGroups.map((existingGroup) => {
+    const masterGroup = masterGroups.find(
+      (mg) => mg.id === existingGroup.id || mg.code.toUpperCase() === existingGroup.code.toUpperCase()
     );
 
-    if (!existingGroup) {
-      changed = true;
-      return masterGroup;
-    }
-
-    // Existing group found: preserve group verification & notes
-    const groupChanged = false;
     const existingSubGroups = existingGroup.subGroups || [];
-
-    if (existingSubGroups.length === 0) {
-      changed = true;
-      return {
-        ...existingGroup,
-        subGroups: masterGroup.subGroups,
-      };
-    }
-
-    const mergedSubGroups: SubOperationalGroup[] = masterGroup.subGroups.map((masterSubGroup) => {
-      const existingSubGroup = existingSubGroups.find(
-        (sg) => sg.id === masterSubGroup.id || sg.name.toLowerCase() === masterSubGroup.name.toLowerCase()
+    const mergedSubGroups: SubOperationalGroup[] = existingSubGroups.map((existingSubGroup) => {
+      const masterSubGroup = masterGroup?.subGroups.find(
+        (msg) => msg.id === existingSubGroup.id || msg.name.trim().toLowerCase() === existingSubGroup.name.trim().toLowerCase()
       );
-
-      if (!existingSubGroup) {
-        changed = true;
-        return masterSubGroup;
-      }
 
       const existingChecklists = existingSubGroup.checklists || [];
-      if (existingChecklists.length === 0) {
+
+      // If a subgroup has existing checklists, sanitize items and compute status
+      let mergedChecklists: Checklist[] = existingChecklists;
+      if (existingChecklists.length === 0 && masterSubGroup && masterSubGroup.checklists.length > 0 && cleanedExistingGroups.length === 0) {
+        mergedChecklists = masterSubGroup.checklists;
         changed = true;
-        return {
-          ...existingSubGroup,
-          checklists: masterSubGroup.checklists,
-        };
-      }
+      } else {
+        mergedChecklists = existingChecklists.map((existingChecklist) => {
+          const existingItems = existingChecklist.items || [];
+          const cleanedItems: ChecklistItem[] = existingItems.map((item, idx) => ({
+            ...item,
+            sequenceOrder: item.sequenceOrder || idx + 1,
+            status: item.status || 'not_done',
+            isMandatory: item.isMandatory !== false,
+          }));
 
-      const mergedChecklists: Checklist[] = masterSubGroup.checklists.map((masterChecklist) => {
-        const existingChecklist = existingChecklists.find(
-          (chk) =>
-            chk.id === masterChecklist.id ||
-            chk.title.trim().toLowerCase() === masterChecklist.title.trim().toLowerCase()
-        );
+          const isComplete =
+            cleanedItems.length > 0 &&
+            cleanedItems.filter((it) => it.isMandatory).every((it) => it.status === 'done' || it.status === 'skipped');
+          const hasStarted = cleanedItems.some((it) => it.status === 'done' || it.status === 'skipped');
 
-        if (!existingChecklist) {
-          changed = true;
-          return masterChecklist;
-        }
+          const newStatus = isComplete
+            ? 'completed'
+            : hasStarted
+            ? 'in_progress'
+            : existingChecklist.status === 'completed' || existingChecklist.status === 'in_progress'
+            ? existingChecklist.status
+            : 'pending';
 
-        // Merge checklist items while strictly preserving user progress
-        const existingItems = existingChecklist.items || [];
-        const mergedItems: ChecklistItem[] = masterChecklist.items.map((masterItem) => {
-          const existingItem = existingItems.find(
-            (it) =>
-              it.id === masterItem.id ||
-              it.sequenceOrder === masterItem.sequenceOrder ||
-              it.text.trim().toLowerCase() === masterItem.text.trim().toLowerCase()
-          );
-
-          if (!existingItem) {
-            changed = true;
-            return masterItem;
-          }
-
-          // Preserve user status, timestamps, and action user
           return {
-            ...masterItem,
-            id: existingItem.id || masterItem.id,
-            status: existingItem.status || 'not_done',
-            actionBy: existingItem.actionBy,
-            actionAt: existingItem.actionAt,
-            skipReason: existingItem.skipReason,
+            ...existingChecklist,
+            status: newStatus,
+            items: cleanedItems,
           };
         });
-
-        // Also preserve any custom user-added items in existing checklist
-        const masterItemIds = new Set(masterChecklist.items.map((it) => it.id));
-        const customItems = existingItems.filter(
-          (it) => !masterItemIds.has(it.id) && !masterChecklist.items.some((m) => m.text.trim().toLowerCase() === it.text.trim().toLowerCase())
-        );
-
-        if (customItems.length > 0) {
-          mergedItems.push(...customItems);
-        }
-
-        const isComplete =
-          mergedItems.length > 0 &&
-          mergedItems.filter((it) => it.isMandatory).every((it) => it.status === 'done' || it.status === 'skipped');
-        const hasStarted = mergedItems.some((it) => it.status === 'done' || it.status === 'skipped');
-
-        return {
-          ...existingChecklist,
-          id: masterChecklist.id,
-          title: masterChecklist.title,
-          isMandatory: masterChecklist.isMandatory !== false,
-          version: existingChecklist.version || masterChecklist.version || 'v1.0',
-          versionDate: existingChecklist.versionDate || masterChecklist.versionDate || '2026-08-20',
-          versionHistory: existingChecklist.versionHistory || masterChecklist.versionHistory || [],
-          status: isComplete ? 'completed' : hasStarted ? 'in_progress' : existingChecklist.status || 'pending',
-          completedBy: existingChecklist.completedBy,
-          completedAt: existingChecklist.completedAt,
-          remarks: existingChecklist.remarks,
-          items: mergedItems,
-        };
-      });
-
-      // Also preserve any custom checklists created in this subgroup
-      const masterChecklistTitles = new Set(masterSubGroup.checklists.map((c) => c.title.trim().toLowerCase()));
-      const customChecklists = existingChecklists.filter(
-        (c) => !masterChecklistTitles.has(c.title.trim().toLowerCase())
-      );
-      if (customChecklists.length > 0) {
-        mergedChecklists.push(...customChecklists);
       }
 
       return {
         ...existingSubGroup,
-        id: masterSubGroup.id,
-        name: masterSubGroup.name,
         checklists: mergedChecklists,
       };
     });
 
-    // Also preserve custom subgroups in this group
-    const masterSubGroupNames = new Set(masterGroup.subGroups.map((sg) => sg.name.trim().toLowerCase()));
-    const customSubGroups = existingSubGroups.filter(
-      (sg) => !masterSubGroupNames.has(sg.name.trim().toLowerCase())
-    );
-    if (customSubGroups.length > 0) {
-      mergedSubGroups.push(...customSubGroups);
-    }
-
     return {
       ...existingGroup,
-      id: masterGroup.id,
-      name: masterGroup.name,
-      code: masterGroup.code,
-      isFlightGroup: masterGroup.isFlightGroup,
       subGroups: mergedSubGroups,
     };
   });
 
-  // Preserve any custom groups that the user might have created
-  const masterGroupCodes = new Set(masterGroups.map((g) => g.code.toUpperCase()));
-  const customGroups = cleanedExistingGroups.filter(
-    (g) => !masterGroupCodes.has(g.code.toUpperCase())
-  );
-  if (customGroups.length > 0) {
-    mergedGroups.push(...customGroups);
+  // Only inject missing master groups if the day data has 0 existing groups (uninitialized brand-new date)
+  if (cleanedExistingGroups.length === 0) {
+    const existingGroupCodes = new Set(cleanedExistingGroups.map((g) => g.code.toUpperCase()));
+    const missingMasterGroups = masterGroups.filter((mg) => !existingGroupCodes.has(mg.code.toUpperCase()));
+
+    if (missingMasterGroups.length > 0) {
+      changed = true;
+      mergedGroups.push(...missingMasterGroups);
+    }
   }
 
   const merged: DayOperationalData = {
@@ -1216,6 +1134,14 @@ export function mergeMasterHierarchyWithExisting(
 }
 
 // Generate upcoming rolling date window array (e.g. next 10 days)
+export function getTodayDateString(): string {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 export function getUpcomingDateStrings(startDateStr?: string, daysCount: number = 10): string[] {
   let baseDate: Date;
   if (startDateStr) {

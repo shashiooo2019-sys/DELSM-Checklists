@@ -40,6 +40,7 @@ import { SupervisorDiagnosisModal } from '@/components/SupervisorDiagnosisModal'
 import { WhatsAppShareModal } from '@/components/WhatsAppShareModal';
 import { AdminPanel } from '@/components/AdminPanel';
 import { AuditLogDrawer } from '@/components/AuditLogDrawer';
+import { ConfirmModal, ConfirmModalState } from '@/components/ConfirmModal';
 import { 
   Plane, 
   Building2, 
@@ -58,7 +59,9 @@ import {
   Loader2,
   ChevronDown,
   ChevronUp,
-  MoreHorizontal
+  MoreHorizontal,
+  Menu,
+  X
 } from 'lucide-react';
 
 export default function AviationGroundOpsPage() {
@@ -126,6 +129,8 @@ export default function AviationGroundOpsPage() {
     checklist: null,
   });
 
+  const [confirmModal, setConfirmModal] = useState<ConfirmModalState | null>(null);
+
   // Supervisor Diagnosis state
   const [diagnosisModalState, setDiagnosisModalState] = useState<{
     isOpen: boolean;
@@ -151,6 +156,7 @@ export default function AviationGroundOpsPage() {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [isMobileFilterMenuOpen, setIsMobileFilterMenuOpen] = useState<boolean>(false);
   const [isFilterOverflowOpen, setIsFilterOverflowOpen] = useState<boolean>(false);
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState<boolean>(false);
   const [groupExpansion, setGroupExpansion] = useState<Record<string, boolean>>({});
 
   // Real-time Firestore & Local Day Data Sync
@@ -294,68 +300,128 @@ export default function AviationGroundOpsPage() {
     subGroup: SubOperationalGroup,
     checklist: Checklist
   ) => {
-    if (
-      confirm(
-        `Are you sure you want to reset all ${checklist.items.length} items in "${checklist.title}" back to NOT DONE?\n\nThis will clear all completion statuses and timestamps for this checklist.`
-      )
-    ) {
-      const resetChecklistObj: Checklist = {
-        ...checklist,
-        status: 'pending',
-        completedBy: undefined,
-        completedAt: undefined,
-        remarks: undefined,
-        items: checklist.items.map((item) => ({
-          ...item,
-          status: 'not_done',
-          actionBy: undefined,
-          actionAt: undefined,
-          skipReason: undefined,
-        })),
-      };
+    setConfirmModal({
+      isOpen: true,
+      title: 'Reset Checklist',
+      message: `Are you sure you want to reset all ${checklist.items.length} items in "${checklist.title}" back to NOT DONE?\n\nThis will clear all completion statuses and timestamps for this checklist.`,
+      confirmLabel: 'Reset Checklist',
+      variant: 'warning',
+      onConfirm: () => {
+        const resetChecklistObj: Checklist = {
+          ...checklist,
+          status: 'pending',
+          completedBy: undefined,
+          completedAt: undefined,
+          remarks: undefined,
+          items: checklist.items.map((item) => ({
+            ...item,
+            status: 'not_done',
+            actionBy: undefined,
+            actionAt: undefined,
+            skipReason: undefined,
+          })),
+        };
 
-      const updatedGroups = dayData.groups.map((grp) => {
-        if (grp.id === group.id) {
-          return {
-            ...grp,
-            subGroups: grp.subGroups.map((sub) => {
-              if (sub.id === subGroup.id) {
-                return {
-                  ...sub,
-                  checklists: sub.checklists.map((chk) => {
-                    if (chk.id === checklist.id) {
-                      return resetChecklistObj;
-                    }
-                    return chk;
-                  }),
-                };
-              }
-              return sub;
-            }),
-          };
+        const updatedGroups = dayData.groups.map((grp) => {
+          if (grp.id === group.id) {
+            return {
+              ...grp,
+              subGroups: grp.subGroups.map((sub) => {
+                if (sub.id === subGroup.id) {
+                  return {
+                    ...sub,
+                    checklists: sub.checklists.map((chk) => {
+                      if (chk.id === checklist.id) {
+                        return resetChecklistObj;
+                      }
+                      return chk;
+                    }),
+                  };
+                }
+                return sub;
+              }),
+            };
+          }
+          return grp;
+        });
+
+        const newDayData: DayOperationalData = {
+          ...dayData,
+          groups: updatedGroups,
+        };
+
+        saveDayData(newDayData);
+        setDayData(newDayData);
+
+        if (currentUser) {
+          addAuditLog(
+            currentUser.uNumber,
+            currentUser.name,
+            currentUser.role,
+            'CHECKLIST_RESET',
+            `Reset checklist "${checklist.title}" in ${group.name}. All items marked as NOT DONE.`,
+            selectedDate
+          );
         }
-        return grp;
-      });
+      },
+    });
+  };
 
-      const newDayData: DayOperationalData = {
-        ...dayData,
-        groups: updatedGroups,
-      };
+  // Admin Checklist Deletion Handler
+  const handleDeleteChecklistInGroupCard = (
+    group: OperationalGroup,
+    subGroup: SubOperationalGroup,
+    checklist: Checklist
+  ) => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Checklist',
+      message: `[ADMIN ACTION] Are you sure you want to delete the checklist "${checklist.title}" from group "${group.name}"?\n\nThis action cannot be undone.`,
+      confirmLabel: 'Delete Checklist',
+      variant: 'danger',
+      onConfirm: () => {
+        const updatedGroups = dayData.groups.map((grp) => {
+          if (grp.id === group.id) {
+            return {
+              ...grp,
+              subGroups: grp.subGroups.map((sub) => {
+                if (sub.id === subGroup.id || sub.checklists.some((c) => c.id === checklist.id)) {
+                  return {
+                    ...sub,
+                    checklists: sub.checklists.filter(
+                      (c) =>
+                        c.id !== checklist.id &&
+                        c.title.trim().toLowerCase() !== checklist.title.trim().toLowerCase()
+                    ),
+                  };
+                }
+                return sub;
+              }),
+            };
+          }
+          return grp;
+        });
 
-      saveDayData(newDayData);
-      setDayData(newDayData);
+        const newDayData: DayOperationalData = {
+          ...dayData,
+          groups: updatedGroups,
+        };
 
-      if (currentUser) {
-        addAuditLog(
-          currentUser.uNumber,
-          currentUser.name,
-          currentUser.role,
-          'CHECKLIST_RESET',
-          `Reset checklist "${checklist.title}" in ${group.name}. All items marked as NOT DONE.`,
-          selectedDate
-        );
-      }
-    }
+        saveDayData(newDayData);
+        setDayData(newDayData);
+
+        if (currentUser) {
+          addAuditLog(
+            currentUser.uNumber,
+            currentUser.name,
+            currentUser.role,
+            'ADMIN_DELETE',
+            `Deleted checklist "${checklist.title}" from ${group.name}`,
+            selectedDate
+          );
+        }
+      },
+    });
   };
 
   // Supervisor Group Verification Handler
@@ -743,9 +809,22 @@ export default function AviationGroundOpsPage() {
           <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
             {/* Quick Filter Tabs */}
             <div className="flex flex-row items-center gap-1.5 w-full lg:w-auto min-w-0 flex-1 overflow-hidden relative group">
+              {/* Three-bars Menu Button to trigger Filter Pop-up Window */}
+              <button
+                id="btn-filter-modal-trigger"
+                type="button"
+                onClick={() => setIsFilterModalOpen(true)}
+                className="p-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shrink-0 shadow-2xs"
+                title="Show all filter options in pop-up window"
+                aria-label="Show all filter options in pop-up window"
+              >
+                <Menu className="w-4 h-4 shrink-0" />
+                <span className="hidden sm:inline font-mono text-[11px] uppercase tracking-wider">Filters</span>
+              </button>
+
               <button
                 type="button"
-                onClick={() => setIsFilterOverflowOpen(!isFilterOverflowOpen)}
+                onClick={() => setIsFilterModalOpen(true)}
                 className="sm:hidden flex items-center justify-between px-3 py-2 bg-slate-100 text-slate-700 rounded-xl font-bold text-xs uppercase tracking-wider transition hover:bg-slate-200 shrink-0 gap-2 border border-slate-200"
               >
                 <Filter className="w-3.5 h-3.5" />
@@ -1084,6 +1163,7 @@ export default function AviationGroundOpsPage() {
                 }}
                 onOpenDayShiftWhatsApp={() => setIsDayShiftWhatsAppOpen(true)}
                 onResetChecklist={handleResetChecklist}
+                onDeleteChecklist={handleDeleteChecklistInGroupCard}
                 onReopenGroup={handleReopenGroup}
               />
             ))
@@ -1194,6 +1274,139 @@ export default function AviationGroundOpsPage() {
         isOpen={isAuditLogOpen}
         onClose={() => setIsAuditLogOpen(false)}
       />
+
+      {/* 8. Filter Options Pop-up Window Modal */}
+      {isFilterModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white border border-slate-200 rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="p-4 sm:p-5 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-blue-600 rounded-xl">
+                  <Menu className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold tracking-tight">Select Operational Filter</h3>
+                  <p className="text-[11px] text-slate-400">Choose filter view for operational groups</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsFilterModalOpen(false)}
+                className="p-1.5 rounded-xl hover:bg-slate-800 text-slate-400 hover:text-white transition"
+                title="Close filter window"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 sm:p-5 space-y-2.5 max-h-[75vh] overflow-y-auto">
+              {[
+                {
+                  id: 'all',
+                  title: 'All Operations',
+                  desc: 'Display all flight turnaround and terminal operations',
+                  badge: `${dayData.groups.length} Groups`,
+                  icon: Filter,
+                  activeColor: 'bg-slate-900 text-white border-slate-900',
+                },
+                {
+                  id: 'flights',
+                  title: 'Flight Turnarounds',
+                  desc: 'Focus exclusively on turnaround flights (AI-102, AI-304, etc.)',
+                  badge: '4 Flights',
+                  icon: Plane,
+                  activeColor: 'bg-blue-600 text-white border-blue-600',
+                },
+                {
+                  id: 'terminal',
+                  title: 'Terminal Ops & Infrastructure',
+                  desc: 'Security, Baggage, Catering, Ramp Safety & Fueling',
+                  badge: '4 Groups',
+                  icon: Building2,
+                  activeColor: 'bg-blue-600 text-white border-blue-600',
+                },
+                {
+                  id: 'pending',
+                  title: 'Pending Checks',
+                  desc: 'Groups with active or uncompleted operational items',
+                  badge: 'In Progress',
+                  icon: Clock,
+                  activeColor: 'bg-amber-500 text-slate-950 border-amber-500',
+                },
+                {
+                  id: 'completed',
+                  title: 'Completed Operations',
+                  desc: 'Groups with 100% verified complete checklist tasks',
+                  badge: 'Completed',
+                  icon: CheckCircle2,
+                  activeColor: 'bg-emerald-600 text-white border-emerald-600',
+                },
+                {
+                  id: 'non-compliance',
+                  title: 'Non-Compliance Review',
+                  desc: 'Groups containing Missed or Incorrectly Executed items',
+                  badge: `${nonComplianceGroupCount} Non-Compliant`,
+                  icon: AlertCircle,
+                  activeColor: 'bg-rose-600 text-white border-rose-600',
+                },
+              ].map((item) => {
+                const ItemIcon = item.icon;
+                const isSelected = filterCategory === item.id;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      setFilterCategory(item.id as any);
+                      setIsFilterModalOpen(false);
+                    }}
+                    className={`p-3.5 rounded-xl border transition text-left flex items-start gap-3 w-full ${
+                      isSelected
+                        ? `${item.activeColor} shadow-md ring-2 ring-offset-1 ring-blue-500/50`
+                        : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-800'
+                    }`}
+                  >
+                    <div className={`p-2 rounded-lg shrink-0 ${isSelected ? 'bg-white/20' : 'bg-slate-200 text-slate-700'}`}>
+                      <ItemIcon className="w-4 h-4" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-bold uppercase tracking-wider">{item.title}</span>
+                        <span className={`text-[10px] font-mono px-2 py-0.5 rounded font-semibold shrink-0 ${
+                          isSelected ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+                        }`}>
+                          {item.badge}
+                        </span>
+                      </div>
+                      <p className={`text-[11px] mt-0.5 line-clamp-1 ${isSelected ? 'opacity-90' : 'text-slate-500'}`}>
+                        {item.desc}
+                      </p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="p-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
+              <span>Active Filter: <strong className="uppercase text-slate-800 font-mono">{filterCategory}</strong></span>
+              <button
+                type="button"
+                onClick={() => setIsFilterModalOpen(false)}
+                className="px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl font-bold text-xs transition"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {confirmModal && (
+        <ConfirmModal
+          {...confirmModal}
+          onClose={() => setConfirmModal(null)}
+        />
+      )}
     </div>
   );
 }

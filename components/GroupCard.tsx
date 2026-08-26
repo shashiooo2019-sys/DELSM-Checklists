@@ -21,7 +21,8 @@ import {
   ShieldAlert,
   RotateCcw,
   Share2,
-  Unlock
+  Unlock,
+  Trash2
 } from 'lucide-react';
 
 interface GroupCardProps {
@@ -32,6 +33,7 @@ interface GroupCardProps {
   onOpenChecklist: (group: OperationalGroup, subGroup: SubOperationalGroup, checklist: Checklist) => void;
   onOpenDiagnosis: (groupId: string) => void;
   onResetChecklist?: (group: OperationalGroup, subGroup: SubOperationalGroup, checklist: Checklist) => void;
+  onDeleteChecklist?: (group: OperationalGroup, subGroup: SubOperationalGroup, checklist: Checklist) => void;
   onOpenDayShiftDiagnosis?: (groupId: string) => void;
   onOpenDayShiftWhatsApp?: () => void;
   onReopenGroup?: (groupId: string) => void;
@@ -45,6 +47,7 @@ export function GroupCard({
   onOpenChecklist,
   onOpenDiagnosis,
   onResetChecklist,
+  onDeleteChecklist,
   onOpenDayShiftDiagnosis,
   onOpenDayShiftWhatsApp,
   onReopenGroup,
@@ -483,8 +486,23 @@ export function GroupCard({
                             )}
                           </div>
 
-                          {/* Action Buttons to Launch or Reset Checklist */}
+                          {/* Action Buttons to Launch, Delete, or Reset Checklist */}
                           <div className="shrink-0 flex items-center gap-2">
+                            {currentUser?.role === 'ADMIN' && onDeleteChecklist && (
+                              <button
+                                id={`btn-delete-checklist-${chk.id}`}
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  onDeleteChecklist(group, subGroup, chk);
+                                }}
+                                className="p-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl transition text-xs font-bold flex items-center justify-center shrink-0 shadow-2xs"
+                                title={`[ADMIN] Delete Checklist "${chk.title}"`}
+                              >
+                                <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                              </button>
+                            )}
+
                             {onResetChecklist && (
                               <button
                                 id={`btn-reset-checklist-${chk.id}`}

@@ -32,6 +32,7 @@ import {
 } from '@/lib/storage';
 import { fetchUsersFromFirestore, subscribeToUsersFromFirestore, saveUserToFirestore, saveUsersToFirestoreBatch, deleteUserFromFirestore, fetchShiftsForDateRange } from '@/lib/firestoreService';
 import { makeItem, FLIGHT_CODES, getNextChecklistVersion } from '@/lib/initialData';
+import { ConfirmModal, ConfirmModalState } from './ConfirmModal';
 import { 
   X, 
   Sliders, 
@@ -242,6 +243,7 @@ export function AdminPanel({
   const [editUserDept, setEditUserDept] = useState('Ground Operations');
   const [editUserIsAuthorized, setEditUserIsAuthorized] = useState<boolean>(true);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  const [confirmModal, setConfirmModal] = useState<ConfirmModalState | null>(null);
 
   // Checklist Version Summary Directory States
   const [showVersionSummaryModal, setShowVersionSummaryModal] = useState(false);
@@ -406,10 +408,19 @@ export function AdminPanel({
   };
 
   const handleDeleteGroup = (groupId: string) => {
-    if (!window.confirm('Are you sure you want to delete this Operational Group? This cannot be undone.')) return;
-    const updatedGroups = dayData.groups.filter((g) => g.id !== groupId);
-    onSaveDayData({ ...dayData, groups: updatedGroups });
-    showNotification('Group deleted');
+    const grp = dayData.groups.find((g) => g.id === groupId);
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Operational Group',
+      message: `Are you sure you want to delete the group "${grp?.name || groupId}"? This cannot be undone.`,
+      confirmLabel: 'Delete Group',
+      variant: 'danger',
+      onConfirm: () => {
+        const updatedGroups = dayData.groups.filter((g) => g.id !== groupId);
+        onSaveDayData({ ...dayData, groups: updatedGroups });
+        showNotification('Group deleted');
+      },
+    });
   };
 
   const handleToggleGroupMandatory = (groupId: string) => {
@@ -476,18 +487,28 @@ export function AdminPanel({
   };
 
   const handleDeleteSubGroup = (groupId: string, subId: string) => {
-    if (!window.confirm('Are you sure you want to delete this Sub-Operational Group? This cannot be undone.')) return;
-    const updatedGroups = dayData.groups.map((grp) => {
-      if (grp.id === groupId) {
-        return {
-          ...grp,
-          subGroups: grp.subGroups.filter((s) => s.id !== subId),
-        };
-      }
-      return grp;
+    const grp = dayData.groups.find((g) => g.id === groupId);
+    const sub = grp?.subGroups.find((s) => s.id === subId);
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Sub-Operational Group',
+      message: `Are you sure you want to delete the sub-group "${sub?.name || subId}"? This cannot be undone.`,
+      confirmLabel: 'Delete Sub-Group',
+      variant: 'danger',
+      onConfirm: () => {
+        const updatedGroups = dayData.groups.map((grpItem) => {
+          if (grpItem.id === groupId) {
+            return {
+              ...grpItem,
+              subGroups: grpItem.subGroups.filter((s) => s.id !== subId),
+            };
+          }
+          return grpItem;
+        });
+        onSaveDayData({ ...dayData, groups: updatedGroups });
+        showNotification('Sub-group deleted');
+      },
     });
-    onSaveDayData({ ...dayData, groups: updatedGroups });
-    showNotification('Sub-group deleted');
   };
 
   // ------------------ CHECKLIST & ITEMS BUILDER ------------------
@@ -534,13 +555,25 @@ export function AdminPanel({
       checklists: [],
     };
   } else if (isDirectGroupMode) {
-    selectedEditSubGroup = generalSubGroup || {
-      id: 'DIRECT_GROUP',
-      name: 'General Operations',
+    const rawChecklists = isAllFlightGroups
+      ? flightGroups.flatMap((fg) => fg.subGroups.flatMap((s) => s.checklists))
+      : (selectedEditGroup ? selectedEditGroup.subGroups.flatMap((s) => s.checklists) : []);
+
+    const uniqueChecklists: Checklist[] = [];
+    const seenChecklistKeys = new Set<string>();
+    for (const chk of rawChecklists) {
+      const key = `${chk.id}-${chk.title.trim().toLowerCase()}`;
+      if (!seenChecklistKeys.has(key)) {
+        seenChecklistKeys.add(key);
+        uniqueChecklists.push(chk);
+      }
+    }
+
+    selectedEditSubGroup = {
+      id: generalSubGroup?.id || 'DIRECT_GROUP',
+      name: generalSubGroup?.name || 'General Operations',
       code: selectedEditGroup?.code || 'GEN',
-      checklists: selectedEditGroup
-        ? selectedEditGroup.subGroups.flatMap((s) => s.checklists)
-        : [],
+      checklists: uniqueChecklists,
     };
   } else {
     selectedEditSubGroup =
@@ -751,52 +784,59 @@ export function AdminPanel({
   };
 
   const handleDeleteChecklist = (chkTitle: string, chkId: string) => {
-    if (!window.confirm(`Are you sure you want to delete the checklist "${chkTitle}"? This cannot be undone.`)) return;
-    if (!selectedEditSubGroup) return;
-    const targetSubName = selectedEditSubGroup.name.trim().toLowerCase();
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Checklist',
+      message: `Are you sure you want to delete the checklist "${chkTitle}"? This cannot be undone.`,
+      confirmLabel: 'Delete Checklist',
+      variant: 'danger',
+      onConfirm: () => {
+        const normalizedTitle = chkTitle.trim().toLowerCase();
+        const isMatch = (c: Checklist) => {
+          if (chkId && c.id === chkId) return true;
+          if (normalizedTitle && c.title.trim().toLowerCase() === normalizedTitle) return true;
+          return false;
+        };
 
-    if (isAllFlightGroups) {
-      const updatedGroups = dayData.groups.map((grp) => {
-        if (grp.isFlightGroup) {
-          return {
-            ...grp,
-            subGroups: grp.subGroups.map((sub) => {
-              if (sub.name.trim().toLowerCase() === targetSubName) {
-                return {
+        let updatedGroups: OperationalGroup[];
+
+        if (isAllFlightGroups) {
+          updatedGroups = dayData.groups.map((grp) => {
+            if (grp.isFlightGroup) {
+              return {
+                ...grp,
+                subGroups: grp.subGroups.map((sub) => ({
                   ...sub,
-                  checklists: sub.checklists.filter((c) => c.title.trim().toLowerCase() !== chkTitle.trim().toLowerCase() && c.id !== chkId),
-                };
-              }
-              return sub;
-            }),
-          };
-        }
-        return grp;
-      });
-      onSaveDayData({ ...dayData, groups: updatedGroups });
-      showNotification(`Deleted Checklist "${chkTitle}" from ALL 4 Flight Groups`);
-    } else {
-      if (!selectedEditGroup) return;
-      const updatedGroups = dayData.groups.map((grp) => {
-        if (grp.id === selectedEditGroup.id) {
-          return {
-            ...grp,
-            subGroups: grp.subGroups.map((sub) => {
-              if (sub.id === selectedEditSubGroup.id) {
-                return {
+                  checklists: sub.checklists.filter((c) => !isMatch(c)),
+                })),
+              };
+            }
+            return grp;
+          });
+          showNotification(`Deleted Checklist "${chkTitle}" from ALL 4 Flight Groups`);
+        } else {
+          const targetGroupId = selectedEditGroup?.id;
+          updatedGroups = dayData.groups.map((grp) => {
+            const isTargetGroup = targetGroupId ? grp.id === targetGroupId : false;
+            const hasChecklist = grp.subGroups.some((s) => s.checklists.some((c) => isMatch(c)));
+
+            if (isTargetGroup || hasChecklist || !targetGroupId) {
+              return {
+                ...grp,
+                subGroups: grp.subGroups.map((sub) => ({
                   ...sub,
-                  checklists: sub.checklists.filter((c) => c.id !== chkId),
-                };
-              }
-              return sub;
-            }),
-          };
+                  checklists: sub.checklists.filter((c) => !isMatch(c)),
+                })),
+              };
+            }
+            return grp;
+          });
+          showNotification(`Checklist "${chkTitle}" deleted`);
         }
-        return grp;
-      });
-      onSaveDayData({ ...dayData, groups: updatedGroups });
-      showNotification(`Checklist "${chkTitle}" deleted`);
-    }
+
+        onSaveDayData({ ...dayData, groups: updatedGroups });
+      },
+    });
   };
 
   const handleAddItemToChecklist = (chkTitle: string, chkId: string) => {
@@ -811,7 +851,7 @@ export function AdminPanel({
           return {
             ...grp,
             subGroups: grp.subGroups.map((sub) => {
-              if (sub.name.trim().toLowerCase() === targetSubName) {
+              if (sub.name.trim().toLowerCase() === targetSubName || sub.checklists.some((c) => c.id === chkId || c.title.trim().toLowerCase() === chkTitle.trim().toLowerCase())) {
                 return {
                   ...sub,
                   checklists: sub.checklists.map((chk) => {
@@ -849,7 +889,12 @@ export function AdminPanel({
           return {
             ...grp,
             subGroups: grp.subGroups.map((sub) => {
-              if (sub.id === selectedEditSubGroup.id) {
+              if (
+                isDirectGroupMode ||
+                sub.id === selectedEditSubGroup.id ||
+                sub.name.trim().toLowerCase() === targetSubName ||
+                sub.checklists.some((c) => c.id === chkId || c.title.trim().toLowerCase() === chkTitle.trim().toLowerCase())
+              ) {
                 return {
                   ...sub,
                   checklists: sub.checklists.map((chk) => {
@@ -888,7 +933,7 @@ export function AdminPanel({
           return {
             ...grp,
             subGroups: grp.subGroups.map((sub) => {
-              if (sub.name.trim().toLowerCase() === targetSubName) {
+              if (sub.name.trim().toLowerCase() === targetSubName || sub.checklists.some((c) => c.id === chkId || c.title.trim().toLowerCase() === chkTitle.trim().toLowerCase())) {
                 return {
                   ...sub,
                   checklists: sub.checklists.map((chk) => {
@@ -923,15 +968,20 @@ export function AdminPanel({
           return {
             ...grp,
             subGroups: grp.subGroups.map((sub) => {
-              if (sub.id === selectedEditSubGroup.id) {
+              if (
+                isDirectGroupMode ||
+                sub.id === selectedEditSubGroup.id ||
+                sub.name.trim().toLowerCase() === targetSubName ||
+                sub.checklists.some((c) => c.id === chkId || c.title.trim().toLowerCase() === chkTitle.trim().toLowerCase())
+              ) {
                 return {
                   ...sub,
                   checklists: sub.checklists.map((chk) => {
-                    if (chk.id === chkId) {
+                    if (chk.id === chkId || chk.title.trim().toLowerCase() === chkTitle.trim().toLowerCase()) {
                       return {
                         ...chk,
                         items: chk.items.map((item) => {
-                          if (item.id === itemId) return { ...item, isMandatory: !item.isMandatory };
+                          if (item.id === itemId || item.text.trim() === itemText.trim()) return { ...item, isMandatory: !item.isMandatory };
                           return item;
                         }),
                       };
@@ -952,69 +1002,85 @@ export function AdminPanel({
   };
 
   const handleDeleteItem = (chkTitle: string, chkId: string, itemText: string, itemId: string) => {
-    if (!window.confirm(`Are you sure you want to delete the item "${itemText}" from the checklist? This cannot be undone.`)) return;
-    if (!selectedEditSubGroup) return;
-    const targetSubName = selectedEditSubGroup.name.trim().toLowerCase();
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete Checklist Item',
+      message: `Are you sure you want to delete the item "${itemText}" from the checklist? This cannot be undone.`,
+      confirmLabel: 'Delete Item',
+      variant: 'danger',
+      onConfirm: () => {
+        const normalizedChkTitle = chkTitle.trim().toLowerCase();
+        const normalizedItemText = itemText.trim().toLowerCase();
 
-    if (isAllFlightGroups) {
-      const updatedGroups = dayData.groups.map((grp) => {
-        if (grp.isFlightGroup) {
-          return {
-            ...grp,
-            subGroups: grp.subGroups.map((sub) => {
-              if (sub.name.trim().toLowerCase() === targetSubName) {
-                return {
+        const isChkMatch = (c: Checklist) => {
+          if (chkId && c.id === chkId) return true;
+          if (normalizedChkTitle && c.title.trim().toLowerCase() === normalizedChkTitle) return true;
+          return false;
+        };
+
+        const isItemMatch = (i: ChecklistItem) => {
+          if (itemId && i.id === itemId) return true;
+          if (normalizedItemText && i.text.trim().toLowerCase() === normalizedItemText) return true;
+          return false;
+        };
+
+        let updatedGroups: OperationalGroup[];
+
+        if (isAllFlightGroups) {
+          updatedGroups = dayData.groups.map((grp) => {
+            if (grp.isFlightGroup) {
+              return {
+                ...grp,
+                subGroups: grp.subGroups.map((sub) => ({
                   ...sub,
                   checklists: sub.checklists.map((chk) => {
-                    if (chk.title.trim().toLowerCase() === chkTitle.trim().toLowerCase() || chk.id === chkId) {
+                    if (isChkMatch(chk)) {
                       return {
                         ...chk,
-                        items: chk.items.filter((i) => i.text.trim() !== itemText.trim() && i.id !== itemId),
+                        items: chk.items.filter((i) => !isItemMatch(i)),
                       };
                     }
                     return chk;
                   }),
-                };
-              }
-              return sub;
-            }),
-          };
-        }
-        return grp;
-      });
+                })),
+              };
+            }
+            return grp;
+          });
 
-      onSaveDayData({ ...dayData, groups: updatedGroups });
-      showNotification(`Deleted item from ALL 4 Flight Groups`);
-    } else {
-      if (!selectedEditGroup) return;
-      const updatedGroups = dayData.groups.map((grp) => {
-        if (grp.id === selectedEditGroup.id) {
-          return {
-            ...grp,
-            subGroups: grp.subGroups.map((sub) => {
-              if (sub.id === selectedEditSubGroup.id) {
-                return {
+          onSaveDayData({ ...dayData, groups: updatedGroups });
+          showNotification(`Deleted item from ALL 4 Flight Groups`);
+        } else {
+          const targetGroupId = selectedEditGroup?.id;
+          updatedGroups = dayData.groups.map((grp) => {
+            const isTargetGroup = targetGroupId ? grp.id === targetGroupId : false;
+            const hasChecklist = grp.subGroups.some((s) => s.checklists.some((c) => isChkMatch(c)));
+
+            if (isTargetGroup || hasChecklist || !targetGroupId) {
+              return {
+                ...grp,
+                subGroups: grp.subGroups.map((sub) => ({
                   ...sub,
                   checklists: sub.checklists.map((chk) => {
-                    if (chk.id === chkId) {
+                    if (isChkMatch(chk)) {
                       return {
                         ...chk,
-                        items: chk.items.filter((i) => i.id !== itemId),
+                        items: chk.items.filter((i) => !isItemMatch(i)),
                       };
                     }
                     return chk;
                   }),
-                };
-              }
-              return sub;
-            }),
-          };
-        }
-        return grp;
-      });
+                })),
+              };
+            }
+            return grp;
+          });
 
-      onSaveDayData({ ...dayData, groups: updatedGroups });
-    }
+          onSaveDayData({ ...dayData, groups: updatedGroups });
+          showNotification(`Item "${itemText}" deleted`);
+        }
+      },
+    });
   };
 
   // ------------------ REORDERING & AMENDING HANDLERS ------------------
@@ -1859,15 +1925,18 @@ export function AdminPanel({
     const targetUser = usersList.find((u) => u.uNumber.toLowerCase() === targetUNumber.toLowerCase());
     const targetName = targetUser ? targetUser.name : targetUNumber;
 
-    if (
-      confirm(
-        `Are you sure you want to reset password for ${targetName} (${targetUNumber}) back to initial default password (${targetUNumber})?\n\nThe user will be required to change their password on their next login.`
-      )
-    ) {
-      await resetUserPasswordAsync(targetUNumber, currentUser);
-      setUsersList(loadUsers());
-      showNotification(`Reset password for ${targetUNumber} back to initial default password (${targetUNumber}).`);
-    }
+    setConfirmModal({
+      isOpen: true,
+      title: 'Reset Password',
+      message: `Are you sure you want to reset password for ${targetName} (${targetUNumber}) back to initial default password (${targetUNumber})?\n\nThe user will be required to change their password on their next login.`,
+      confirmLabel: 'Reset Password',
+      variant: 'warning',
+      onConfirm: async () => {
+        await resetUserPasswordAsync(targetUNumber, currentUser);
+        setUsersList(loadUsers());
+        showNotification(`Reset password for ${targetUNumber} back to initial default password (${targetUNumber}).`);
+      },
+    });
   };
 
   const handlePurgeDemoUsers = () => {
@@ -1881,22 +1950,36 @@ export function AdminPanel({
       showNotification('Cannot delete your own active administrator account.', 'error');
       return;
     }
-    if (!window.confirm(`Are you sure you want to delete user ${uNumber}? This will remove them from the system.`)) return;
-    
-    const success = deleteUserAccount(uNumber, currentUser);
-    if (success) {
-      await deleteUserFromFirestore(uNumber);
-      setUsersList(loadUsers());
-      showNotification(`Deleted account ${uNumber}`);
-    }
+    setConfirmModal({
+      isOpen: true,
+      title: 'Delete User Account',
+      message: `Are you sure you want to delete user ${uNumber}? This will remove them from the system.`,
+      confirmLabel: 'Delete User',
+      variant: 'danger',
+      onConfirm: async () => {
+        const success = deleteUserAccount(uNumber, currentUser);
+        if (success) {
+          await deleteUserFromFirestore(uNumber);
+          setUsersList(loadUsers());
+          showNotification(`Deleted account ${uNumber}`);
+        }
+      },
+    });
   };
 
   const handleResetCurrentDayToDefaults = () => {
-    if (confirm(`Are you sure you want to reset all operational checklist data for ${dayData.date} back to factory defaults?`)) {
-      const fresh = resetDayDataToDefault(dayData.date, currentUser);
-      onSaveDayData(fresh);
-      showNotification(`Reset operational data for ${dayData.date} to defaults.`);
-    }
+    setConfirmModal({
+      isOpen: true,
+      title: 'Reset Day Data to Defaults',
+      message: `Are you sure you want to reset all operational checklist data for ${dayData.date} back to factory defaults?`,
+      confirmLabel: 'Reset to Defaults',
+      variant: 'danger',
+      onConfirm: () => {
+        const fresh = resetDayDataToDefault(dayData.date, currentUser);
+        onSaveDayData(fresh);
+        showNotification(`Reset operational data for ${dayData.date} to defaults.`);
+      },
+    });
   };
 
   const filteredUsers = usersList.filter(
@@ -4344,6 +4427,13 @@ export function AdminPanel({
             </div>
           </div>
         </div>
+      )}
+
+      {confirmModal && (
+        <ConfirmModal
+          {...confirmModal}
+          onClose={() => setConfirmModal(null)}
+        />
       )}
     </div>
   );

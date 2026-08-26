@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { Checklist, ChecklistItem, UserAccount } from '@/types/aviation';
+import { ConfirmModal, ConfirmModalState } from './ConfirmModal';
 import confetti from 'canvas-confetti';
 import { 
   X, 
@@ -78,6 +79,7 @@ function ChecklistCarouselContent({
   isShiftClosed?: boolean;
 }) {
   const [items, setItems] = useState<ChecklistItem[]>(() => checklist.items.map((i) => ({ ...i })));
+  const [confirmModal, setConfirmModal] = useState<ConfirmModalState | null>(null);
   const [currentIndex, setCurrentIndex] = useState<number>(() => {
     const firstPendingIdx = checklist.items.findIndex((i) => i.status === 'not_done' || i.status === 'pinned');
     return firstPendingIdx >= 0 ? firstPendingIdx : 0;
@@ -329,34 +331,37 @@ function ChecklistCarouselContent({
   };
 
   const handleResetChecklist = () => {
-    if (
-      confirm(
-        `Are you sure you want to reset all ${items.length} items in "${checklist.title}" back to NOT DONE and start over?`
-      )
-    ) {
-      const resetItems = items.map((i) => ({
-        ...i,
-        status: 'not_done' as const,
-        actionBy: undefined,
-        actionAt: undefined,
-        skipReason: undefined,
-      }));
-      setItems(resetItems);
-      setCurrentIndex(0);
-      setSkipAlert(null);
-      setRemarksText('');
+    setConfirmModal({
+      isOpen: true,
+      title: 'Reset Checklist',
+      message: `Are you sure you want to reset all ${items.length} items in "${checklist.title}" back to NOT DONE and start over?`,
+      confirmLabel: 'Reset Checklist',
+      variant: 'warning',
+      onConfirm: () => {
+        const resetItems = items.map((i) => ({
+          ...i,
+          status: 'not_done' as const,
+          actionBy: undefined,
+          actionAt: undefined,
+          skipReason: undefined,
+        }));
+        setItems(resetItems);
+        setCurrentIndex(0);
+        setSkipAlert(null);
+        setRemarksText('');
 
-      const resetChecklistObj: Checklist = {
-        ...checklist,
-        items: resetItems,
-        status: 'pending',
-        completedBy: undefined,
-        completedAt: undefined,
-        remarks: undefined,
-      };
+        const resetChecklistObj: Checklist = {
+          ...checklist,
+          items: resetItems,
+          status: 'pending',
+          completedBy: undefined,
+          completedAt: undefined,
+          remarks: undefined,
+        };
 
-      onSaveChecklist(resetChecklistObj);
-    }
+        onSaveChecklist(resetChecklistObj);
+      },
+    });
   };
 
   return (
@@ -1103,6 +1108,12 @@ function ChecklistCarouselContent({
             </div>
           </div>
         </div>
+      )}
+      {confirmModal && (
+        <ConfirmModal
+          {...confirmModal}
+          onClose={() => setConfirmModal(null)}
+        />
       )}
     </div>
   );

@@ -44,6 +44,7 @@ import {
   FLIGHT_CODES,
   cleanSampleSubGroups,
   mergeMasterHierarchyWithExisting,
+  getTodayDateString,
   getUpcomingDateStrings,
   getPurgeCutoffDateString,
   createInitialDayData,
@@ -628,6 +629,175 @@ export async function seedTemplatesIfMissing(): Promise<void> {
     }
   } catch (err) {
     console.warn('seedTemplatesIfMissing notice:', err);
+  }
+}
+
+// Update Master Template Manifest in Firestore
+export async function updateTemplateManifestInFirestore(groups: OperationalGroup[]): Promise<void> {
+  try {
+    const opGroupRef = doc(db, 'templates_op_groups', 'manifest');
+    await setDoc(
+      opGroupRef,
+      {
+        updated_at: serverTimestamp(),
+        total_groups: groups.length,
+        groups: groups,
+      },
+      { merge: true }
+    );
+  } catch (err) {
+    console.warn('updateTemplateManifestInFirestore error:', err);
+  }
+}
+
+// Synchronize target shift groups structure with updated master groups from Admin while preserving execution progress
+export function syncGroupsStructure(
+  targetGroups: OperationalGroup[],
+  masterGroups: OperationalGroup[]
+): OperationalGroup[] {
+  const targetGroupMap = new Map<string, OperationalGroup>();
+  targetGroups.forEach((g) => {
+    targetGroupMap.set(g.id, g);
+    if (g.code) targetGroupMap.set(g.code.toUpperCase(), g);
+  });
+
+  return masterGroups.map((masterGrp) => {
+    const existingGrp = targetGroupMap.get(masterGrp.id) || targetGroupMap.get(masterGrp.code.toUpperCase());
+
+    if (!existingGrp) {
+      // Completely new group added by Admin
+      return masterGrp;
+    }
+
+    const existingSubMap = new Map<string, SubOperationalGroup>();
+    (existingGrp.subGroups || []).forEach((s) => {
+      existingSubMap.set(s.id, s);
+      existingSubMap.set(s.name.trim().toLowerCase(), s);
+    });
+
+    const updatedSubGroups: SubOperationalGroup[] = (masterGrp.subGroups || []).map((masterSub) => {
+      const existingSub = existingSubMap.get(masterSub.id) || existingSubMap.get(masterSub.name.trim().toLowerCase());
+
+      if (!existingSub) {
+        return masterSub;
+      }
+
+      const existingChkMap = new Map<string, Checklist>();
+      (existingSub.checklists || []).forEach((c) => {
+        existingChkMap.set(c.id, c);
+        existingChkMap.set(c.title.trim().toLowerCase(), c);
+      });
+
+      const updatedChecklists: Checklist[] = (masterSub.checklists || []).map((masterChk) => {
+        const existingChk = existingChkMap.get(masterChk.id) || existingChkMap.get(masterChk.title.trim().toLowerCase());
+
+        if (!existingChk) {
+          return masterChk;
+        }
+
+        const existingItemMap = new Map<string, ChecklistItem>();
+        (existingChk.items || []).forEach((item) => {
+          existingItemMap.set(item.id, item);
+          existingItemMap.set(item.text.trim().toLowerCase(), item);
+        });
+
+        const updatedItems: ChecklistItem[] = (masterChk.items || []).map((masterItem) => {
+          const existingItem = existingItemMap.get(masterItem.id) || existingItemMap.get(masterItem.text.trim().toLowerCase());
+
+          if (!existingItem) {
+            return masterItem;
+          }
+
+          return {
+            ...masterItem,
+            status: existingItem.status || 'not_done',
+            remark: existingItem.remark,
+            skipReason: existingItem.skipReason,
+            actionBy: existingItem.actionBy,
+            actionAt: existingItem.actionAt,
+          };
+        });
+
+        const isComplete =
+          updatedItems.length > 0 &&
+          updatedItems.filter((i) => i.isMandatory).every((i) => i.status === 'done' || i.status === 'skipped');
+        const hasStarted = updatedItems.some((i) => i.status === 'done' || i.status === 'skipped');
+        const newStatus = isComplete
+          ? 'completed'
+          : hasStarted
+          ? 'in_progress'
+          : existingChk.status === 'completed' || existingChk.status === 'in_progress'
+          ? existingChk.status
+          : 'pending';
+
+        return {
+          ...masterChk,
+          status: newStatus,
+          items: updatedItems,
+        };
+      });
+
+      return {
+        ...masterSub,
+        checklists: updatedChecklists,
+      };
+    });
+
+    return {
+      ...masterGrp,
+      isVerified: existingGrp.isVerified || false,
+      verifiedBy: existingGrp.verifiedBy,
+      verifiedAt: existingGrp.verifiedAt,
+      subGroups: updatedSubGroups,
+    };
+  });
+}
+
+// Propagate Admin operational group additions, amendments, or cancellations across all active unclosed daily shifts in Firestore
+export async function propagateAdminGroupChangesToActiveShifts(
+  masterDayData: DayOperationalData
+): Promise<void> {
+  try {
+    if (masterDayData.groups) {
+      updateTemplateManifestInFirestore(masterDayData.groups);
+    }
+
+    const windowDates = getUpcomingDateStrings(undefined, 10);
+    const todayStr = getTodayDateString();
+    if (!windowDates.includes(todayStr)) {
+      windowDates.unshift(todayStr);
+    }
+
+    for (const dStr of windowDates) {
+      if (dStr === masterDayData.date) continue;
+
+      const shiftRef = doc(db, 'daily_shifts', dStr);
+      const shiftSnap = await getDoc(shiftRef);
+      if (!shiftSnap.exists()) continue;
+
+      const data = shiftSnap.data();
+      if (data.status === 'CLOSED') continue;
+
+      let parsed: DayOperationalData | null = null;
+      if (data.raw_data) {
+        try {
+          parsed = JSON.parse(data.raw_data) as DayOperationalData;
+        } catch {}
+      }
+
+      if (parsed && parsed.groups) {
+        const syncedGroups = syncGroupsStructure(parsed.groups, masterDayData.groups);
+        const updatedShift: DayOperationalData = {
+          ...parsed,
+          groups: syncedGroups,
+          lastUpdated: new Date().toISOString(),
+        };
+
+        await saveDayDataToFirestore(updatedShift);
+      }
+    }
+  } catch (err) {
+    console.warn('propagateAdminGroupChangesToActiveShifts error:', err);
   }
 }
 

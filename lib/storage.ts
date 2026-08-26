@@ -24,6 +24,7 @@ import {
   updateUserPasswordInFirebase,
   resetUserPasswordInFirebase,
   saveDayDataToFirestore,
+  propagateAdminGroupChangesToActiveShifts,
   loadDayDataFromFirestore,
   ensureDateWindowInitialized,
   purgeOldShiftsAndAuditLogs,
@@ -494,8 +495,12 @@ export function saveDayData(data: DayOperationalData): void {
   data.lastUpdated = new Date().toISOString();
   try {
     saveDayDataToFirestore(data);
+    propagateAdminGroupChangesToActiveShifts(data);
   } catch (err) {
-    console.warn('saveDayDataToFirestore error:', err);
+    console.warn('saveDayData error:', err);
+  }
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event('aviation_day_data_change'));
   }
 }
 
