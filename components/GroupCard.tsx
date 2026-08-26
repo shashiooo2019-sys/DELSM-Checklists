@@ -351,13 +351,13 @@ export function GroupCard({
               <p className="text-xs text-slate-400 mt-0.5">Use the Admin Management panel to add custom sub-groups and checklists.</p>
             </div>
           ) : (
-            group.subGroups.map((subGroup) => {
+            group.subGroups.map((subGroup, sIdx) => {
               const subComplete = isSubGroupComplete(subGroup);
               const isSubExpanded = expandedSubGroups[subGroup.id] !== false; // default true
 
               return (
                 <div 
-                  key={subGroup.id}
+                  key={`${subGroup.id}-${sIdx}`}
                   id={`subgroup-${subGroup.id}`}
                   className={`bg-white border rounded-xl overflow-hidden shadow-2xs transition ${
                     subComplete ? 'border-emerald-200' : 'border-slate-200'
@@ -404,14 +404,14 @@ export function GroupCard({
                 {/* Checklists List */}
                 {isSubExpanded && (
                   <div className="p-3 space-y-2.5 bg-white">
-                    {subGroup.checklists.map((chk) => {
+                    {subGroup.checklists.map((chk, cIdx) => {
                       const prog = getChecklistProgress(chk);
                       const isComplete = chk.status === 'completed';
                       const hasNonCompliance = prog.missed > 0 || prog.incorrectlyExecuted > 0;
 
                       return (
                         <div
-                          key={chk.id}
+                          key={`${chk.id}-${cIdx}`}
                           id={`checklist-card-${chk.id}`}
                           className={`p-3.5 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition ${
                             isComplete

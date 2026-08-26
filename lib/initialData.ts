@@ -1027,6 +1027,76 @@ export function generateDefaultGroups(): OperationalGroup[] {
 // Helper to merge master template hierarchy with an existing DayOperationalData,
 // strictly preserving all user progress, checked item states, remarks, timestamps,
 // group verifications, and shift closure states.
+// Ensure all groups, subGroups, checklists, and items in DayOperationalData have guaranteed unique IDs
+export function sanitizeDayData(data: DayOperationalData): DayOperationalData {
+  if (!data || !data.groups || !Array.isArray(data.groups)) return data;
+
+  const seenGroupIds = new Set<string>();
+
+  const sanitizedGroups = data.groups.map((grp, gIdx) => {
+    let grpId = grp.id || `grp-${gIdx}`;
+    if (seenGroupIds.has(grpId)) {
+      grpId = `${grpId}-dup-${Math.random().toString(36).substring(2, 6)}`;
+    }
+    seenGroupIds.add(grpId);
+
+    const seenSubIds = new Set<string>();
+    const sanitizedSubGroups = (grp.subGroups || []).map((sub, sIdx) => {
+      let subId = sub.id || `sub-${grpId}-${sIdx}`;
+      if (seenSubIds.has(subId)) {
+        subId = `${subId}-dup-${Math.random().toString(36).substring(2, 6)}`;
+      }
+      seenSubIds.add(subId);
+
+      const seenChkIds = new Set<string>();
+      const sanitizedChecklists = (sub.checklists || []).map((chk, cIdx) => {
+        let chkId = chk.id || `chk-${subId}-${cIdx}`;
+        if (seenChkIds.has(chkId)) {
+          chkId = `${chkId}-dup-${Math.random().toString(36).substring(2, 6)}`;
+        }
+        seenChkIds.add(chkId);
+
+        const seenItemIds = new Set<string>();
+        const sanitizedItems = (chk.items || []).map((item, iIdx) => {
+          let itemId = item.id || `item-${chkId}-${iIdx}`;
+          if (seenItemIds.has(itemId)) {
+            itemId = `${itemId}-dup-${Math.random().toString(36).substring(2, 6)}`;
+          }
+          seenItemIds.add(itemId);
+
+          return {
+            ...item,
+            id: itemId,
+          };
+        });
+
+        return {
+          ...chk,
+          id: chkId,
+          items: sanitizedItems,
+        };
+      });
+
+      return {
+        ...sub,
+        id: subId,
+        checklists: sanitizedChecklists,
+      };
+    });
+
+    return {
+      ...grp,
+      id: grpId,
+      subGroups: sanitizedSubGroups,
+    };
+  });
+
+  return {
+    ...data,
+    groups: sanitizedGroups,
+  };
+}
+
 export function mergeMasterHierarchyWithExisting(
   existing: DayOperationalData,
   dateStr: string
@@ -1120,7 +1190,7 @@ export function mergeMasterHierarchyWithExisting(
     }
   }
 
-  const merged: DayOperationalData = {
+  const merged: DayOperationalData = sanitizeDayData({
     date: dateStr,
     groups: mergedGroups,
     isShiftClosed: existing.isShiftClosed || false,
@@ -1128,7 +1198,7 @@ export function mergeMasterHierarchyWithExisting(
     closedAt: existing.closedAt,
     shiftNotes: existing.shiftNotes,
     lastUpdated: existing.lastUpdated || new Date().toISOString(),
-  };
+  });
 
   return { merged, changed };
 }
@@ -1174,10 +1244,10 @@ export function getPurgeCutoffDateString(retentionDays: number = 30): string {
 }
 
 export function createInitialDayData(dateStr: string): DayOperationalData {
-  return {
+  return sanitizeDayData({
     date: dateStr,
     groups: generateDefaultGroups(),
     isShiftClosed: false,
     lastUpdated: `${dateStr}T00:00:00.000Z`,
-  };
+  });
 }

@@ -1015,7 +1015,7 @@ function ChecklistCarouselContent({
             <div className="p-4 sm:p-6 overflow-y-auto space-y-3 bg-slate-50 flex-1">
               {items.map((item, idx) => (
                 <div 
-                  key={item.id || idx}
+                  key={`${item.id || 'item'}-${idx}`}
                   className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs space-y-2"
                 >
                   <div className="flex items-center justify-between flex-wrap gap-2">

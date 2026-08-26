@@ -44,6 +44,7 @@ import {
   FLIGHT_CODES,
   cleanSampleSubGroups,
   mergeMasterHierarchyWithExisting,
+  sanitizeDayData,
   getTodayDateString,
   getUpcomingDateStrings,
   getPurgeCutoffDateString,
@@ -661,7 +662,7 @@ export function syncGroupsStructure(
     if (g.code) targetGroupMap.set(g.code.toUpperCase(), g);
   });
 
-  return masterGroups.map((masterGrp) => {
+  const updatedGroups = masterGroups.map((masterGrp) => {
     const existingGrp = targetGroupMap.get(masterGrp.id) || targetGroupMap.get(masterGrp.code.toUpperCase());
 
     if (!existingGrp) {
@@ -751,6 +752,9 @@ export function syncGroupsStructure(
       subGroups: updatedSubGroups,
     };
   });
+
+  const dummyDayData: DayOperationalData = { date: 'sync', groups: updatedGroups, isShiftClosed: false, lastUpdated: new Date().toISOString() };
+  return sanitizeDayData(dummyDayData).groups;
 }
 
 // Propagate Admin operational group additions, amendments, or cancellations across all active unclosed daily shifts in Firestore
@@ -787,11 +791,11 @@ export async function propagateAdminGroupChangesToActiveShifts(
 
       if (parsed && parsed.groups) {
         const syncedGroups = syncGroupsStructure(parsed.groups, masterDayData.groups);
-        const updatedShift: DayOperationalData = {
+        const updatedShift: DayOperationalData = sanitizeDayData({
           ...parsed,
           groups: syncedGroups,
           lastUpdated: new Date().toISOString(),
-        };
+        });
 
         await saveDayDataToFirestore(updatedShift);
       }
@@ -819,12 +823,13 @@ export async function saveDayDataToFirestore(
   actorUser?: UserAccount | null
 ): Promise<void> {
   try {
-    const dateStr = dayData.date;
+    const sanitized = sanitizeDayData(dayData);
+    const dateStr = sanitized.date;
     const shiftRef = doc(db, 'daily_shifts', dateStr);
 
-    const shiftStatus = dayData.isShiftClosed
+    const shiftStatus = sanitized.isShiftClosed
       ? 'CLOSED'
-      : dayData.groups.every((g) => g.isVerified)
+      : sanitized.groups.every((g) => g.isVerified)
       ? 'VERIFIED'
       : 'IN_PROGRESS';
 
@@ -833,12 +838,12 @@ export async function saveDayDataToFirestore(
       {
         date: dateStr,
         status: shiftStatus,
-        verified_by: dayData.groups.find((g) => g.verifiedBy)?.verifiedBy || '',
-        closed_by: dayData.closedBy || '',
-        closed_at: dayData.closedAt || null,
-        shift_notes: dayData.shiftNotes || '',
+        verified_by: sanitized.groups.find((g) => g.verifiedBy)?.verifiedBy || '',
+        closed_by: sanitized.closedBy || '',
+        closed_at: sanitized.closedAt || null,
+        shift_notes: sanitized.shiftNotes || '',
         last_updated: serverTimestamp(),
-        raw_data: JSON.stringify(dayData),
+        raw_data: JSON.stringify(sanitized),
       },
       { merge: true }
     );
@@ -1104,7 +1109,8 @@ export function subscribeToDayData(
             const parsed = JSON.parse(data.raw_data) as DayOperationalData;
             if (parsed && parsed.groups && parsed.groups.length > 0) {
               parsed.groups = cleanSampleSubGroups(parsed.groups);
-              callback(parsed);
+              const sanitized = sanitizeDayData(parsed);
+              callback(sanitized);
               return;
             }
           } catch (err) {

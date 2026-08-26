@@ -1526,7 +1526,7 @@ export function AdminPanel({
                   status: 'pending' as const,
                   items: importPreviewItems.map((item, idx) => ({
                     ...item,
-                    id: `item-imp-${grp.code.toLowerCase()}-${Date.now()}-${idx}`,
+                    id: generateUniqueId(`item-imp-${grp.code.toLowerCase()}`),
                     status: 'not_done' as const,
                   })),
                 };
@@ -1560,7 +1560,7 @@ export function AdminPanel({
               ],
               items: importPreviewItems.map((item, idx) => ({
                 ...item,
-                id: `item-imp-${grp.code.toLowerCase()}-${Date.now()}-${idx}`,
+                id: generateUniqueId(`item-imp-${grp.code.toLowerCase()}`),
               })),
             };
 
@@ -1613,7 +1613,7 @@ export function AdminPanel({
             ],
             items: importPreviewItems.map((item, idx) => ({
               ...item,
-              id: `item-imp-${grp.code.toLowerCase()}-${Date.now()}-${idx}`,
+              id: generateUniqueId(`item-imp-${grp.code.toLowerCase()}`),
             })),
           };
 
@@ -1731,7 +1731,7 @@ export function AdminPanel({
                   status: 'pending' as const,
                   items: importPreviewItems.map((item, idx) => ({
                     ...item,
-                    id: `item-imp-${grp.id}-${Date.now()}-${idx}`,
+                    id: generateUniqueId(`item-imp-${grp.id}`),
                     status: 'not_done' as const,
                   })),
                 };
@@ -2332,9 +2332,9 @@ export function AdminPanel({
                 </h3>
 
                 <div className="space-y-3">
-                  {dayData.groups.map((grp) => (
+                  {dayData.groups.map((grp, gIdx) => (
                     <div
-                      key={grp.id}
+                      key={`${grp.id}-${gIdx}`}
                       className="p-4 bg-white border border-slate-200 rounded-2xl space-y-3 shadow-2xs"
                     >
                       <div className="flex items-center justify-between flex-wrap gap-2 border-b border-slate-100 pb-3">
@@ -2395,7 +2395,7 @@ export function AdminPanel({
                           </span>
                           {grp.subGroups.map((sub, sIdx) => (
                             <div
-                              key={sub.id}
+                              key={`${sub.id}-${sIdx}`}
                               draggable
                               onDragStart={() => setDraggedSubGroupId(sub.id)}
                               onDragOver={(e) => e.preventDefault()}
@@ -2676,7 +2676,7 @@ export function AdminPanel({
                   ) : (
                     selectedEditSubGroup.checklists.map((chk, cIdx) => (
                     <div
-                      key={chk.id}
+                      key={`${chk.id}-${cIdx}`}
                       draggable
                       onDragStart={() => setDraggedChecklistId(chk.id)}
                       onDragOver={(e) => e.preventDefault()}
@@ -2773,7 +2773,7 @@ export function AdminPanel({
                       <div className="space-y-2">
                         {chk.items.map((item, iIdx) => (
                           <div
-                            key={item.id}
+                            key={`${item.id}-${iIdx}`}
                             draggable
                             onDragStart={() => setDraggedItemId(item.id)}
                             onDragOver={(e) => e.preventDefault()}
