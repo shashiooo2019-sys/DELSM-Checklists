@@ -67,7 +67,12 @@ import {
   CheckCircle2,
   Printer,
   Filter,
-  ArrowUpRight
+  ArrowUpRight,
+  Folder,
+  FolderOpen,
+  ChevronRight,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 
 interface AdminPanelProps {
@@ -244,6 +249,52 @@ export function AdminPanel({
   const [editUserIsAuthorized, setEditUserIsAuthorized] = useState<boolean>(true);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [confirmModal, setConfirmModal] = useState<ConfirmModalState | null>(null);
+
+  // Group Edit State
+  const [editingGroup, setEditingGroup] = useState<{
+    id: string;
+    name: string;
+    code: string;
+    isMandatory: boolean;
+  } | null>(null);
+
+  // File Explorer Tree View States
+  const [showChecklistItemsInExplorer, setShowChecklistItemsInExplorer] = useState<boolean>(false);
+  const [expandedTreeNodes, setExpandedTreeNodes] = useState<Record<string, boolean>>({
+    'ALL_FLIGHT_GROUPS': true,
+  });
+  const [treeSearchTerm, setTreeSearchTerm] = useState<string>('');
+  const [perChecklistExpandedItems, setPerChecklistExpandedItems] = useState<Record<string, boolean>>({});
+
+  // Inline tree creation states
+  const [activeInlineSubGroupGroupId, setActiveInlineSubGroupGroupId] = useState<string | null>(null);
+  const [inlineSubGroupNameInput, setInlineSubGroupNameInput] = useState('');
+  const [inlineSubGroupCodeInput, setInlineSubGroupCodeInput] = useState('');
+  const [inlineSubGroupIsMandatoryInput, setInlineSubGroupIsMandatoryInput] = useState(true);
+
+  const [activeInlineChecklistSubGroupId, setActiveInlineChecklistSubGroupId] = useState<string | null>(null);
+  const [inlineChecklistTitleInput, setInlineChecklistTitleInput] = useState('');
+  const [inlineChecklistDescInput, setInlineChecklistDescInput] = useState('');
+  const [inlineChecklistVersionInput, setInlineChecklistVersionInput] = useState('v1.0');
+  const [inlineChecklistIsMandatoryInput, setInlineChecklistIsMandatoryInput] = useState(true);
+
+  const [activeInlineItemChecklistId, setActiveInlineItemChecklistId] = useState<string | null>(null);
+  const [inlineItemTextInput, setInlineItemTextInput] = useState('');
+  const [inlineItemIsMandatoryInput, setInlineItemIsMandatoryInput] = useState(true);
+
+  // Dedicated Excel Overwrite Target Modal State
+  const [excelOverwriteTarget, setExcelOverwriteTarget] = useState<{
+    checklistId: string;
+    checklistTitle: string;
+    subGroupId: string;
+    subGroupName: string;
+    parentGroupId: string;
+    groupName: string;
+    isAllFlightGroups: boolean;
+  } | null>(null);
+  const [excelOverwriteItems, setExcelOverwriteItems] = useState<ChecklistItem[]>([]);
+  const [excelOverwriteFileName, setExcelOverwriteFileName] = useState<string>('');
+  const excelOverwriteFileInputRef = useRef<HTMLInputElement>(null);
 
   // Checklist Version Summary Directory States
   const [showVersionSummaryModal, setShowVersionSummaryModal] = useState(false);
@@ -1264,6 +1315,432 @@ export function AdminPanel({
 
     onSaveDayData({ ...dayData, groups: updatedGroups });
     showNotification('Items reordered successfully');
+  };
+
+  // Group Amend Handler
+  const handleSaveEditedGroup = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingGroup || !editingGroup.name.trim()) return;
+
+    const { id, name, code, isMandatory } = editingGroup;
+    const newName = name.trim();
+    const newCode = code.trim().toUpperCase();
+
+    if (id === 'ALL_FLIGHT_GROUPS') {
+      const updatedGroups = dayData.groups.map((grp) => {
+        if (grp.isFlightGroup) {
+          return {
+            ...grp,
+            name: newName,
+            code: newCode || grp.code,
+            isMandatory,
+          };
+        }
+        return grp;
+      });
+      onSaveDayData({ ...dayData, groups: updatedGroups });
+      showNotification(`Amended Flight Operations group across ALL 4 Flight Groups`);
+    } else {
+      const updatedGroups = dayData.groups.map((grp) => {
+        if (grp.id === id) {
+          return {
+            ...grp,
+            name: newName,
+            code: newCode,
+            isMandatory,
+          };
+        }
+        return grp;
+      });
+      onSaveDayData({ ...dayData, groups: updatedGroups });
+      showNotification(`Amended operational group "${newName}"`);
+    }
+    setEditingGroup(null);
+  };
+
+  // Tree View Helper Methods
+  const toggleTreeNode = (nodeId: string) => {
+    setExpandedTreeNodes((prev) => ({
+      ...prev,
+      [nodeId]: prev[nodeId] === undefined ? false : !prev[nodeId],
+    }));
+  };
+
+  const isTreeNodeExpanded = (nodeId: string, defaultOpen = true) => {
+    return expandedTreeNodes[nodeId] !== undefined ? expandedTreeNodes[nodeId] : defaultOpen;
+  };
+
+  const toggleChecklistItemsExpanded = (checklistId: string) => {
+    setPerChecklistExpandedItems((prev) => ({
+      ...prev,
+      [checklistId]: !prev[checklistId],
+    }));
+  };
+
+  const expandAllTreeNodes = () => {
+    const newExpanded: Record<string, boolean> = { 'ALL_FLIGHT_GROUPS': true };
+    dayData.groups.forEach((g) => {
+      newExpanded[g.id] = true;
+      g.subGroups.forEach((s) => {
+        newExpanded[s.id] = true;
+        s.checklists.forEach((c) => {
+          newExpanded[c.id] = true;
+        });
+      });
+    });
+    setExpandedTreeNodes(newExpanded);
+  };
+
+  const collapseAllTreeNodes = () => {
+    setExpandedTreeNodes({});
+  };
+
+  // Inline tree creation handlers
+  const handleInlineAddSubGroupSubmit = (parentGroupId: string) => {
+    if (!inlineSubGroupNameInput.trim()) {
+      showNotification('Please enter a sub-group name', 'error');
+      return;
+    }
+
+    const nameToAdd = inlineSubGroupNameInput.trim();
+    const codeToAdd = inlineSubGroupCodeInput.trim().toUpperCase() || undefined;
+    const isMandatory = inlineSubGroupIsMandatoryInput;
+
+    let updatedGroups = [...dayData.groups];
+
+    if (parentGroupId === 'ALL_FLIGHT_GROUPS') {
+      updatedGroups = updatedGroups.map((grp) => {
+        if (grp.isFlightGroup) {
+          const newSub: SubOperationalGroup = {
+            id: `sub-${grp.code.toLowerCase()}-${Date.now()}`,
+            name: nameToAdd,
+            code: codeToAdd || grp.code,
+            isMandatory,
+            checklists: [],
+          };
+          return {
+            ...grp,
+            subGroups: [...grp.subGroups, newSub],
+          };
+        }
+        return grp;
+      });
+      showNotification(`Replicated inline sub-group "${nameToAdd}" across ALL 4 Flight Groups!`);
+    } else {
+      updatedGroups = updatedGroups.map((grp) => {
+        if (grp.id === parentGroupId) {
+          const newSub: SubOperationalGroup = {
+            id: `sub-${Date.now()}`,
+            name: nameToAdd,
+            code: codeToAdd || grp.code,
+            isMandatory,
+            checklists: [],
+          };
+          return {
+            ...grp,
+            subGroups: [...grp.subGroups, newSub],
+          };
+        }
+        return grp;
+      });
+      showNotification(`Added inline sub-group "${nameToAdd}"`);
+    }
+
+    onSaveDayData({ ...dayData, groups: updatedGroups });
+    setExpandedTreeNodes((prev) => ({ ...prev, [parentGroupId]: true }));
+    setActiveInlineSubGroupGroupId(null);
+    setInlineSubGroupNameInput('');
+    setInlineSubGroupCodeInput('');
+  };
+
+  const handleInlineAddChecklistSubmit = (parentGroupId: string, subGroupId: string, subGroupName: string) => {
+    if (!inlineChecklistTitleInput.trim()) {
+      showNotification('Please enter a checklist title', 'error');
+      return;
+    }
+
+    const titleToAdd = inlineChecklistTitleInput.trim();
+    const descToAdd = inlineChecklistDescInput.trim() || undefined;
+    const versionToAdd = inlineChecklistVersionInput.trim() || 'v1.0';
+    const isMandatory = inlineChecklistIsMandatoryInput;
+    const targetSubKey = subGroupName.trim().toLowerCase();
+
+    const todayDateStr = new Date().toISOString().split('T')[0];
+
+    let updatedGroups = [...dayData.groups];
+
+    if (parentGroupId === 'ALL_FLIGHT_GROUPS') {
+      updatedGroups = updatedGroups.map((grp) => {
+        if (grp.isFlightGroup) {
+          const newChk: Checklist = {
+            id: `chk-${grp.code.toLowerCase()}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+            title: titleToAdd,
+            description: descToAdd,
+            isMandatory,
+            status: 'pending',
+            items: [],
+            version: versionToAdd,
+            versionDate: todayDateStr,
+          };
+
+          const hasSub = grp.subGroups.some((s) => s.name.trim().toLowerCase() === targetSubKey);
+          if (hasSub) {
+            return {
+              ...grp,
+              subGroups: grp.subGroups.map((sub) => {
+                if (sub.name.trim().toLowerCase() === targetSubKey) {
+                  return { ...sub, checklists: [...sub.checklists, newChk] };
+                }
+                return sub;
+              }),
+            };
+          } else {
+            const newSub: SubOperationalGroup = {
+              id: `sub-${grp.code.toLowerCase()}-${Date.now()}`,
+              name: subGroupName,
+              code: grp.code,
+              isMandatory: true,
+              checklists: [newChk],
+            };
+            return { ...grp, subGroups: [newSub, ...grp.subGroups] };
+          }
+        }
+        return grp;
+      });
+      showNotification(`Replicated Checklist "${titleToAdd}" across ALL 4 Flight Groups!`);
+    } else {
+      updatedGroups = updatedGroups.map((grp) => {
+        if (grp.id === parentGroupId) {
+          const newChk: Checklist = {
+            id: generateUniqueId('chk'),
+            title: titleToAdd,
+            description: descToAdd,
+            isMandatory,
+            status: 'pending',
+            items: [],
+            version: versionToAdd,
+            versionDate: todayDateStr,
+          };
+
+          return {
+            ...grp,
+            subGroups: grp.subGroups.map((sub) => {
+              if (sub.id === subGroupId || sub.name.trim().toLowerCase() === targetSubKey) {
+                return { ...sub, checklists: [...sub.checklists, newChk] };
+              }
+              return sub;
+            }),
+          };
+        }
+        return grp;
+      });
+      showNotification(`Added Checklist "${titleToAdd}"`);
+    }
+
+    onSaveDayData({ ...dayData, groups: updatedGroups });
+    setExpandedTreeNodes((prev) => ({ ...prev, [subGroupId]: true }));
+    setActiveInlineChecklistSubGroupId(null);
+    setInlineChecklistTitleInput('');
+    setInlineChecklistDescInput('');
+    setInlineChecklistVersionInput('v1.0');
+  };
+
+  const handleInlineAddItemSubmit = (parentGroupId: string, subGroupId: string, subGroupName: string, chkId: string, chkTitle: string) => {
+    if (!inlineItemTextInput.trim()) {
+      showNotification('Please enter item text', 'error');
+      return;
+    }
+
+    const textToAdd = inlineItemTextInput.trim();
+    const isMandatory = inlineItemIsMandatoryInput;
+    const isAllFlight = parentGroupId === 'ALL_FLIGHT_GROUPS';
+    const targetSubName = subGroupName.trim().toLowerCase();
+
+    let updatedGroups = [...dayData.groups];
+
+    if (isAllFlight) {
+      updatedGroups = updatedGroups.map((grp) => {
+        if (grp.isFlightGroup) {
+          return {
+            ...grp,
+            subGroups: grp.subGroups.map((sub) => {
+              if (sub.name.trim().toLowerCase() === targetSubName || sub.checklists.some((c) => c.id === chkId || c.title.trim().toLowerCase() === chkTitle.trim().toLowerCase())) {
+                return {
+                  ...sub,
+                  checklists: sub.checklists.map((chk) => {
+                    if (chk.title.trim().toLowerCase() === chkTitle.trim().toLowerCase() || chk.id === chkId) {
+                      const nextSeq = (chk.items.length || 0) + 1;
+                      const newItem = makeItem(
+                        `item-${grp.code.toLowerCase()}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+                        nextSeq,
+                        textToAdd,
+                        isMandatory
+                      );
+                      return { ...chk, items: [...chk.items, newItem] };
+                    }
+                    return chk;
+                  }),
+                };
+              }
+              return sub;
+            }),
+          };
+        }
+        return grp;
+      });
+      showNotification(`Added item across ALL 4 Flight Groups!`);
+    } else {
+      updatedGroups = updatedGroups.map((grp) => {
+        if (grp.id === parentGroupId) {
+          return {
+            ...grp,
+            subGroups: grp.subGroups.map((sub) => {
+              if (sub.id === subGroupId || sub.name.trim().toLowerCase() === targetSubName) {
+                return {
+                  ...sub,
+                  checklists: sub.checklists.map((chk) => {
+                    if (chk.id === chkId || chk.title.trim().toLowerCase() === chkTitle.trim().toLowerCase()) {
+                      const nextSeq = (chk.items.length || 0) + 1;
+                      const newItem = makeItem(`item-${Date.now()}`, nextSeq, textToAdd, isMandatory);
+                      return { ...chk, items: [...chk.items, newItem] };
+                    }
+                    return chk;
+                  }),
+                };
+              }
+              return sub;
+            }),
+          };
+        }
+        return grp;
+      });
+      showNotification(`Added item to checklist`);
+    }
+
+    onSaveDayData({ ...dayData, groups: updatedGroups });
+    setPerChecklistExpandedItems((prev) => ({ ...prev, [chkId]: true }));
+    setActiveInlineItemChecklistId(null);
+    setInlineItemTextInput('');
+  };
+
+  // Dedicated Excel Overwrite Target Handlers
+  const handleExcelOverwriteSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !excelOverwriteTarget) return;
+
+    try {
+      const buffer = await file.arrayBuffer();
+      const result = await parseChecklistExcel(buffer);
+      if (!result.items || result.items.length === 0) {
+        showNotification('No valid checklist items found in the uploaded file', 'error');
+        return;
+      }
+      setExcelOverwriteItems(result.items);
+      setExcelOverwriteFileName(file.name);
+      showNotification(`Parsed ${result.items.length} checklist items from ${file.name}`);
+    } catch (err: any) {
+      showNotification(err.message || 'Error parsing Excel file', 'error');
+    }
+  };
+
+  const handleCommitExcelOverwrite = () => {
+    if (!excelOverwriteTarget || excelOverwriteItems.length === 0) {
+      showNotification('No target checklist or parsed items to commit', 'error');
+      return;
+    }
+
+    const { checklistId, checklistTitle, subGroupId, parentGroupId, isAllFlightGroups } = excelOverwriteTarget;
+    const nowIso = new Date().toISOString();
+    const todayDateStr = nowIso.split('T')[0];
+
+    let overwrittenCount = 0;
+    let lastOldVer = 'v1.0';
+    let lastNewVer = 'v1.1';
+
+    const updatedGroups = dayData.groups.map((grp) => {
+      const isTargetGrp = isAllFlightGroups ? grp.isFlightGroup : grp.id === parentGroupId;
+      if (!isTargetGrp) return grp;
+
+      return {
+        ...grp,
+        subGroups: grp.subGroups.map((sub) => {
+          const isTargetSub = sub.id === subGroupId || sub.name.trim().toLowerCase() === excelOverwriteTarget.subGroupName.trim().toLowerCase();
+          if (!isTargetSub) return sub;
+
+          return {
+            ...sub,
+            checklists: sub.checklists.map((chk) => {
+              const matchesChk = chk.id === checklistId || chk.title.trim().toLowerCase() === checklistTitle.trim().toLowerCase();
+              if (!matchesChk) return chk;
+
+              overwrittenCount++;
+              const curVer = chk.version || 'v1.0';
+              const nextVer = getNextChecklistVersion(curVer);
+              lastOldVer = curVer;
+              lastNewVer = nextVer;
+
+              const prevHistory: ChecklistVersionRecord[] = chk.versionHistory && chk.versionHistory.length > 0
+                ? chk.versionHistory
+                : [
+                    {
+                      version: curVer,
+                      versionDate: chk.versionDate || '2026-08-20',
+                      updatedBy: 'System Baseline',
+                      itemCount: chk.items.length,
+                      changeType: 'INITIAL',
+                      notes: 'Original baseline version',
+                      timestamp: new Date(Date.now() - 86400000).toISOString(),
+                    },
+                  ];
+
+              const updatedHistory: ChecklistVersionRecord[] = [
+                {
+                  version: nextVer,
+                  versionDate: todayDateStr,
+                  updatedBy: currentUser ? `${currentUser.name} (${currentUser.uNumber})` : 'Station Administrator',
+                  itemCount: excelOverwriteItems.length,
+                  previousItemCount: chk.items.length,
+                  changeType: 'OVERWRITE',
+                  notes: `Overwritten via Excel import (${excelOverwriteFileName || 'file'}) with ${excelOverwriteItems.length} items`,
+                  timestamp: new Date().toISOString(),
+                },
+                ...prevHistory,
+              ];
+
+              const newItemsWithIds = excelOverwriteItems.map((item, idx) => ({
+                ...item,
+                id: `item-ovw-${chk.id}-${Date.now()}-${idx}`,
+                sequenceOrder: idx + 1,
+              }));
+
+              return {
+                ...chk,
+                version: nextVer,
+                versionDate: todayDateStr,
+                versionHistory: updatedHistory,
+                items: newItemsWithIds,
+                status: 'pending' as const,
+              };
+            }),
+          };
+        }),
+      };
+    });
+
+    onSaveDayData({ ...dayData, groups: updatedGroups });
+    addAuditLog(
+      currentUser.uNumber,
+      currentUser.name,
+      currentUser.role,
+      'CHECKLIST_VERSION_UPDATE',
+      `Overwrote checklist "${checklistTitle}" via Excel (${excelOverwriteItems.length} items, version upgraded ${lastOldVer} -> ${lastNewVer})`,
+      dayData.date
+    );
+
+    showNotification(`Successfully overwrote checklist "${checklistTitle}" with ${excelOverwriteItems.length} items! (Version: ${lastNewVer})`);
+    setExcelOverwriteTarget(null);
+    setExcelOverwriteItems([]);
+    setExcelOverwriteFileName('');
   };
 
   // Amend Handlers
@@ -2478,418 +2955,703 @@ export function AdminPanel({
           )}
 
           {/* TAB 2: CHECKLIST & ITEMS BUILDER */}
-          {activeTab === 'checklists' && (
-            <div className="space-y-6">
-              {/* Quick Launch Version Summary Banner */}
-              <div className="p-3.5 bg-gradient-to-r from-indigo-50 via-purple-50 to-indigo-50 border border-indigo-200/80 rounded-2xl flex items-center justify-between flex-wrap gap-3 shadow-2xs">
-                <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold shadow-xs">
-                    <History className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <div className="text-xs font-bold text-indigo-950">
-                      Station Checklist Versioning & Lifecycle Audit Directory
+          {activeTab === 'checklists' && (() => {
+            // Unfiltered full structure
+            const fullTree: any[] = [];
+            const repFlightGroup = dayData.groups.find((g) => g.isFlightGroup);
+            if (repFlightGroup) {
+              fullTree.push({
+                id: 'ALL_FLIGHT_GROUPS',
+                type: 'group',
+                name: 'Flight Operations (All 4 Flight Groups)',
+                code: 'FLT-ALL',
+                isFlightGroup: true,
+                isMandatory: true,
+                subGroups: repFlightGroup.subGroups,
+              });
+            }
+
+            dayData.groups.forEach((grp) => {
+              if (!grp.isFlightGroup) {
+                fullTree.push({
+                  id: grp.id,
+                  type: 'group',
+                  name: grp.name,
+                  code: grp.code,
+                  isFlightGroup: false,
+                  isMandatory: grp.isMandatory,
+                  subGroups: grp.subGroups,
+                });
+              }
+            });
+
+            // Filtering logic for hierarchical view
+            const searchLower = treeSearchTerm.toLowerCase().trim();
+
+            const filterTreeNode = (node: any): any | null => {
+              const selfMatches =
+                !searchLower ||
+                node.name.toLowerCase().includes(searchLower) ||
+                (node.code && node.code.toLowerCase().includes(searchLower));
+
+              const filteredSubs = (node.subGroups || [])
+                .map((sub: any) => {
+                  const subMatchesSelf =
+                    !searchLower ||
+                    sub.name.toLowerCase().includes(searchLower) ||
+                    (sub.code && sub.code.toLowerCase().includes(searchLower));
+
+                  const filteredChecklists = (sub.checklists || [])
+                    .map((chk: any) => {
+                      const chkMatchesSelf =
+                        !searchLower ||
+                        chk.title.toLowerCase().includes(searchLower) ||
+                        (chk.description && chk.description.toLowerCase().includes(searchLower)) ||
+                        (chk.version && chk.version.toLowerCase().includes(searchLower));
+
+                      const filteredItems = (chk.items || []).filter((item: any) => {
+                        return !searchLower || item.text.toLowerCase().includes(searchLower);
+                      });
+
+                      const hasMatchingItems = filteredItems.length > 0;
+                      const matchesChecklist = chkMatchesSelf || hasMatchingItems;
+
+                      if (matchesChecklist) {
+                        return {
+                          ...chk,
+                          items: filteredItems,
+                          _matchesSelf: chkMatchesSelf,
+                        };
+                      }
+                      return null;
+                    })
+                    .filter(Boolean);
+
+                  const hasMatchingChecklists = filteredChecklists.length > 0;
+                  const matchesSub = subMatchesSelf || hasMatchingChecklists;
+
+                  if (matchesSub) {
+                    return {
+                      ...sub,
+                      checklists: filteredChecklists,
+                      _matchesSelf: subMatchesSelf,
+                    };
+                  }
+                  return null;
+                })
+                .filter(Boolean);
+
+              const hasMatchingSubs = filteredSubs.length > 0;
+              const matchesGroup = selfMatches || hasMatchingSubs;
+
+              if (matchesGroup) {
+                return {
+                  ...node,
+                  subGroups: filteredSubs,
+                  _matchesSelf: selfMatches,
+                };
+              }
+              return null;
+            };
+
+            const filteredTree = fullTree.map(filterTreeNode).filter(Boolean);
+
+            return (
+              <div className="space-y-6">
+                {/* Quick Launch Version Summary Banner */}
+                <div className="p-3.5 bg-gradient-to-r from-indigo-50 via-purple-50 to-indigo-50 border border-indigo-200/80 rounded-2xl flex items-center justify-between flex-wrap gap-3 shadow-2xs">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-bold shadow-xs">
+                      <History className="w-4 h-4" />
                     </div>
-                    <p className="text-[11px] text-indigo-800/80">
-                      View all {allAggregatedChecklists.length} station checklists, active semantic versions (e.g. v1.1), and modification timelines.
-                    </p>
+                    <div>
+                      <div className="text-xs font-bold text-indigo-950">
+                        Station Checklist Versioning & Lifecycle Audit Directory
+                      </div>
+                      <p className="text-[11px] text-indigo-800/80">
+                        View all {allAggregatedChecklists.length} station checklists, active semantic versions (e.g. v1.1), and modification timelines.
+                      </p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setShowVersionSummaryModal(true)}
+                    className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5"
+                  >
+                    <History className="w-3.5 h-3.5" />
+                    <span>Open Version Directory</span>
+                  </button>
+                </div>
+
+                {/* Toolbar and Search for Tree */}
+                <div className="flex flex-col sm:flex-row gap-3 items-center justify-between bg-white p-4 border border-slate-200 rounded-2xl shadow-2xs">
+                  <div className="relative flex-1 w-full">
+                    <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
+                    <input
+                      type="text"
+                      placeholder="Search groups, sub-groups, checklists or items..."
+                      value={treeSearchTerm}
+                      onChange={(e) => setTreeSearchTerm(e.target.value)}
+                      className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500 focus:bg-white"
+                    />
+                  </div>
+                  <div className="flex gap-2 w-full sm:w-auto shrink-0 flex-wrap sm:flex-nowrap">
+                    <button
+                      type="button"
+                      onClick={expandAllTreeNodes}
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition"
+                    >
+                      Expand All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={collapseAllTreeNodes}
+                      className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition"
+                    >
+                      Collapse All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setShowChecklistItemsInExplorer(!showChecklistItemsInExplorer)}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-xl transition flex items-center gap-1.5 ${
+                        showChecklistItemsInExplorer
+                          ? 'bg-purple-600 text-white shadow-xs'
+                          : 'bg-purple-50 text-purple-700 hover:bg-purple-100'
+                      }`}
+                    >
+                      {showChecklistItemsInExplorer ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                      <span>Checklist Items View</span>
+                    </button>
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setShowVersionSummaryModal(true)}
-                  className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5"
-                >
-                  <History className="w-3.5 h-3.5" />
-                  <span>Open Version Directory</span>
-                </button>
-              </div>
+                {/* File Explorer Tree View Canvas */}
+                <div className="bg-slate-50/50 border border-slate-200 rounded-2xl p-4 sm:p-6 space-y-4 shadow-3xs">
+                  <div className="flex items-center justify-between pb-2 border-b border-slate-200/60">
+                    <div className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+                      Interactive Checklist Directory Explorer
+                    </div>
+                    <div className="text-[11px] text-slate-400 font-medium">
+                      DoubleClick folders to toggle or click arrows to expand
+                    </div>
+                  </div>
 
-              {/* Group & Sub-Group Selection Filter */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 bg-white border border-slate-200 rounded-2xl shadow-2xs">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Select Group:</label>
-                  <select
-                    id="select-edit-group"
-                    value={selectedEditGroupId}
-                    onChange={(e) => {
-                      setSelectedEditGroupId(e.target.value);
-                      setSelectedEditSubGroupId('');
-                    }}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 focus:bg-white font-mono"
-                  >
-                    <option value="ALL_FLIGHT_GROUPS" className="font-bold text-blue-700">
-                      🚀 ALL 4 FLIGHT GROUPS (LX147, LX2647, LH763, LH761)
-                    </option>
-                    {dayData.groups.map((g) => (
-                      <option key={g.id} value={g.id}>
-                        {g.name} ({g.code}) {g.isFlightGroup ? '✈️' : ''}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                  {filteredTree.length === 0 ? (
+                    <div className="p-12 text-center bg-white border border-dashed border-slate-200 rounded-xl">
+                      <p className="text-xs text-slate-500 font-semibold">No matching elements found in hierarchy.</p>
+                      {treeSearchTerm && (
+                        <button
+                          type="button"
+                          onClick={() => setTreeSearchTerm('')}
+                          className="mt-2 text-xs font-bold text-purple-600 hover:underline"
+                        >
+                          Clear Search
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-3 font-medium select-none">
+                      {filteredTree.map((grp: any) => {
+                        const isGrpExpanded = treeSearchTerm.trim() !== '' || isTreeNodeExpanded(grp.id, true);
+                        const isFlight = grp.isFlightGroup;
 
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">Target Destination / Sub-Group:</label>
-                  <select
-                    id="select-edit-subgroup"
-                    value={selectedEditSubGroupId || 'DIRECT_GROUP'}
-                    onChange={(e) => setSelectedEditSubGroupId(e.target.value)}
-                    className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 focus:bg-white font-mono font-semibold"
-                  >
-                    <option value="DIRECT_GROUP" className="font-bold text-purple-700">
-                      📌 DIRECT GROUP CHECKLIST (General Operations)
-                    </option>
-                    {activeSubGroups.length > 0 && (
-                      <optgroup label="Configured Sub-Groups">
-                        {activeSubGroups.map((s) => (
-                          <option key={s.id} value={s.id}>
-                            📂 {s.name} {s.code ? `(${s.code})` : ''} ({s.checklists.length} checklists)
-                          </option>
-                        ))}
-                      </optgroup>
-                    )}
-                    <option value="NEW_SUBGROUP" className="font-bold text-emerald-700">
-                      ➕ Create New Sub-Group...
-                    </option>
-                  </select>
+                        return (
+                          <div key={grp.id} className="border border-slate-200/80 rounded-xl bg-white overflow-hidden shadow-3xs">
+                            {/* Group Node Row */}
+                            <div className="flex items-center justify-between p-3.5 hover:bg-slate-50/50 border-b border-slate-100 group">
+                              <div
+                                className="flex items-center gap-3 cursor-pointer flex-1 min-w-0"
+                                onClick={() => toggleTreeNode(grp.id)}
+                              >
+                                <button type="button" className="p-0.5 text-slate-400 hover:text-slate-600">
+                                  {isGrpExpanded ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                                </button>
+                                {isGrpExpanded ? (
+                                  <FolderOpen className={`w-5 h-5 shrink-0 ${isFlight ? 'text-blue-500' : 'text-purple-500'}`} />
+                                ) : (
+                                  <Folder className={`w-5 h-5 shrink-0 ${isFlight ? 'text-blue-500' : 'text-purple-500'}`} />
+                                )}
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-bold text-slate-800 text-xs sm:text-sm">{grp.name}</span>
+                                    <span className="font-mono text-[10px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+                                      ({grp.code})
+                                    </span>
+                                    <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
+                                      isFlight ? 'bg-blue-50 text-blue-700' : 'bg-purple-50 text-purple-700'
+                                    }`}>
+                                      {isFlight ? 'Flight Operations (4x)' : 'Station Operations'}
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
 
-                  {selectedEditSubGroupId === 'NEW_SUBGROUP' && (
-                    <div className="mt-2">
-                      <label className="block text-[11px] font-bold text-emerald-800 mb-1">New Sub-Group Name:</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Ramp Safety & Equipment Operations"
-                        value={inlineSubGroupName}
-                        onChange={(e) => setInlineSubGroupName(e.target.value)}
-                        className="w-full p-2 bg-emerald-50 border border-emerald-300 rounded-xl text-xs font-semibold text-emerald-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                      />
+                              {/* Group Action Buttons */}
+                              <div className="flex items-center gap-1 shrink-0 opacity-80 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setEditingGroup({
+                                      id: grp.id,
+                                      name: grp.name,
+                                      code: grp.code,
+                                      isMandatory: grp.isMandatory ?? true,
+                                    })
+                                  }
+                                  className="p-1 text-slate-400 hover:text-purple-600 hover:bg-slate-100 rounded transition"
+                                  title="Amend Group Properties"
+                                >
+                                  <Edit2 className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setActiveInlineSubGroupGroupId(
+                                      activeInlineSubGroupGroupId === grp.id ? null : grp.id
+                                    );
+                                    setInlineSubGroupNameInput('');
+                                    setInlineSubGroupCodeInput('');
+                                  }}
+                                  className={`p-1 rounded transition flex items-center gap-1 text-[11px] font-bold ${
+                                    activeInlineSubGroupGroupId === grp.id
+                                      ? 'bg-purple-100 text-purple-700'
+                                      : 'text-purple-600 hover:bg-purple-50'
+                                  }`}
+                                  title="Add Sub-Group inline"
+                                >
+                                  <Plus className="w-3.5 h-3.5" />
+                                  <span className="hidden md:inline">Sub-Group</span>
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Inline Subgroup Create Form */}
+                            {activeInlineSubGroupGroupId === grp.id && (
+                              <div className="bg-purple-50/40 p-4 border-b border-slate-100 space-y-3">
+                                <div className="text-[11px] font-bold text-purple-900 uppercase tracking-wider">
+                                  + Create New Sub-Group under {grp.name}
+                                </div>
+                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Sub-Group Name:</label>
+                                    <input
+                                      type="text"
+                                      placeholder="e.g. Ramp Services"
+                                      value={inlineSubGroupNameInput}
+                                      onChange={(e) => setInlineSubGroupNameInput(e.target.value)}
+                                      className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                    />
+                                  </div>
+                                  <div>
+                                    <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Code (Optional):</label>
+                                    <input
+                                      type="text"
+                                      placeholder="e.g. RAMP-01"
+                                      value={inlineSubGroupCodeInput}
+                                      onChange={(e) => setInlineSubGroupCodeInput(e.target.value)}
+                                      className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-purple-500 uppercase"
+                                    />
+                                  </div>
+                                  <div className="flex items-end gap-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleInlineAddSubGroupSubmit(grp.id)}
+                                      className="flex-1 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-xs"
+                                    >
+                                      Create Sub-Group
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setActiveInlineSubGroupGroupId(null)}
+                                      className="py-2 px-3 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-xl"
+                                    >
+                                      Cancel
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+
+                            {/* Subgroups Container */}
+                            {isGrpExpanded && (
+                              <div className="bg-slate-50/20 divide-y divide-slate-100">
+                                {(grp.subGroups || []).length === 0 ? (
+                                  <div className="p-4 text-xs text-slate-400 italic text-center">
+                                    {"No sub-groups configured. Click '+ Sub-Group' to append."}
+                                  </div>
+                                ) : (
+                                  grp.subGroups.map((sub: any) => {
+                                    const isSubExpanded = treeSearchTerm.trim() !== '' || isTreeNodeExpanded(sub.id, true);
+
+                                    return (
+                                      <div key={sub.id} className="pl-6 bg-slate-50/10">
+                                        {/* Subgroup Row */}
+                                        <div className="flex items-center justify-between p-3 hover:bg-slate-100/30 group">
+                                          <div
+                                            className="flex items-center gap-2 cursor-pointer flex-1 min-w-0"
+                                            onClick={() => toggleTreeNode(sub.id)}
+                                          >
+                                            <button type="button" className="p-0.5 text-slate-400 hover:text-slate-600">
+                                              {isSubExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                                            </button>
+                                            {isSubExpanded ? (
+                                              <FolderOpen className="w-4 h-4 shrink-0 text-slate-500" />
+                                            ) : (
+                                              <Folder className="w-4 h-4 shrink-0 text-slate-400" />
+                                            )}
+                                            <div className="min-w-0 flex-1">
+                                              <div className="flex items-center gap-1.5 flex-wrap">
+                                                <span className="font-semibold text-slate-800 text-xs sm:text-sm">{sub.name}</span>
+                                                {sub.code && (
+                                                  <span className="font-mono text-[9px] font-bold text-slate-500 bg-slate-200 px-1 py-0.2 rounded">
+                                                    {sub.code}
+                                                  </span>
+                                                )}
+                                                <span className="text-[10px] text-slate-400">({sub.checklists?.length || 0} checklists)</span>
+                                              </div>
+                                            </div>
+                                          </div>
+
+                                          {/* Sub-Group Action Buttons */}
+                                          <div className="flex items-center gap-1 shrink-0 opacity-80 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button
+                                              type="button"
+                                              onClick={() =>
+                                                setEditingSubGroup({
+                                                  id: sub.id,
+                                                  parentGroupId: grp.id,
+                                                  name: sub.name,
+                                                  code: sub.code,
+                                                  isMandatory: sub.isMandatory ?? true,
+                                                })
+                                              }
+                                              className="p-1 text-slate-400 hover:text-purple-600 hover:bg-slate-200/50 rounded transition"
+                                              title="Amend Sub-Group"
+                                            >
+                                              <Edit2 className="w-3.5 h-3.5" />
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleDeleteSubGroup(grp.id, sub.id)}
+                                              className="p-1 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded transition"
+                                              title="Delete Sub-Group"
+                                            >
+                                              <Trash2 className="w-3.5 h-3.5" />
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setActiveInlineChecklistSubGroupId(
+                                                  activeInlineChecklistSubGroupId === sub.id ? null : sub.id
+                                                );
+                                                setInlineChecklistTitleInput('');
+                                                setInlineChecklistDescInput('');
+                                                setInlineChecklistVersionInput('v1.0');
+                                              }}
+                                              className={`p-1 rounded transition flex items-center gap-0.5 text-[10px] font-bold ${
+                                                activeInlineChecklistSubGroupId === sub.id
+                                                  ? 'bg-purple-100 text-purple-700'
+                                                  : 'text-purple-600 hover:bg-purple-50'
+                                              }`}
+                                              title="Add Checklist inline"
+                                            >
+                                              <Plus className="w-3 h-3" />
+                                              <span className="hidden md:inline">Checklist</span>
+                                            </button>
+                                          </div>
+                                        </div>
+
+                                        {/* Inline Checklist Create Form */}
+                                        {activeInlineChecklistSubGroupId === sub.id && (
+                                          <div className="bg-purple-50/30 p-4 border-y border-slate-100 space-y-3">
+                                            <div className="text-[11px] font-bold text-purple-900 uppercase tracking-wider">
+                                              + Add New Checklist under {sub.name}
+                                            </div>
+                                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                              <div className="sm:col-span-2">
+                                                <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Checklist Title:</label>
+                                                <input
+                                                  type="text"
+                                                  placeholder="e.g. Safety Inspection Checklist"
+                                                  value={inlineChecklistTitleInput}
+                                                  onChange={(e) => setInlineChecklistTitleInput(e.target.value)}
+                                                  className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                                />
+                                              </div>
+                                              <div>
+                                                <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Version (e.g. v1.0):</label>
+                                                <input
+                                                  type="text"
+                                                  placeholder="v1.0"
+                                                  value={inlineChecklistVersionInput}
+                                                  onChange={(e) => setInlineChecklistVersionInput(e.target.value)}
+                                                  className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs font-mono text-purple-700 font-bold focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                                />
+                                              </div>
+                                            </div>
+                                            <div>
+                                              <label className="block text-[10px] font-bold text-slate-500 mb-0.5">Description:</label>
+                                              <input
+                                                type="text"
+                                                placeholder="Brief operational purpose or compliance references..."
+                                                value={inlineChecklistDescInput}
+                                                onChange={(e) => setInlineChecklistDescInput(e.target.value)}
+                                                className="w-full p-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                              />
+                                            </div>
+                                            <div className="flex justify-end gap-2">
+                                              <button
+                                                type="button"
+                                                onClick={() => handleInlineAddChecklistSubmit(grp.id, sub.id, sub.name)}
+                                                className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-xs"
+                                              >
+                                                Create Checklist
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => setActiveInlineChecklistSubGroupId(null)}
+                                                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-xl"
+                                              >
+                                                Cancel
+                                              </button>
+                                            </div>
+                                          </div>
+                                        )}
+
+                                        {/* Checklists Container */}
+                                        {isSubExpanded && (
+                                          <div className="divide-y divide-slate-100 border-t border-slate-100">
+                                            {(sub.checklists || []).length === 0 ? (
+                                              <div className="p-3 pl-8 text-xs text-slate-400 italic">
+                                                {"No checklists configured under this subgroup. Click '+ Checklist' to append."}
+                                              </div>
+                                            ) : (
+                                              sub.checklists.map((chk: any) => {
+                                                const hasExpandedItems = perChecklistExpandedItems[chk.id] === true;
+                                                const showItemsInNode = showChecklistItemsInExplorer || hasExpandedItems;
+
+                                                return (
+                                                  <div key={chk.id} className="pl-6 bg-white hover:bg-slate-50/20">
+                                                    {/* Checklist Row */}
+                                                    <div className="flex items-center justify-between p-3 group border-b border-slate-100 last:border-0">
+                                                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                                                        <FileText className="w-4 h-4 shrink-0 text-purple-600" />
+                                                        <div className="min-w-0 flex-1">
+                                                          <div className="flex items-center gap-2 flex-wrap">
+                                                            <span className="font-bold text-slate-800 text-xs sm:text-sm">{chk.title}</span>
+                                                            <span className="font-mono text-[9px] font-bold text-purple-700 bg-purple-50 px-1.5 py-0.2 rounded font-semibold">
+                                                              {chk.version || 'v1.0'}
+                                                            </span>
+                                                            {chk.isMandatory && (
+                                                              <span className="text-[9px] font-extrabold text-amber-700 bg-amber-50 border border-amber-200 rounded px-1">
+                                                                MANDATORY
+                                                              </span>
+                                                            )}
+                                                            <span className="text-[10px] text-slate-400">({chk.items?.length || 0} items)</span>
+                                                          </div>
+                                                          {chk.description && (
+                                                            <p className="text-[11px] text-slate-500 font-medium truncate mt-0.5">{chk.description}</p>
+                                                          )}
+                                                        </div>
+                                                      </div>
+
+                                                      {/* Checklist Action Controls */}
+                                                      <div className="flex items-center gap-1 shrink-0 opacity-100 sm:opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <button
+                                                          type="button"
+                                                          onClick={() => toggleChecklistItemsExpanded(chk.id)}
+                                                          className={`p-1 rounded transition ${
+                                                            showItemsInNode ? 'bg-purple-100 text-purple-700' : 'text-slate-400 hover:text-purple-600 hover:bg-slate-100'
+                                                          }`}
+                                                          title="Toggle Item View"
+                                                        >
+                                                          {showItemsInNode ? <Eye className="w-3.5 h-3.5" /> : <EyeOff className="w-3.5 h-3.5" />}
+                                                        </button>
+
+                                                        <button
+                                                          type="button"
+                                                          onClick={() =>
+                                                            setEditingChecklist({
+                                                              id: chk.id,
+                                                              parentGroupId: grp.id,
+                                                              subGroupId: sub.id,
+                                                              title: chk.title,
+                                                              description: chk.description || '',
+                                                              isMandatory: chk.isMandatory,
+                                                              version: chk.version || 'v1.0',
+                                                              versionDate: chk.versionDate || '',
+                                                            })
+                                                          }
+                                                          className="p-1 text-slate-400 hover:text-purple-600 hover:bg-slate-100 rounded transition"
+                                                          title="Amend Checklist & Version"
+                                                        >
+                                                          <Edit2 className="w-3.5 h-3.5" />
+                                                        </button>
+
+                                                        <button
+                                                          type="button"
+                                                          onClick={() => handleDeleteChecklist(chk.title, chk.id)}
+                                                          className="p-1 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded transition"
+                                                          title="Delete Checklist"
+                                                        >
+                                                          <Trash2 className="w-3.5 h-3.5" />
+                                                        </button>
+
+                                                        <button
+                                                          type="button"
+                                                          onClick={() =>
+                                                            setExcelOverwriteTarget({
+                                                              checklistId: chk.id,
+                                                              checklistTitle: chk.title,
+                                                              subGroupId: sub.id,
+                                                              subGroupName: sub.name,
+                                                              parentGroupId: grp.id,
+                                                              groupName: grp.name,
+                                                              isAllFlightGroups: isFlight,
+                                                            })
+                                                          }
+                                                          className="p-1 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded transition"
+                                                          title="In-place Overwrite Checklist by Importing Excel"
+                                                        >
+                                                          <Upload className="w-3.5 h-3.5" />
+                                                        </button>
+
+                                                        <button
+                                                          type="button"
+                                                          onClick={() => {
+                                                            setActiveInlineItemChecklistId(
+                                                              activeInlineItemChecklistId === chk.id ? null : chk.id
+                                                            );
+                                                            setInlineItemTextInput('');
+                                                          }}
+                                                          className={`p-1 rounded transition flex items-center gap-0.5 text-[10px] font-bold ${
+                                                            activeInlineItemChecklistId === chk.id
+                                                              ? 'bg-purple-100 text-purple-700'
+                                                              : 'text-purple-600 hover:bg-purple-50'
+                                                          }`}
+                                                          title="Add checklist item inline"
+                                                        >
+                                                          <Plus className="w-3 h-3" />
+                                                          <span className="hidden md:inline">Item</span>
+                                                        </button>
+                                                      </div>
+                                                    </div>
+
+                                                    {/* Inline Add Item Form */}
+                                                    {activeInlineItemChecklistId === chk.id && (
+                                                      <div className="bg-purple-50/20 p-3 border-b border-slate-100 space-y-2">
+                                                        <div className="text-[10px] font-bold text-purple-900 uppercase tracking-wider">
+                                                          + Add New Checklist Item
+                                                        </div>
+                                                        <div className="flex gap-2">
+                                                          <input
+                                                            type="text"
+                                                            placeholder="Enter task text description..."
+                                                            value={inlineItemTextInput}
+                                                            onChange={(e) => setInlineItemTextInput(e.target.value)}
+                                                            className="flex-1 p-2 bg-white border border-slate-200 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                                            onKeyDown={(e) => {
+                                                              if (e.key === 'Enter') {
+                                                                handleInlineAddItemSubmit(grp.id, sub.id, sub.name, chk.id, chk.title);
+                                                              }
+                                                            }}
+                                                          />
+                                                          <button
+                                                            type="button"
+                                                            onClick={() => handleInlineAddItemSubmit(grp.id, sub.id, sub.name, chk.id, chk.title)}
+                                                            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-xs"
+                                                          >
+                                                            Add Item
+                                                          </button>
+                                                        </div>
+                                                      </div>
+                                                    )}
+
+                                                    {/* Items Sub-List View inside Checklist Node */}
+                                                    {showItemsInNode && (
+                                                      <div className="pl-6 pr-4 py-2 bg-slate-50/50 space-y-1.5 border-l-2 border-purple-200/50 my-1">
+                                                        {(chk.items || []).length === 0 ? (
+                                                          <div className="text-[11px] text-slate-400 italic py-1">
+                                                            {"No items in this checklist. Click '+ Item' to add."}
+                                                          </div>
+                                                        ) : (
+                                                          chk.items.map((item: any) => (
+                                                            <div
+                                                              key={item.id}
+                                                              className="flex items-center justify-between p-2 bg-white border border-slate-200/60 rounded-lg shadow-3xs hover:border-slate-300 group"
+                                                            >
+                                                              <div className="flex items-start gap-2.5 flex-1 min-w-0">
+                                                                <span className="font-mono text-[10px] font-bold text-slate-400 bg-slate-100 px-1.5 py-0.5 rounded">
+                                                                  {item.sequenceOrder}
+                                                                </span>
+                                                                <span className="text-xs font-medium text-slate-700 break-words flex-1 min-w-0">
+                                                                  {item.text}
+                                                                </span>
+                                                              </div>
+
+                                                              {/* Item Controls */}
+                                                              <div className="flex items-center gap-1 shrink-0 ml-3">
+                                                                <button
+                                                                  type="button"
+                                                                  onClick={() => handleToggleItemMandatory(chk.title, chk.id, item.text, item.id)}
+                                                                  className={`text-[9px] font-bold px-1.5 py-0.5 rounded border transition shrink-0 ${
+                                                                    item.isMandatory
+                                                                      ? 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
+                                                                      : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100'
+                                                                  }`}
+                                                                >
+                                                                  {item.isMandatory ? 'MANDATORY' : 'OPTIONAL'}
+                                                                </button>
+                                                                <button
+                                                                  type="button"
+                                                                  onClick={() =>
+                                                                    setEditingItem({
+                                                                      id: item.id,
+                                                                      chkId: chk.id,
+                                                                      chkTitle: chk.title,
+                                                                      text: item.text,
+                                                                      isMandatory: item.isMandatory,
+                                                                    })
+                                                                  }
+                                                                  className="p-1 text-slate-400 hover:text-purple-600 hover:bg-slate-100 rounded transition shrink-0"
+                                                                >
+                                                                  <Edit className="w-3.5 h-3.5" />
+                                                                </button>
+                                                                <button
+                                                                  type="button"
+                                                                  onClick={() => handleDeleteItem(chk.title, chk.id, item.text, item.id)}
+                                                                  className="p-1 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded transition shrink-0"
+                                                                >
+                                                                  <Trash2 className="w-3.5 h-3.5" />
+                                                                </button>
+                                                              </div>
+                                                            </div>
+                                                          ))
+                                                        )}
+                                                      </div>
+                                                    )}
+                                                  </div>
+                                                );
+                                              })
+                                            )}
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                 </div>
               </div>
-
-              {isAllFlightGroups && (
-                <div className="p-3.5 bg-blue-50/80 border border-blue-200 rounded-xl text-xs text-blue-800 flex items-start gap-2.5">
-                  <Plane className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-bold">Macro Synchronized Mode Active:</span> Any checklist or checklist item created, edited, reordered, or deleted under <span className="font-bold underline">{selectedEditSubGroup?.name || 'General Operations'}</span> will instantly synchronize across all 4 flight groups (<span className="font-mono font-bold">LX147, LX2647, LH763, LH761</span>) simultaneously!
-                  </div>
-                </div>
-              )}
-
-              {/* Add New Checklist Form with Versioning */}
-              <div className="p-5 bg-white border border-slate-200 rounded-2xl space-y-4 shadow-2xs">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-900 flex items-center gap-2">
-                  <Plus className="w-4 h-4 text-purple-600" />
-                  <span>
-                    {selectedEditSubGroupId === 'DIRECT_GROUP' || !selectedEditSubGroupId
-                      ? `Append Checklist Directly to Operational Group ${isAllFlightGroups ? '(All 4 Flight Groups)' : `${selectedEditGroup?.name} (${selectedEditGroup?.code})`}`
-                      : `Create New Checklist under ${selectedEditSubGroup?.name || 'Selected Destination'} ${isAllFlightGroups ? '(All 4 Flight Groups)' : `(${selectedEditGroup?.code})`}`}
-                  </span>
-                </h4>
-
-                <form onSubmit={handleAddChecklist} className="space-y-3">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                    <div className="lg:col-span-2">
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">Checklist Title:</label>
-                      <input
-                        type="text"
-                        placeholder="Checklist Title (e.g. Ground Power Unit & Air Conditioning Check)"
-                        value={newChecklistTitle}
-                        onChange={(e) => setNewChecklistTitle(e.target.value)}
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 focus:bg-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">Version Number:</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. v1.0"
-                        value={newChecklistVersion}
-                        onChange={(e) => setNewChecklistVersion(e.target.value)}
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-purple-500 focus:bg-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[11px] font-bold text-slate-700 mb-1">Date Updated:</label>
-                      <input
-                        type="date"
-                        value={newChecklistVersionDate}
-                        onChange={(e) => setNewChecklistVersionDate(e.target.value)}
-                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-purple-500 focus:bg-white"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <input
-                      type="text"
-                      placeholder="Checklist Description (Optional)"
-                      value={newChecklistDesc}
-                      onChange={(e) => setNewChecklistDesc(e.target.value)}
-                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 focus:bg-white"
-                    />
-                  </div>
-
-                  <div className="flex items-center justify-between flex-wrap gap-2 pt-1">
-                    <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={newChecklistIsMandatory}
-                        onChange={(e) => setNewChecklistIsMandatory(e.target.checked)}
-                        className="rounded border-slate-300 bg-white text-purple-600 focus:ring-purple-500"
-                      />
-                      <span>Is Mandatory Checklist? (Default: YES)</span>
-                    </label>
-
-                    <button
-                      type="submit"
-                      className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-sm transition flex items-center gap-1.5"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>{isAllFlightGroups ? 'Save Checklist to All 4 Flight Groups' : 'Save Checklist'}</span>
-                    </button>
-                  </div>
-                </form>
-              </div>
-
-              {/* Display Checklists & Item Editor with Drag-and-Drop and Amend capabilities */}
-              {selectedEditSubGroup && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-600">
-                      Checklists in {selectedEditSubGroup.name} ({selectedEditSubGroup.checklists.length}){' '}
-                      {isAllFlightGroups && <span className="text-blue-600 font-mono text-[11px]">(Sync: LX147, LX2647, LH763, LH761)</span>}
-                    </h4>
-                  </div>
-
-                  {selectedEditSubGroup.checklists.length === 0 ? (
-                    <div className="p-8 text-center bg-white border border-dashed border-slate-200 rounded-2xl space-y-2">
-                      <FileText className="w-8 h-8 text-slate-300 mx-auto" />
-                      <div className="text-xs font-bold text-slate-700">No Checklists Configured Under {selectedEditSubGroup.name}</div>
-                      <p className="text-[11px] text-slate-500 max-w-sm mx-auto">
-                        Fill in the form above to append a new checklist directly to {isAllFlightGroups ? 'All 4 Flight Groups' : selectedEditGroup?.name || 'this group'}.
-                      </p>
-                    </div>
-                  ) : (
-                    selectedEditSubGroup.checklists.map((chk, cIdx) => (
-                    <div
-                      key={`${chk.id}-${cIdx}`}
-                      draggable
-                      onDragStart={() => setDraggedChecklistId(chk.id)}
-                      onDragOver={(e) => e.preventDefault()}
-                      onDrop={() => {
-                        if (draggedChecklistId) {
-                          const srcChk = selectedEditSubGroup.checklists.find((c) => c.id === draggedChecklistId);
-                          if (srcChk) {
-                            handleReorderChecklist(selectedEditSubGroup.id, srcChk.id, srcChk.title, chk.id, chk.title);
-                          }
-                          setDraggedChecklistId(null);
-                        }
-                      }}
-                      className="p-5 bg-white border border-slate-200 rounded-2xl space-y-3.5 shadow-2xs transition hover:border-purple-200"
-                    >
-                      {/* Checklist Card Header with Version Info */}
-                      <div className="flex items-center justify-between flex-wrap gap-2 border-b border-slate-100 pb-2.5">
-                        <div className="flex items-center gap-2">
-                          <span className="cursor-grab text-slate-400 hover:text-slate-600 p-0.5">
-                            <GripVertical className="w-4 h-4" />
-                          </span>
-                          <div className="flex items-center gap-0.5">
-                            <button
-                              type="button"
-                              disabled={cIdx === 0}
-                              onClick={() => handleMoveChecklist(selectedEditSubGroup.id, chk.id, chk.title, 'up')}
-                              className="p-0.5 text-slate-400 hover:text-purple-700 disabled:opacity-20"
-                              title="Move Checklist Up"
-                            >
-                              <ChevronUp className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              disabled={cIdx === selectedEditSubGroup.checklists.length - 1}
-                              onClick={() => handleMoveChecklist(selectedEditSubGroup.id, chk.id, chk.title, 'down')}
-                              className="p-0.5 text-slate-400 hover:text-purple-700 disabled:opacity-20"
-                              title="Move Checklist Down"
-                            >
-                              <ChevronDown className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-
-                          <div>
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <span className="font-bold text-slate-900 text-sm">{chk.title}</span>
-                              <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200">
-                                {chk.version || 'v1.0'}
-                              </span>
-                              {chk.versionDate && (
-                                <span className="text-[10px] text-slate-500 font-mono">
-                                  Updated: {chk.versionDate}
-                                </span>
-                              )}
-                            </div>
-                            {chk.description && <p className="text-xs text-slate-500 mt-0.5">{chk.description}</p>}
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-semibold text-slate-500 bg-slate-100 px-2.5 py-1 rounded-full">{chk.items.length} items</span>
-
-                          <button
-                            type="button"
-                            onClick={() =>
-                              setEditingChecklist({
-                                id: chk.id,
-                                subGroupId: selectedEditSubGroup.id,
-                                parentGroupId: selectedEditGroupId,
-                                title: chk.title,
-                                description: chk.description,
-                                isMandatory: chk.isMandatory ?? true,
-                                version: chk.version || 'v1.0',
-                                versionDate: chk.versionDate || new Date().toISOString().split('T')[0],
-                              })
-                            }
-                            className="p-1.5 text-purple-600 hover:text-purple-800 hover:bg-purple-50 rounded-lg transition flex items-center gap-1 text-xs font-semibold"
-                            title="Amend / Edit Checklist Properties & Version"
-                          >
-                            <Edit2 className="w-3.5 h-3.5" />
-                            <span className="hidden sm:inline">Amend</span>
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteChecklist(chk.title, chk.id)}
-                            className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition"
-                            title={`Delete Checklist ${chk.title} ${isAllFlightGroups ? 'from All 4 Flight Groups' : ''}`}
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Items List with Drag-and-Drop and Amend capabilities */}
-                      <div className="space-y-2">
-                        {chk.items.map((item, iIdx) => (
-                          <div
-                            key={`${item.id}-${iIdx}`}
-                            draggable
-                            onDragStart={() => setDraggedItemId(item.id)}
-                            onDragOver={(e) => e.preventDefault()}
-                            onDrop={() => {
-                              if (draggedItemId) {
-                                handleReorderItem(chk.title, chk.id, draggedItemId, item.id);
-                                setDraggedItemId(null);
-                              }
-                            }}
-                            className="p-2.5 bg-slate-50 border border-slate-200/80 rounded-xl flex items-center justify-between gap-3 text-xs transition hover:border-purple-300"
-                          >
-                            <div className="flex items-center gap-2 flex-1 min-w-0">
-                              <span className="cursor-grab text-slate-400 hover:text-slate-600 p-0.5">
-                                <GripVertical className="w-3.5 h-3.5" />
-                              </span>
-                              <div className="flex items-center gap-0.5">
-                                <button
-                                  type="button"
-                                  disabled={iIdx === 0}
-                                  onClick={() => handleMoveItem(chk.title, chk.id, item.id, 'up')}
-                                  className="p-0.5 text-slate-400 hover:text-purple-700 disabled:opacity-20"
-                                  title="Move Item Up"
-                                >
-                                  <ChevronUp className="w-3 h-3" />
-                                </button>
-                                <button
-                                  type="button"
-                                  disabled={iIdx === chk.items.length - 1}
-                                  onClick={() => handleMoveItem(chk.title, chk.id, item.id, 'down')}
-                                  className="p-0.5 text-slate-400 hover:text-purple-700 disabled:opacity-20"
-                                  title="Move Item Down"
-                                >
-                                  <ChevronDown className="w-3 h-3" />
-                                </button>
-                              </div>
-                              <span className="font-mono text-[10px] font-bold text-purple-700 bg-purple-100 px-2 py-0.5 rounded shrink-0">
-                                #{item.sequenceOrder}
-                              </span>
-                              <span className="text-slate-800 font-medium truncate">{item.text}</span>
-                            </div>
-
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              <button
-                                type="button"
-                                onClick={() =>
-                                  setEditingItem({
-                                    id: item.id,
-                                    chkId: chk.id,
-                                    chkTitle: chk.title,
-                                    text: item.text,
-                                    isMandatory: item.isMandatory ?? true,
-                                  })
-                                }
-                                className="p-1 text-slate-600 hover:text-purple-700 hover:bg-purple-50 rounded transition"
-                                title="Amend Item Text"
-                              >
-                                <Edit2 className="w-3.5 h-3.5" />
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => handleToggleItemMandatory(chk.title, chk.id, item.text, item.id)}
-                                className={`text-[10px] font-bold px-2 py-0.5 rounded-full border transition ${
-                                  item.isMandatory
-                                    ? 'bg-rose-50 text-rose-700 border-rose-200'
-                                    : 'bg-slate-200/70 text-slate-600 border-slate-300'
-                                }`}
-                                title="Click to toggle mandatory flag"
-                              >
-                                {item.isMandatory ? 'MANDATORY' : 'OPTIONAL'}
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteItem(chk.title, chk.id, item.text, item.id)}
-                                className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded transition"
-                                title="Remove Item"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Quick Add Item Form for this checklist */}
-                      <div className="flex items-center gap-2 pt-2">
-                        <input
-                          type="text"
-                          placeholder={`Add new checklist item to "${chk.title}"...`}
-                          value={newItemText}
-                          onChange={(e) => setNewItemText(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              handleAddItemToChecklist(chk.title, chk.id);
-                            }
-                          }}
-                          className="flex-1 p-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-xs focus:outline-none focus:ring-2 focus:ring-purple-500 focus:bg-white"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => handleAddItemToChecklist(chk.title, chk.id)}
-                          className="px-3.5 py-2 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-xl shadow-xs transition shrink-0 flex items-center gap-1"
-                        >
-                          <Plus className="w-3.5 h-3.5" />
-                          <span>{isAllFlightGroups ? '+ Add to All 4 Flights (Mandatory)' : '+ Add Item (Default: Mandatory)'}</span>
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                )}
-                </div>
-              )}
-            </div>
-          )}
+            );
+          })()}
 
           {/* TAB 3: EXCEL BULK IMPORTER */}
           {activeTab === 'excel' && (
@@ -3760,6 +4522,178 @@ export function AdminPanel({
           </button>
         </div>
       </div>
+
+      {/* AMEND OPERATIONAL GROUP MODAL */}
+      {editingGroup && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-md p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <Edit2 className="w-4 h-4 text-purple-600" />
+                <span>Amend Operational Group Properties</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => setEditingGroup(null)}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveEditedGroup} className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Group Name:</label>
+                <input
+                  type="text"
+                  required
+                  value={editingGroup.name}
+                  onChange={(e) => setEditingGroup({ ...editingGroup, name: e.target.value })}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">Group / Station Code:</label>
+                <input
+                  type="text"
+                  required
+                  value={editingGroup.code}
+                  onChange={(e) => setEditingGroup({ ...editingGroup, code: e.target.value })}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono uppercase focus:outline-none focus:ring-2 focus:ring-purple-500"
+                />
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setEditingGroup(null)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white text-xs font-bold rounded-xl shadow-xs"
+                >
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* TARGETED EXCEL OVERWRITE MODAL */}
+      {excelOverwriteTarget && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-lg p-6 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center font-bold">
+                  <RotateCcw className="w-4 h-4 text-amber-700" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-slate-900">Overwrite Checklist via Excel</h3>
+                  <p className="text-[11px] text-amber-800 font-semibold">Target: {excelOverwriteTarget.checklistTitle}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setExcelOverwriteTarget(null);
+                  setExcelOverwriteItems([]);
+                  setExcelOverwriteFileName('');
+                }}
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 space-y-1">
+              <div className="font-bold flex items-center gap-1.5">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                <span>Overwrite Confirmation</span>
+              </div>
+              <p className="text-[11px] leading-relaxed">
+                {"Uploading an Excel file will overwrite all existing items in checklist "}
+                <strong className="font-bold">{"'" + excelOverwriteTarget.checklistTitle + "'"}</strong>
+                {excelOverwriteTarget.isAllFlightGroups ? ' across ALL 4 Flight Groups simultaneously' : ` in ${excelOverwriteTarget.groupName}`}
+                {". The checklist version will automatically be incremented."}
+              </p>
+            </div>
+
+            <div className="space-y-3">
+              <input
+                ref={excelOverwriteFileInputRef}
+                type="file"
+                accept=".xlsx, .xls, .csv"
+                onChange={handleExcelOverwriteSelect}
+                className="hidden"
+              />
+
+              <div
+                className="border-2 border-dashed border-slate-300 hover:border-amber-500 rounded-2xl p-6 text-center space-y-2 bg-slate-50 hover:bg-amber-50/40 transition cursor-pointer"
+                onClick={() => excelOverwriteFileInputRef.current?.click()}
+              >
+                <Upload className="w-8 h-8 text-amber-600 mx-auto" />
+                <div className="text-xs font-bold text-slate-800">
+                  {excelOverwriteFileName ? excelOverwriteFileName : 'Click or Drag Excel / CSV File Here to Overwrite'}
+                </div>
+                <p className="text-[11px] text-slate-500">
+                  Accepts .xlsx, .xls, .csv files with checklist item descriptions
+                </p>
+              </div>
+
+              {excelOverwriteItems.length > 0 && (
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-xs font-bold text-slate-700">
+                    <span>Parsed Items Preview ({excelOverwriteItems.length} items):</span>
+                    <span className="text-emerald-700 font-mono text-[11px]">Ready to Overwrite</span>
+                  </div>
+                  <div className="max-h-40 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100">
+                    {excelOverwriteItems.map((item, idx) => (
+                      <div key={idx} className="p-2 text-xs flex items-center justify-between gap-2 bg-white">
+                        <div className="flex items-center gap-2 truncate">
+                          <span className="font-mono text-[10px] font-bold text-slate-400">#{idx + 1}</span>
+                          <span className="text-slate-800 font-medium truncate">{item.text}</span>
+                        </div>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 shrink-0">
+                          MANDATORY
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => {
+                  setExcelOverwriteTarget(null);
+                  setExcelOverwriteItems([]);
+                  setExcelOverwriteFileName('');
+                }}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={excelOverwriteItems.length === 0}
+                onClick={handleCommitExcelOverwrite}
+                className="px-5 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center gap-1.5"
+              >
+                <Check className="w-4 h-4" />
+                <span>Confirm & Overwrite Checklist</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* AMEND SUB-GROUP MODAL */}
       {editingSubGroup && (
