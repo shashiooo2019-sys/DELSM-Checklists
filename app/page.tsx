@@ -37,6 +37,7 @@ import { ShiftOverviewBanner } from '@/components/ShiftOverviewBanner';
 import { GroupCard } from '@/components/GroupCard';
 import { ChecklistCarouselModal } from '@/components/ChecklistCarouselModal';
 import { SupervisorDiagnosisModal } from '@/components/SupervisorDiagnosisModal';
+import { ChecklistDrillDownView } from '@/components/ChecklistDrillDownView';
 import { WhatsAppShareModal } from '@/components/WhatsAppShareModal';
 import { AdminPanel } from '@/components/AdminPanel';
 import { AuditLogDrawer } from '@/components/AuditLogDrawer';
@@ -148,6 +149,8 @@ export default function AviationGroundOpsPage() {
 
   // WhatsApp & Admin & Audit states
   const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState<boolean>(false);
+  const [isDrillDownOpen, setIsDrillDownOpen] = useState<boolean>(false);
+  const [reopenDrillDownAfterChecklistClose, setReopenDrillDownAfterChecklistClose] = useState<boolean>(false);
   const [isAdminPanelOpen, setIsAdminPanelOpen] = useState<boolean>(false);
   const [isAuditLogOpen, setIsAuditLogOpen] = useState<boolean>(false);
 
@@ -524,8 +527,10 @@ export default function AviationGroundOpsPage() {
     );
   };
 
-  const handleCloseShift = (notes?: string) => {
+  const handleCloseShift = (notes?: string, supervisorName?: string) => {
     if (!currentUser) return;
+
+    const signature = supervisorName ? `${supervisorName} (${currentUser.uNumber})` : `${currentUser.name} (${currentUser.uNumber})`;
 
     const updatedGroups = dayData.groups.map((grp) => {
       if (grp.name.includes('Day Shift') || grp.code === 'DAY-OPS') {
@@ -534,7 +539,7 @@ export default function AviationGroundOpsPage() {
       return {
         ...grp,
         isVerified: true,
-        verifiedBy: `${currentUser.name} (${currentUser.uNumber})`,
+        verifiedBy: signature,
         verifiedAt: new Date().toISOString(),
         supervisorNotes: grp.supervisorNotes || notes || 'Verified and locked upon shift closure.',
       };
@@ -543,7 +548,7 @@ export default function AviationGroundOpsPage() {
     const newDayData: DayOperationalData = {
       ...dayData,
       isShiftClosed: true,
-      closedBy: `${currentUser.name} (${currentUser.uNumber})`,
+      closedBy: signature,
       closedAt: new Date().toISOString(),
       shiftNotes: notes,
       groups: updatedGroups,
@@ -748,7 +753,7 @@ export default function AviationGroundOpsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans selection:bg-blue-600 selection:text-white">
+    <div className="min-h-screen bg-slate-50/65 bg-[radial-gradient(#e2e8f0_1.5px,transparent_1.5px)] [background-size:24px_24px] text-slate-900 flex flex-col font-sans selection:bg-blue-600 selection:text-white">
       {/* Aviation Top Header */}
       <Header
         currentUser={currentUser}
@@ -763,21 +768,25 @@ export default function AviationGroundOpsPage() {
         dayData={dayData}
         onOpenWhatsApp={() => setIsWhatsAppModalOpen(true)}
         onExportExcel={() => exportShiftToExcel(dayData)}
+        onOpenDrillDown={() => setIsDrillDownOpen(true)}
       />
 
       {/* Main Container */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         {/* Welcome Banner for Logged Out User */}
         {!currentUser && (
-          <div className="p-5 bg-white border border-slate-200 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-sm">
-            <div className="flex items-center gap-3.5">
-              <div className="w-11 h-11 rounded-xl bg-blue-600 flex items-center justify-center text-white shrink-0 shadow-md shadow-blue-600/20">
-                <Plane className="w-6 h-6 transform -rotate-45" />
+          <div className="p-6 bg-gradient-to-r from-slate-900 via-slate-850 to-indigo-950 border border-slate-800 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5 shadow-md relative overflow-hidden group">
+            {/* Ambient Background Glow */}
+            <div className="absolute top-0 right-0 -mt-10 -mr-10 w-40 h-40 bg-blue-500/10 rounded-full blur-2xl pointer-events-none group-hover:scale-125 transition-transform duration-500"></div>
+            
+            <div className="flex items-center gap-4 relative z-10">
+              <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-blue-500 to-indigo-600 flex items-center justify-center text-white shrink-0 shadow-lg shadow-blue-500/20">
+                <Plane className="w-6.5 h-6.5 transform -rotate-45" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-slate-900">Welcome to DEL Ground Operations</h3>
-                <p className="text-xs text-slate-500">
-                  Select your assigned security role (Admin, Supervisor, or Ground User) to start executing turnaround checklists.
+                <h3 className="text-base sm:text-lg font-extrabold text-white tracking-tight">DEL Ground Operations Command Center</h3>
+                <p className="text-xs text-slate-300 font-medium max-w-2xl mt-0.5 leading-relaxed">
+                  Select your assigned airport operation role (Admin, Supervisor, or Ground Crew) to execute checklists, log turnaround telemetry, and manage active flight operations.
                 </p>
               </div>
             </div>
@@ -785,10 +794,10 @@ export default function AviationGroundOpsPage() {
             <button
               id="btn-banner-login"
               onClick={() => setIsLoginModalOpen(true)}
-              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider shadow-sm flex items-center gap-2 transition shrink-0"
+              className="px-5 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold uppercase tracking-wider shadow-md hover:shadow-lg hover:shadow-blue-500/20 active:scale-98 transition-all shrink-0 flex items-center gap-2 relative z-10"
             >
               <LogIn className="w-4 h-4" />
-              <span>Authenticate</span>
+              <span>Authenticate Roster</span>
             </button>
           </div>
         )}
@@ -802,6 +811,7 @@ export default function AviationGroundOpsPage() {
           onExportExcel={() => exportShiftToExcel(dayData)}
           onOpenAdmin={() => setIsAdminPanelOpen(true)}
           onReopenShift={handleReopenShift}
+          onOpenDrillDown={() => setIsDrillDownOpen(true)}
         />
 
         {/* Operational Filter & Search Bar */}
@@ -1206,7 +1216,13 @@ export default function AviationGroundOpsPage() {
         groupName={activeChecklistModal.group?.name || ''}
         subGroupName={activeChecklistModal.subGroup?.name || ''}
         currentUser={currentUser}
-        onClose={() => setActiveChecklistModal((prev) => ({ ...prev, isOpen: false }))}
+        onClose={() => {
+          setActiveChecklistModal((prev) => ({ ...prev, isOpen: false }));
+          if (reopenDrillDownAfterChecklistClose) {
+            setIsDrillDownOpen(true);
+            setReopenDrillDownAfterChecklistClose(false);
+          }
+        }}
         onSaveChecklist={handleSaveChecklist}
         isShiftClosed={dayData.isShiftClosed}
       />
@@ -1265,6 +1281,35 @@ export default function AviationGroundOpsPage() {
           onSaveDayData={(updated) => {
             saveDayData(updated);
             setDayData(updated);
+          }}
+        />
+      )}
+
+      {/* 6b. Interactive Operational Drill-Down & Verification Cockpit */}
+      {(currentUser?.role === 'SUPERVISOR' || currentUser?.role === 'ADMIN') && (
+        <ChecklistDrillDownView
+          isOpen={isDrillDownOpen}
+          dayData={dayData}
+          currentUser={currentUser}
+          onClose={() => setIsDrillDownOpen(false)}
+          onVerifyGroup={handleVerifyGroup}
+          onReopenGroup={handleReopenGroup}
+          onCloseShift={handleCloseShift}
+          onReopenShift={handleReopenShift}
+          onSaveDayData={(updated) => {
+            saveDayData(updated);
+            setDayData(updated);
+          }}
+          onOpenWhatsApp={() => setIsWhatsAppModalOpen(true)}
+          onOpenChecklist={(grp, sub, chk) => {
+            setIsDrillDownOpen(false);
+            setReopenDrillDownAfterChecklistClose(true);
+            setActiveChecklistModal({
+              isOpen: true,
+              group: grp,
+              subGroup: sub,
+              checklist: chk,
+            });
           }}
         />
       )}

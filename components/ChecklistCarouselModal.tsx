@@ -436,8 +436,70 @@ function ChecklistCarouselContent({
         )}
 
         {/* Progress Bar & Stepper Info */}
-        <div className="px-4 sm:px-6 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs text-slate-600 shrink-0">
-          <div className="flex items-center gap-2 font-mono">
+        <div className="px-4 sm:px-6 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs text-slate-600 shrink-0 gap-3">
+          <div className="flex items-center gap-2.5 font-mono">
+            {/* Real-time Carousel Checklist Status Donut Arc */}
+            <div className="relative flex items-center justify-center shrink-0" style={{ width: 36, height: 36 }}>
+              <svg width={36} height={36} className="transform -rotate-90">
+                <circle
+                  cx={18}
+                  cy={18}
+                  r={14}
+                  fill="none"
+                  stroke="#F1F5F9"
+                  strokeWidth={4}
+                />
+                {/* Compliant Done Checks */}
+                {doneCount > 0 && (
+                  <circle
+                    cx={18}
+                    cy={18}
+                    r={14}
+                    fill="none"
+                    stroke="#10B981"
+                    strokeWidth={4}
+                    strokeDasharray={`${(doneCount / totalItems) * (2 * Math.PI * 14)} ${2 * Math.PI * 14}`}
+                    strokeDashoffset={0}
+                    strokeLinecap="round"
+                    className="transition-all duration-300 ease-out"
+                  />
+                )}
+                {/* Exceptions Checks */}
+                {(skippedCount + pinnedCount) > 0 && (
+                  <circle
+                    cx={18}
+                    cy={18}
+                    r={14}
+                    fill="none"
+                    stroke="#F59E0B"
+                    strokeWidth={4}
+                    strokeDasharray={`${((skippedCount + pinnedCount) / totalItems) * (2 * Math.PI * 14)} ${2 * Math.PI * 14}`}
+                    strokeDashoffset={-((doneCount / totalItems) * (2 * Math.PI * 14))}
+                    strokeLinecap="round"
+                    className="transition-all duration-300 ease-out"
+                  />
+                )}
+                {/* Non-compliance Issues */}
+                {(missedCount + incorrectlyCount) > 0 && (
+                  <circle
+                    cx={18}
+                    cy={18}
+                    r={14}
+                    fill="none"
+                    stroke="#EF4444"
+                    strokeWidth={4}
+                    strokeDasharray={`${((missedCount + incorrectlyCount) / totalItems) * (2 * Math.PI * 14)} ${2 * Math.PI * 14}`}
+                    strokeDashoffset={-(((doneCount + skippedCount + pinnedCount) / totalItems) * (2 * Math.PI * 14))}
+                    strokeLinecap="round"
+                    className="transition-all duration-300 ease-out"
+                  />
+                )}
+              </svg>
+              <span className="absolute text-[9px] font-black text-slate-900 font-mono leading-none">
+                {totalItems > 0 ? Math.round(((doneCount + skippedCount + pinnedCount) / totalItems) * 100) : 0}%
+              </span>
+            </div>
+
             <span>
               STEP <strong className="text-slate-900 text-sm font-bold">{currentIndex + 1}</strong> OF {totalItems}
             </span>
@@ -463,11 +525,17 @@ function ChecklistCarouselContent({
                 </>
               )}
             </span>
-            <div className="w-24 h-2 bg-slate-200 rounded-full overflow-hidden flex">
+            <div className="w-20 sm:w-24 h-2 bg-slate-200 rounded-full overflow-hidden flex">
               <div 
                 className="h-full bg-emerald-600 transition-all duration-300"
                 style={{ width: `${Math.round((doneCount / totalItems) * 100)}%` }}
               />
+              {(skippedCount + pinnedCount) > 0 && (
+                <div 
+                  className="h-full bg-amber-500 transition-all duration-300"
+                  style={{ width: `${Math.round(((skippedCount + pinnedCount) / totalItems) * 100)}%` }}
+                />
+              )}
               {(missedCount > 0 || incorrectlyCount > 0) && (
                 <div 
                   className="h-full bg-rose-600 transition-all duration-300"

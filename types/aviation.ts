@@ -52,6 +52,10 @@ export interface Checklist {
   version?: string; // e.g. "v1.0", "v1.1"
   versionDate?: string; // e.g. "2026-08-22"
   versionHistory?: ChecklistVersionRecord[];
+  isVerifiedClosed?: boolean;
+  isNotApplicable?: boolean;
+  verifiedClosedBy?: string;
+  verifiedClosedAt?: string;
 }
 
 export interface SubOperationalGroup {
@@ -73,6 +77,9 @@ export interface OperationalGroup {
   verifiedBy?: string;
   verifiedAt?: string;
   supervisorNotes?: string;
+  isSkipped?: boolean;
+  skippedBy?: string;
+  skippedAt?: string;
 }
 
 export interface DayOperationalData {

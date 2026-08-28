@@ -18,7 +18,8 @@ import {
   Sparkles,
   AlertTriangle,
   CheckCircle2,
-  Lock
+  Lock,
+  TrendingUp
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -31,6 +32,7 @@ interface HeaderProps {
   dayData: DayOperationalData;
   onOpenWhatsApp: () => void;
   onExportExcel: () => void;
+  onOpenDrillDown?: () => void;
 }
 
 export function Header({
@@ -43,6 +45,7 @@ export function Header({
   dayData,
   onOpenWhatsApp,
   onExportExcel,
+  onOpenDrillDown,
 }: HeaderProps) {
   const [utcTime, setUtcTime] = useState<string>('');
   const [localTime, setLocalTime] = useState<string>('');
@@ -175,25 +178,28 @@ export function Header({
   };
 
   return (
-    <header className="bg-white border-b border-slate-200 text-slate-900 sticky top-0 z-30 shadow-2xs">
+    <header className="bg-white/95 backdrop-blur-md border-b border-slate-300/80 text-slate-900 sticky top-0 z-30 shadow-[0_4px_20px_-2px_rgba(15,23,42,0.14),0_1px_0_0_rgba(255,255,255,1)_inset]">
+      {/* Premium Top Vibrant Brand Line with glossy glow */}
+      <div className="h-[3.5px] w-full bg-gradient-to-r from-blue-600 via-indigo-500 to-violet-600 shadow-[0_1px_4px_rgba(37,99,235,0.4)]"></div>
+
       {/* Top Banner with Station Telemetry & Time */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex flex-col sm:flex-row items-center justify-between py-1.5 border-b border-slate-100 text-xs text-slate-500 gap-2">
+        <div className="flex flex-col sm:flex-row items-center justify-between py-1.5 border-b border-slate-200/60 text-xs text-slate-500 gap-2">
           <div className="flex items-center gap-3 flex-wrap">
-            <span className="inline-flex items-center gap-1.5 font-mono font-bold px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-[11px]">
+            <span className="inline-flex items-center gap-1.5 font-mono font-bold px-2.5 py-0.5 rounded-full bg-blue-50/90 text-blue-700 border border-blue-200 text-[11px] shadow-[0_1px_2px_rgba(37,99,235,0.1),inset_0_1px_0_rgba(255,255,255,0.9)]">
               <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse"></span>
               STATION: DEL
             </span>
-            <span className="hidden md:inline-flex items-center gap-1.5 font-mono text-[11px] select-none cursor-pointer hover:bg-slate-50 px-1.5 py-0.5 rounded transition" onClick={cycleSimulation} title="Click to cycle simulated shift times and verify Clearance Status states">
-              CLEARANCE STATUS: <span className={`${clearanceColor} tracking-tight`}>{clearanceText}</span>
+            <span className="hidden md:inline-flex items-center gap-1.5 font-mono text-[11px] select-none cursor-pointer hover:bg-slate-100/80 px-2 py-0.5 rounded-lg transition border border-transparent hover:border-slate-200" onClick={cycleSimulation} title="Click to cycle simulated shift times and verify Clearance Status states">
+              CLEARANCE STATUS: <span className={`${clearanceColor} tracking-tight font-extrabold`}>{clearanceText}</span>
               {simulatedHour !== null && (
-                <span className="text-[9px] bg-amber-100 text-amber-800 px-1 py-0.25 rounded font-bold animate-pulse ml-1">
+                <span className="text-[9px] bg-amber-100 text-amber-900 border border-amber-300 px-1.5 py-0.25 rounded font-bold animate-pulse ml-1 shadow-xs">
                   SIM: {String(simulatedHour).padStart(2, '0')}:00
                 </span>
               )}
             </span>
             {showAdditionalInfo && (
-              <span className="inline-flex items-center gap-1.5 font-mono text-[11px] bg-amber-50 text-amber-800 border border-amber-200 px-2 py-0.5 rounded-md shadow-3xs animate-fade-in">
+              <span className="inline-flex items-center gap-1.5 font-mono text-[11px] bg-amber-50 text-amber-900 border border-amber-200 px-2 py-0.5 rounded-md shadow-xs animate-fade-in">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse shrink-0"></span>
                 <span>Current Date: <strong className="font-semibold">{todayStr}</strong></span>
                 <span className="text-amber-300">|</span>
@@ -203,13 +209,13 @@ export function Header({
           </div>
 
           <div className="flex items-center gap-4 font-mono text-xs">
-            <div className="flex items-center gap-1.5 text-slate-700 font-medium">
+            <div className="flex items-center gap-1.5 text-slate-800 font-bold bg-slate-100/70 px-2 py-0.5 rounded-lg border border-slate-200/80">
               <Clock className="w-3.5 h-3.5 text-blue-600" />
               <span>{utcTime || '00:00 UTC'}</span>
             </div>
             <div className="hidden sm:inline-block text-slate-300">|</div>
-            <div className="text-slate-500">
-              LOC: <span className="text-slate-800 font-semibold">{localTime || '00:00:00'}</span>
+            <div className="text-slate-600 bg-slate-100/70 px-2 py-0.5 rounded-lg border border-slate-200/80">
+              LOC: <span className="text-slate-900 font-bold">{localTime || '00:00:00'}</span>
             </div>
           </div>
         </div>
@@ -217,49 +223,49 @@ export function Header({
         {/* Main Navigation Bar */}
         <div className="flex items-center justify-between py-3 flex-wrap gap-4">
           {/* Logo & Title */}
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center shadow-md shadow-blue-500/20 text-white">
-              <Plane className="w-5 h-5 transform -rotate-45" />
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-violet-600 flex items-center justify-center shadow-[0_4px_12px_rgba(37,99,235,0.4),inset_0_1px_0_rgba(255,255,255,0.4)] border border-blue-500 text-white transform hover:scale-105 transition-transform duration-300">
+              <Plane className="w-5.5 h-5.5 transform -rotate-45" />
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-base sm:text-lg font-bold tracking-tight text-slate-900 flex items-center gap-1.5">
-                  DEL<span className="text-blue-600">GROUND OPS</span>
-                  <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
-                    Turnaround Control v2.4
+                <h1 className="text-base sm:text-xl font-extrabold tracking-tight text-slate-900 flex items-center gap-1.5 font-sans">
+                  DEL<span className="tracking-wider font-black bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 bg-clip-text text-transparent drop-shadow-xs">GROUND OPS</span>
+                  <span className="text-[10px] font-mono font-extrabold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-300 shadow-[0_1px_2px_rgba(0,0,0,0.06),inset_0_1px_0_rgba(255,255,255,0.8)]">
+                    V2.4 PRO
                   </span>
                 </h1>
               </div>
-              <p className="text-xs text-slate-500 hidden sm:block">Turnaround Checklists Control</p>
+              <p className="text-[11px] font-semibold text-slate-500 tracking-wide hidden sm:block">Aviation Turnaround & Operational Control Dashboard</p>
             </div>
           </div>
 
-          {/* Date Switcher */}
-          <div className="flex items-center gap-1.5 bg-slate-50 p-1 rounded-xl border border-slate-200 shadow-2xs">
+          {/* Date Switcher - 3D Box */}
+          <div className="flex items-center gap-1.5 bg-slate-100/90 p-1.5 rounded-2xl border border-slate-300 shadow-[0_2px_5px_rgba(15,23,42,0.08),inset_0_1.5px_0_rgba(255,255,255,0.9),inset_0_-1.5px_0_rgba(148,163,184,0.3)]">
             <button
               id="btn-prev-day"
               onClick={handlePrevDay}
-              className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-white rounded-lg transition shadow-2xs"
+              className="btn-3d-white p-1.5 rounded-xl cursor-pointer"
               title="Previous Day"
             >
               <ChevronLeft className="w-4 h-4" />
             </button>
 
-            <div className="flex items-center gap-2 px-2">
+            <div className="flex items-center gap-2 px-2.5 py-0.5 bg-white rounded-xl border border-slate-200 shadow-[inset_0_1.5px_3px_rgba(0,0,0,0.06)]">
               <Calendar className="w-4 h-4 text-blue-600" />
               <input
                 id="ops-date-picker"
                 type="date"
                 value={selectedDate}
                 onChange={(e) => e.target.value && onDateChange(e.target.value)}
-                className="bg-transparent text-xs sm:text-sm font-mono font-semibold text-slate-800 focus:outline-none cursor-pointer"
+                className="bg-transparent text-xs sm:text-sm font-mono font-bold text-slate-900 focus:outline-none cursor-pointer"
               />
             </div>
 
             <button
               id="btn-next-day"
               onClick={handleNextDay}
-              className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-white rounded-lg transition shadow-2xs"
+              className="btn-3d-white p-1.5 rounded-xl cursor-pointer"
               title="Next Day"
             >
               <ChevronRight className="w-4 h-4" />
@@ -269,7 +275,7 @@ export function Header({
               <button
                 id="btn-jump-today"
                 onClick={handleToday}
-                className="ml-1 text-[11px] font-bold px-2.5 py-1 bg-blue-600 text-white hover:bg-blue-700 rounded-lg transition shadow-2xs"
+                className="btn-3d-blue ml-1 text-[11px] font-extrabold px-3 py-1.5 rounded-xl cursor-pointer"
                 title={`Reset to Default Operational Shift Date (${defaultDateStr})`}
               >
                 Current Shift
@@ -280,50 +286,65 @@ export function Header({
           {/* User Profile & Actions */}
           <div className="flex items-center gap-2">
             {currentUser ? (
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2.5">
                 <div className="hidden md:flex flex-col text-right cursor-pointer" onClick={onOpenLogin} title="Click to Switch Role or Change Login">
                   <div className="text-xs font-bold text-slate-800 flex items-center justify-end gap-1.5">
-                    <span>{currentUser.name}</span>
+                    <span className="font-extrabold text-slate-900">{currentUser.name}</span>
                     <span
-                      className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded-full font-bold ${
+                      className={`text-[10px] font-mono uppercase px-2 py-0.5 rounded-full font-black shadow-xs ${
                         currentUser.role === 'ADMIN'
-                          ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                          ? 'bg-purple-100 text-purple-800 border border-purple-300'
                           : currentUser.role === 'SUPERVISOR'
-                          ? 'bg-amber-50 text-amber-700 border border-amber-200'
-                          : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                          : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
                       }`}
                     >
                       {currentUser.role}
                     </span>
                   </div>
-                  <span className="text-[11px] font-mono text-slate-500">{currentUser.uNumber}</span>
+                  <span className="text-[11px] font-mono font-bold text-slate-500">{currentUser.uNumber}</span>
                 </div>
 
-                <div className="flex items-center gap-1 bg-slate-50 p-1 rounded-xl border border-slate-200">
-                  <button
-                    id="btn-switch-role"
-                    onClick={onOpenLogin}
-                    className="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition text-xs font-bold flex items-center gap-1"
-                    title="Switch Sign-In Role or Change Login"
-                  >
-                    <User className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Switch Role</span>
-                  </button>
-                  <button
-                    id="btn-logout"
-                    onClick={onLogout}
-                    className="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition"
-                    title="Logout"
-                  >
-                    <LogOut className="w-4 h-4" />
-                  </button>
+                <div className="flex items-center gap-2">
+                  {/* Supervisor/Admin Drill-Down Dashboard Shortcut on top */}
+                  {(currentUser.role === 'SUPERVISOR' || currentUser.role === 'ADMIN') && onOpenDrillDown && (
+                    <button
+                      id="btn-top-drilldown-dashboard"
+                      onClick={onOpenDrillDown}
+                      className="btn-3d-amber px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 cursor-pointer animate-in fade-in zoom-in-95"
+                      title="Open Supervisor Operational Drill-Down Dashboard"
+                    >
+                      <TrendingUp className="w-3.5 h-3.5" />
+                      <span>Drill-Down Cockpit</span>
+                    </button>
+                  )}
+
+                  <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-300 shadow-[inset_0_1px_2px_rgba(0,0,0,0.06)]">
+                    <button
+                      id="btn-switch-role"
+                      onClick={onOpenLogin}
+                      className="p-1.5 text-blue-700 hover:text-blue-900 hover:bg-white rounded-lg transition text-xs font-bold flex items-center gap-1 shadow-2xs cursor-pointer"
+                      title="Switch Sign-In Role or Change Login"
+                    >
+                      <User className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Switch Role</span>
+                    </button>
+                    <button
+                      id="btn-logout"
+                      onClick={onLogout}
+                      className="p-1.5 text-rose-600 hover:text-rose-800 hover:bg-white rounded-lg transition shadow-2xs cursor-pointer"
+                      title="Logout"
+                    >
+                      <LogOut className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
             ) : (
               <button
                 id="btn-login-header"
                 onClick={onOpenLogin}
-                className="flex items-center gap-1.5 text-xs font-bold px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-xs transition"
+                className="btn-3d-blue flex items-center gap-1.5 text-xs font-extrabold px-4 py-2.5 rounded-xl cursor-pointer"
               >
                 <LogIn className="w-4 h-4" />
                 <span>Sign In / Select Role</span>
