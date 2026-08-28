@@ -30,7 +30,7 @@ import {
   exportNonComplianceReportToExcel,
   NonComplianceRecord,
 } from '@/lib/storage';
-import { fetchUsersFromFirestore, subscribeToUsersFromFirestore, saveUserToFirestore, saveUsersToFirestoreBatch, deleteUserFromFirestore, fetchShiftsForDateRange } from '@/lib/firestoreService';
+import { fetchUsersFromFirestore, subscribeToUsersFromFirestore, saveUserToFirestore, saveUsersToFirestoreBatch, deleteUserFromFirestore, fetchShiftsForDateRange, updateTemplateManifestInFirestore, propagateAdminGroupChangesToActiveShifts, saveDayDataToFirestore } from '@/lib/firestoreService';
 import { makeItem, FLIGHT_CODES, getNextChecklistVersion } from '@/lib/initialData';
 import { ConfirmModal, ConfirmModalState } from './ConfirmModal';
 import { 
@@ -260,9 +260,7 @@ export function AdminPanel({
 
   // File Explorer Tree View States
   const [showChecklistItemsInExplorer, setShowChecklistItemsInExplorer] = useState<boolean>(false);
-  const [expandedTreeNodes, setExpandedTreeNodes] = useState<Record<string, boolean>>({
-    'ALL_FLIGHT_GROUPS': true,
-  });
+  const [expandedTreeNodes, setExpandedTreeNodes] = useState<Record<string, boolean>>({});
   const [treeSearchTerm, setTreeSearchTerm] = useState<string>('');
   const [perChecklistExpandedItems, setPerChecklistExpandedItems] = useState<Record<string, boolean>>({});
 
@@ -834,58 +832,101 @@ export function AdminPanel({
     }
   };
 
-  const handleDeleteChecklist = (chkTitle: string, chkId: string) => {
+  const handleDeleteChecklist = (
+    chkTitle: string,
+    chkId: string,
+    parentGroupId?: string,
+    subGroupId?: string
+  ) => {
     setConfirmModal({
       isOpen: true,
       title: 'Delete Checklist',
-      message: `Are you sure you want to delete the checklist "${chkTitle}"? This cannot be undone.`,
+      message: `Are you sure you want to delete the checklist "${chkTitle}"? This will permanently remove it from the operational structure and Firestore database.`,
       confirmLabel: 'Delete Checklist',
       variant: 'danger',
-      onConfirm: () => {
+      onConfirm: async () => {
         const normalizedTitle = chkTitle.trim().toLowerCase();
         const isMatch = (c: Checklist) => {
           if (chkId && c.id === chkId) return true;
-          if (normalizedTitle && c.title.trim().toLowerCase() === normalizedTitle) return true;
+          if (normalizedTitle && c.title && c.title.trim().toLowerCase() === normalizedTitle) return true;
           return false;
         };
 
+        const targetGroup = parentGroupId
+          ? dayData.groups.find((g) => g.id === parentGroupId || (g.code && g.code === parentGroupId))
+          : selectedEditGroup;
+        const isFlight = targetGroup ? targetGroup.isFlightGroup : (parentGroupId === 'ALL_FLIGHT_GROUPS' || isAllFlightGroups);
+
         let updatedGroups: OperationalGroup[];
 
-        if (isAllFlightGroups) {
+        if (parentGroupId === 'ALL_FLIGHT_GROUPS' || (isAllFlightGroups && isFlight && !parentGroupId)) {
           updatedGroups = dayData.groups.map((grp) => {
             if (grp.isFlightGroup) {
               return {
                 ...grp,
-                subGroups: grp.subGroups.map((sub) => ({
-                  ...sub,
-                  checklists: sub.checklists.filter((c) => !isMatch(c)),
-                })),
+                subGroups: grp.subGroups.map((sub) => {
+                  if (!subGroupId || sub.id === subGroupId || sub.name.trim().toLowerCase() === (subGroupId || '').trim().toLowerCase() || sub.checklists.some(isMatch)) {
+                    return {
+                      ...sub,
+                      checklists: sub.checklists.filter((c) => !isMatch(c)),
+                    };
+                  }
+                  return sub;
+                }),
               };
             }
             return grp;
           });
-          showNotification(`Deleted Checklist "${chkTitle}" from ALL 4 Flight Groups`);
+          showNotification(`Deleted Checklist "${chkTitle}" from ALL Flight Groups and Database`);
         } else {
-          const targetGroupId = selectedEditGroup?.id;
+          const targetGrpId = parentGroupId || targetGroup?.id;
           updatedGroups = dayData.groups.map((grp) => {
-            const isTargetGroup = targetGroupId ? grp.id === targetGroupId : false;
-            const hasChecklist = grp.subGroups.some((s) => s.checklists.some((c) => isMatch(c)));
+            const isTarget = targetGrpId
+              ? grp.id === targetGrpId || (grp.code && targetGroup?.code && grp.code.toUpperCase() === targetGroup.code.toUpperCase()) || grp.id === targetGroup?.id
+              : grp.subGroups.some((s) => s.checklists.some(isMatch));
 
-            if (isTargetGroup || hasChecklist || !targetGroupId) {
+            if (isTarget) {
               return {
                 ...grp,
-                subGroups: grp.subGroups.map((sub) => ({
-                  ...sub,
-                  checklists: sub.checklists.filter((c) => !isMatch(c)),
-                })),
+                subGroups: grp.subGroups.map((sub) => {
+                  const isSubMatch = !subGroupId || sub.id === subGroupId || sub.name.trim().toLowerCase() === (subGroupId || '').trim().toLowerCase() || sub.checklists.some(isMatch);
+                  if (isSubMatch) {
+                    return {
+                      ...sub,
+                      checklists: sub.checklists.filter((c) => !isMatch(c)),
+                    };
+                  }
+                  return sub;
+                }),
               };
             }
             return grp;
           });
-          showNotification(`Checklist "${chkTitle}" deleted`);
+          showNotification(`Checklist "${chkTitle}" deleted and removed from database`);
         }
 
-        onSaveDayData({ ...dayData, groups: updatedGroups });
+        const newDayData = { ...dayData, groups: updatedGroups, lastUpdated: new Date().toISOString() };
+        onSaveDayData(newDayData);
+
+        // Explicitly update Firestore template manifest and propagate removal across all unclosed shifts in database
+        try {
+          await updateTemplateManifestInFirestore(updatedGroups);
+          await propagateAdminGroupChangesToActiveShifts(newDayData);
+          await saveDayDataToFirestore(newDayData);
+        } catch (dbErr) {
+          console.warn('Error syncing checklist deletion to Firestore:', dbErr);
+        }
+
+        if (currentUser) {
+          addAuditLog(
+            currentUser.uNumber,
+            currentUser.name,
+            currentUser.role,
+            'CHECKLIST_DELETED',
+            `Permanently deleted checklist "${chkTitle}" (ID: ${chkId}) from group "${targetGroup?.name || parentGroupId || 'Operational Group'}" and synced to Firestore.`,
+            dayData.date
+          );
+        }
       },
     });
   };
@@ -1052,7 +1093,14 @@ export function AdminPanel({
     }
   };
 
-  const handleDeleteItem = (chkTitle: string, chkId: string, itemText: string, itemId: string) => {
+  const handleDeleteItem = (
+    chkTitle: string,
+    chkId: string,
+    itemText: string,
+    itemId: string,
+    parentGroupId?: string,
+    subGroupId?: string
+  ) => {
     setConfirmModal({
       isOpen: true,
       title: 'Delete Checklist Item',
@@ -1065,35 +1113,45 @@ export function AdminPanel({
 
         const isChkMatch = (c: Checklist) => {
           if (chkId && c.id === chkId) return true;
-          if (normalizedChkTitle && c.title.trim().toLowerCase() === normalizedChkTitle) return true;
+          if (normalizedChkTitle && c.title && c.title.trim().toLowerCase() === normalizedChkTitle) return true;
           return false;
         };
 
         const isItemMatch = (i: ChecklistItem) => {
           if (itemId && i.id === itemId) return true;
-          if (normalizedItemText && i.text.trim().toLowerCase() === normalizedItemText) return true;
+          if (normalizedItemText && i.text && i.text.trim().toLowerCase() === normalizedItemText) return true;
           return false;
         };
 
+        const targetGroup = parentGroupId
+          ? dayData.groups.find((g) => g.id === parentGroupId || (g.code && g.code === parentGroupId))
+          : selectedEditGroup;
+        const isFlight = targetGroup ? targetGroup.isFlightGroup : isAllFlightGroups;
+
         let updatedGroups: OperationalGroup[];
 
-        if (isAllFlightGroups) {
+        if (isAllFlightGroups && isFlight) {
           updatedGroups = dayData.groups.map((grp) => {
             if (grp.isFlightGroup) {
               return {
                 ...grp,
-                subGroups: grp.subGroups.map((sub) => ({
-                  ...sub,
-                  checklists: sub.checklists.map((chk) => {
-                    if (isChkMatch(chk)) {
-                      return {
-                        ...chk,
-                        items: chk.items.filter((i) => !isItemMatch(i)),
-                      };
-                    }
-                    return chk;
-                  }),
-                })),
+                subGroups: grp.subGroups.map((sub) => {
+                  if (!subGroupId || sub.id === subGroupId || sub.name.trim().toLowerCase() === (subGroupId || '').trim().toLowerCase() || sub.checklists.some(isChkMatch)) {
+                    return {
+                      ...sub,
+                      checklists: sub.checklists.map((chk) => {
+                        if (isChkMatch(chk)) {
+                          return {
+                            ...chk,
+                            items: chk.items.filter((i) => !isItemMatch(i)),
+                          };
+                        }
+                        return chk;
+                      }),
+                    };
+                  }
+                  return sub;
+                }),
               };
             }
             return grp;
@@ -1102,33 +1160,40 @@ export function AdminPanel({
           onSaveDayData({ ...dayData, groups: updatedGroups });
           showNotification(`Deleted item from ALL 4 Flight Groups`);
         } else {
-          const targetGroupId = selectedEditGroup?.id;
+          const targetGrpId = parentGroupId || targetGroup?.id;
           updatedGroups = dayData.groups.map((grp) => {
-            const isTargetGroup = targetGroupId ? grp.id === targetGroupId : false;
-            const hasChecklist = grp.subGroups.some((s) => s.checklists.some((c) => isChkMatch(c)));
+            const isTarget = targetGrpId
+              ? grp.id === targetGrpId || (grp.code && targetGroup?.code && grp.code.toUpperCase() === targetGroup.code.toUpperCase())
+              : grp.subGroups.some((s) => s.checklists.some((c) => isChkMatch(c)));
 
-            if (isTargetGroup || hasChecklist || !targetGroupId) {
+            if (isTarget) {
               return {
                 ...grp,
-                subGroups: grp.subGroups.map((sub) => ({
-                  ...sub,
-                  checklists: sub.checklists.map((chk) => {
-                    if (isChkMatch(chk)) {
-                      return {
-                        ...chk,
-                        items: chk.items.filter((i) => !isItemMatch(i)),
-                      };
-                    }
-                    return chk;
-                  }),
-                })),
+                subGroups: grp.subGroups.map((sub) => {
+                  const isSubMatch = !subGroupId || sub.id === subGroupId || sub.name.trim().toLowerCase() === (subGroupId || '').trim().toLowerCase() || sub.checklists.some(isChkMatch);
+                  if (isSubMatch) {
+                    return {
+                      ...sub,
+                      checklists: sub.checklists.map((chk) => {
+                        if (isChkMatch(chk)) {
+                          return {
+                            ...chk,
+                            items: chk.items.filter((i) => !isItemMatch(i)),
+                          };
+                        }
+                        return chk;
+                      }),
+                    };
+                  }
+                  return sub;
+                }),
               };
             }
             return grp;
           });
 
           onSaveDayData({ ...dayData, groups: updatedGroups });
-          showNotification(`Item "${itemText}" deleted`);
+          showNotification(`Deleted item "${itemText}"`);
         }
       },
     });
@@ -1362,11 +1427,11 @@ export function AdminPanel({
   const toggleTreeNode = (nodeId: string) => {
     setExpandedTreeNodes((prev) => ({
       ...prev,
-      [nodeId]: prev[nodeId] === undefined ? false : !prev[nodeId],
+      [nodeId]: prev[nodeId] !== undefined ? !prev[nodeId] : true,
     }));
   };
 
-  const isTreeNodeExpanded = (nodeId: string, defaultOpen = true) => {
+  const isTreeNodeExpanded = (nodeId: string, defaultOpen = false) => {
     return expandedTreeNodes[nodeId] !== undefined ? expandedTreeNodes[nodeId] : defaultOpen;
   };
 
@@ -2956,33 +3021,19 @@ export function AdminPanel({
 
           {/* TAB 2: CHECKLIST & ITEMS BUILDER */}
           {activeTab === 'checklists' && (() => {
-            // Unfiltered full structure
+            // Unfiltered full structure showing all operational groups
             const fullTree: any[] = [];
-            const repFlightGroup = dayData.groups.find((g) => g.isFlightGroup);
-            if (repFlightGroup) {
-              fullTree.push({
-                id: 'ALL_FLIGHT_GROUPS',
-                type: 'group',
-                name: 'Flight Operations (All 4 Flight Groups)',
-                code: 'FLT-ALL',
-                isFlightGroup: true,
-                isMandatory: true,
-                subGroups: repFlightGroup.subGroups,
-              });
-            }
 
             dayData.groups.forEach((grp) => {
-              if (!grp.isFlightGroup) {
-                fullTree.push({
-                  id: grp.id,
-                  type: 'group',
-                  name: grp.name,
-                  code: grp.code,
-                  isFlightGroup: false,
-                  isMandatory: grp.isMandatory,
-                  subGroups: grp.subGroups,
-                });
-              }
+              fullTree.push({
+                id: grp.id,
+                type: 'group',
+                name: grp.name,
+                code: grp.code,
+                isFlightGroup: grp.isFlightGroup,
+                isMandatory: grp.isMandatory,
+                subGroups: grp.subGroups,
+              });
             });
 
             // Filtering logic for hierarchical view
@@ -3153,7 +3204,7 @@ export function AdminPanel({
                   ) : (
                     <div className="space-y-3 font-medium select-none">
                       {filteredTree.map((grp: any) => {
-                        const isGrpExpanded = treeSearchTerm.trim() !== '' || isTreeNodeExpanded(grp.id, true);
+                        const isGrpExpanded = treeSearchTerm.trim() !== '' || isTreeNodeExpanded(grp.id, false);
                         const isFlight = grp.isFlightGroup;
 
                         return (
@@ -3181,7 +3232,7 @@ export function AdminPanel({
                                     <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${
                                       isFlight ? 'bg-blue-50 text-blue-700' : 'bg-purple-50 text-purple-700'
                                     }`}>
-                                      {isFlight ? 'Flight Operations (4x)' : 'Station Operations'}
+                                      {isFlight ? 'Flight Operations' : 'Station Operations'}
                                     </span>
                                   </div>
                                 </div>
@@ -3282,7 +3333,7 @@ export function AdminPanel({
                                   </div>
                                 ) : (
                                   grp.subGroups.map((sub: any) => {
-                                    const isSubExpanded = treeSearchTerm.trim() !== '' || isTreeNodeExpanded(sub.id, true);
+                                    const isSubExpanded = treeSearchTerm.trim() !== '' || isTreeNodeExpanded(sub.id, false);
 
                                     return (
                                       <div key={sub.id} className="pl-6 bg-slate-50/10">
@@ -3491,7 +3542,7 @@ export function AdminPanel({
 
                                                         <button
                                                           type="button"
-                                                          onClick={() => handleDeleteChecklist(chk.title, chk.id)}
+                                                          onClick={() => handleDeleteChecklist(chk.title, chk.id, grp.id, sub.id)}
                                                           className="p-1 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded transition"
                                                           title="Delete Checklist"
                                                         >
@@ -3620,7 +3671,7 @@ export function AdminPanel({
                                                                 </button>
                                                                 <button
                                                                   type="button"
-                                                                  onClick={() => handleDeleteItem(chk.title, chk.id, item.text, item.id)}
+                                                                  onClick={() => handleDeleteItem(chk.title, chk.id, item.text, item.id, grp.id, sub.id)}
                                                                   className="p-1 text-rose-400 hover:text-rose-600 hover:bg-rose-50 rounded transition shrink-0"
                                                                 >
                                                                   <Trash2 className="w-3.5 h-3.5" />
