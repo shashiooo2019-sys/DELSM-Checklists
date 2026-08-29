@@ -179,10 +179,8 @@ export function ChecklistSearchModal({
         sourceGroup: entry.group,
         sourceSubGroup: entry.subGroup,
       });
-      // Default to first flight group if available
-      if (flightGroups.length > 0) {
-        setSelectedFlightGroupId(flightGroups[0].id);
-      }
+      // Do not pre-select any flight group by default
+      setSelectedFlightGroupId(null);
       setModalStep('flight_picker');
     } else {
       // Direct launch for non-flight checklists
@@ -658,55 +656,17 @@ export function ChecklistSearchModal({
 
             {/* Target Checklist Preview + Flight Selector Grid */}
             <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 bg-slate-50/60">
-              {/* Target Checklist Item Details Inspection Box */}
-              {pendingChecklistData?.targetChecklist && (
-                <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs space-y-2.5">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                    <h5 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                      <ListChecks className="w-4 h-4 text-blue-600" />
-                      Tasks Included in This Turnaround Checklist
-                    </h5>
-                    <span className="text-[11px] font-mono text-slate-500">
-                      {pendingChecklistData.targetChecklist.items.length} tasks ({pendingChecklistData.targetChecklist.items.filter(i => i.isMandatory).length} Mandatory)
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[160px] overflow-y-auto pr-1 scrollbar-thin">
-                    {pendingChecklistData.targetChecklist.items.map((item, idx) => (
-                      <div 
-                        key={`preview-item-${item.id || idx}`}
-                        className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs flex items-start gap-2"
-                      >
-                        <span className="w-5 h-5 rounded bg-blue-100 text-blue-800 font-mono text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
-                          #{item.sequenceOrder}
-                        </span>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1 mb-0.5">
-                            {item.isMandatory ? (
-                              <span className="text-[9px] font-extrabold text-rose-700 bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200 uppercase">
-                                Mandatory
-                              </span>
-                            ) : (
-                              <span className="text-[9px] font-bold text-slate-600 bg-slate-200/70 px-1.5 py-0.2 rounded uppercase">
-                                Optional
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-slate-800 font-medium line-clamp-2 leading-snug">
-                            {item.text}
-                          </p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Flight Cards Grid */}
+              {/* Flight Cards Grid - Shown First */}
               <div className="space-y-2">
-                <h5 className="text-xs font-bold uppercase tracking-wider text-slate-700">
-                  Select Target Turnaround Flight
-                </h5>
+                <div className="flex items-center justify-between pb-1">
+                  <h5 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                    <Plane className="w-4 h-4 text-blue-600" />
+                    Select Target Turnaround Flight
+                  </h5>
+                  <span className="text-[11px] font-medium text-slate-500">
+                    {selectedFlightGroupId ? 'Flight selected' : 'No flight selected — pick a flight below'}
+                  </span>
+                </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {flightGroups.map((flight) => {
@@ -799,6 +759,50 @@ export function ChecklistSearchModal({
                   })}
                 </div>
               </div>
+
+              {/* Target Checklist Item Details Inspection Box - Positioned at Bottom */}
+              {pendingChecklistData?.targetChecklist && (
+                <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs space-y-2.5 mt-4">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                    <h5 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                      <ListChecks className="w-4 h-4 text-blue-600" />
+                      Tasks Included in This Turnaround Checklist
+                    </h5>
+                    <span className="text-[11px] font-mono text-slate-500">
+                      {pendingChecklistData.targetChecklist.items.length} tasks ({pendingChecklistData.targetChecklist.items.filter(i => i.isMandatory).length} Mandatory)
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[180px] overflow-y-auto pr-1 scrollbar-thin">
+                    {pendingChecklistData.targetChecklist.items.map((item, idx) => (
+                      <div 
+                        key={`preview-item-${item.id || idx}`}
+                        className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs flex items-start gap-2"
+                      >
+                        <span className="w-5 h-5 rounded bg-blue-100 text-blue-800 font-mono text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
+                          #{item.sequenceOrder}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1 mb-0.5">
+                            {item.isMandatory ? (
+                              <span className="text-[9px] font-extrabold text-rose-700 bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200 uppercase">
+                                Mandatory
+                              </span>
+                            ) : (
+                              <span className="text-[9px] font-bold text-slate-600 bg-slate-200/70 px-1.5 py-0.2 rounded uppercase">
+                                Optional
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-slate-800 font-medium line-clamp-2 leading-snug">
+                            {item.text}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Flight Picker Action Footer */}
