@@ -20,7 +20,9 @@ import {
   CheckCircle2,
   Lock,
   TrendingUp,
-  Search
+  Search,
+  Layers,
+  ListChecks
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -35,6 +37,7 @@ interface HeaderProps {
   onExportExcel: () => void;
   onOpenDrillDown?: () => void;
   onOpenSearchChecklists?: () => void;
+  onOpenNavigator?: () => void;
 }
 
 export function Header({
@@ -49,6 +52,7 @@ export function Header({
   onExportExcel,
   onOpenDrillDown,
   onOpenSearchChecklists,
+  onOpenNavigator,
 }: HeaderProps) {
   const [utcTime, setUtcTime] = useState<string>('');
   const [localTime, setLocalTime] = useState<string>('');
@@ -288,6 +292,19 @@ export function Header({
 
           {/* User Profile & Actions */}
           <div className="flex items-center gap-2">
+            {/* PROMINENT NAVIGATE TO CHECKLISTS BUTTON */}
+            {onOpenNavigator && (
+              <button
+                id="btn-header-navigate-checklists"
+                onClick={onOpenNavigator}
+                className="px-3.5 py-2 rounded-xl text-xs sm:text-sm font-black flex items-center gap-2 cursor-pointer text-white bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 hover:from-blue-500 hover:via-indigo-500 hover:to-violet-500 shadow-[0_4px_12px_rgba(37,99,235,0.35),inset_0_1px_0_rgba(255,255,255,0.4)] border border-blue-400/60 active:scale-95 transition-all duration-200"
+                title="Open Screen-Covering Operational Groups & Checklists Navigator"
+              >
+                <ListChecks className="w-4 h-4 text-sky-200 animate-pulse" />
+                <span className="tracking-wide">Navigate to Checklists</span>
+              </button>
+            )}
+
             {currentUser ? (
               <div className="flex items-center gap-2.5">
                 <div className="hidden md:flex flex-col text-right cursor-pointer" onClick={onOpenLogin} title="Click to Switch Role or Change Login">

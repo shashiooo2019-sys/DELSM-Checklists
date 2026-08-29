@@ -45,6 +45,7 @@ import { AdminPanel } from '@/components/AdminPanel';
 import { AuditLogDrawer } from '@/components/AuditLogDrawer';
 import { ConfirmModal, ConfirmModalState } from '@/components/ConfirmModal';
 import { ChecklistSearchModal } from '@/components/ChecklistSearchModal';
+import { ChecklistNavigatorModal } from '@/components/ChecklistNavigatorModal';
 import { 
   Plane, 
   Building2, 
@@ -155,6 +156,7 @@ export default function AviationGroundOpsPage() {
   const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState<boolean>(false);
   const [isDrillDownOpen, setIsDrillDownOpen] = useState<boolean>(false);
   const [isChecklistSearchOpen, setIsChecklistSearchOpen] = useState<boolean>(false);
+  const [isNavigatorOpen, setIsNavigatorOpen] = useState<boolean>(false);
   const [reopenDrillDownAfterChecklistClose, setReopenDrillDownAfterChecklistClose] = useState<boolean>(false);
   const [isAdminPanelOpen, setIsAdminPanelOpen] = useState<boolean>(false);
   const [isAuditLogOpen, setIsAuditLogOpen] = useState<boolean>(false);
@@ -777,6 +779,7 @@ export default function AviationGroundOpsPage() {
         onExportExcel={() => exportShiftToExcel(dayData)}
         onOpenDrillDown={() => setIsDrillDownOpen(true)}
         onOpenSearchChecklists={() => setIsChecklistSearchOpen(true)}
+        onOpenNavigator={() => setIsNavigatorOpen(true)}
       />
 
       {/* Main Container */}
@@ -799,14 +802,25 @@ export default function AviationGroundOpsPage() {
               </div>
             </div>
 
-            <button
-              id="btn-banner-login"
-              onClick={() => setIsLoginModalOpen(true)}
-              className="px-5 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-bold uppercase tracking-wider shadow-md hover:shadow-lg hover:shadow-blue-500/20 active:scale-98 transition-all shrink-0 flex items-center gap-2 relative z-10"
-            >
-              <LogIn className="w-4 h-4" />
-              <span>Authenticate Roster</span>
-            </button>
+            <div className="flex items-center gap-2.5 flex-wrap">
+              <button
+                id="btn-banner-navigate-checklists"
+                onClick={() => setIsNavigatorOpen(true)}
+                className="px-4 py-3 bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 hover:from-blue-500 hover:to-violet-500 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-md hover:shadow-lg hover:shadow-blue-500/30 active:scale-98 transition-all shrink-0 flex items-center gap-2 relative z-10 border border-blue-400/40"
+              >
+                <Sparkles className="w-4 h-4 text-sky-200 animate-pulse" />
+                <span>Navigate to Checklists</span>
+              </button>
+
+              <button
+                id="btn-banner-login"
+                onClick={() => setIsLoginModalOpen(true)}
+                className="px-5 py-3 bg-slate-800 hover:bg-slate-700 text-white rounded-xl text-xs font-bold uppercase tracking-wider shadow-md active:scale-98 transition-all shrink-0 flex items-center gap-2 relative z-10 border border-slate-700"
+              >
+                <LogIn className="w-4 h-4" />
+                <span>Authenticate Roster</span>
+              </button>
+            </div>
           </div>
         )}
 
@@ -820,6 +834,7 @@ export default function AviationGroundOpsPage() {
           onOpenAdmin={() => setIsAdminPanelOpen(true)}
           onReopenShift={handleReopenShift}
           onOpenDrillDown={() => setIsDrillDownOpen(true)}
+          onOpenNavigator={() => setIsNavigatorOpen(true)}
         />
 
         {/* Operational Filter & Search Bar */}
@@ -955,10 +970,21 @@ export default function AviationGroundOpsPage() {
             {/* Search Input, Checklist Finder & Audit Log Trigger */}
             <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
               <button
+                id="btn-open-checklist-navigator"
+                type="button"
+                onClick={() => setIsNavigatorOpen(true)}
+                className="px-3.5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-black transition flex items-center gap-1.5 shadow-md shadow-blue-600/20 shrink-0 cursor-pointer border border-blue-400/40 active:scale-95"
+                title="Open Screen-Covering Operational Groups & Checklists Navigator"
+              >
+                <Sparkles className="w-3.5 h-3.5 text-sky-200 animate-pulse" />
+                <span>Navigate to Checklists</span>
+              </button>
+
+              <button
                 id="btn-open-checklist-search"
                 type="button"
                 onClick={() => setIsChecklistSearchOpen(true)}
-                className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs shrink-0 cursor-pointer"
+                className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs shrink-0 cursor-pointer border border-slate-200"
                 title="Search all checklists and select flight turnaround"
               >
                 <Search className="w-3.5 h-3.5" />
@@ -1482,17 +1508,46 @@ export default function AviationGroundOpsPage() {
         }}
       />
 
-      {/* Floating Search Action Button on Mobile */}
-      <div className="fixed bottom-5 right-5 sm:hidden z-40">
+      {/* Screen-Covering Operational Groups & Checklists Navigator */}
+      <ChecklistNavigatorModal
+        isOpen={isNavigatorOpen}
+        onClose={() => setIsNavigatorOpen(false)}
+        dayData={dayData}
+        currentUser={currentUser}
+        onSelectChecklist={(grp, sub, chk) => {
+          setIsNavigatorOpen(false);
+          setActiveChecklistModal({
+            isOpen: true,
+            group: grp,
+            subGroup: sub,
+            checklist: chk,
+          });
+        }}
+      />
+
+      {/* Floating Navigator & Search Action Buttons on Mobile */}
+      <div className="fixed bottom-5 right-5 sm:hidden z-40 flex flex-col items-end gap-2.5">
+        <button
+          id="btn-mobile-floating-navigator"
+          type="button"
+          onClick={() => setIsNavigatorOpen(true)}
+          className="px-4 py-3 rounded-full bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 active:scale-95 text-white shadow-2xl shadow-blue-600/50 flex items-center gap-2 border-2 border-white/40 transition cursor-pointer font-black text-xs"
+          title="Navigate to Checklists"
+          aria-label="Navigate to Checklists"
+        >
+          <Sparkles className="w-4 h-4 text-sky-200 animate-pulse" />
+          <span>Checklists</span>
+        </button>
+
         <button
           id="btn-mobile-floating-search-checklist"
           type="button"
           onClick={() => setIsChecklistSearchOpen(true)}
-          className="w-13 h-13 rounded-full bg-blue-600 active:bg-blue-700 text-white shadow-xl shadow-blue-600/30 flex items-center justify-center border-2 border-white/50 active:scale-95 transition cursor-pointer"
+          className="w-11 h-11 rounded-full bg-slate-900 active:bg-slate-800 text-white shadow-xl shadow-slate-900/40 flex items-center justify-center border-2 border-slate-700 active:scale-95 transition cursor-pointer"
           title="Search Checklists & Choose Flight"
           aria-label="Search Checklists & Choose Flight"
         >
-          <Search className="w-6 h-6 stroke-[2.5]" />
+          <Search className="w-5 h-5 stroke-[2.5]" />
         </button>
       </div>
 

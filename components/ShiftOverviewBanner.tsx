@@ -16,7 +16,8 @@ import {
   AlertCircle,
   Activity,
   Layers,
-  Sparkles
+  Sparkles,
+  ListChecks
 } from 'lucide-react';
 
 interface ShiftOverviewBannerProps {
@@ -28,6 +29,7 @@ interface ShiftOverviewBannerProps {
   onOpenAdmin: () => void;
   onReopenShift?: () => void;
   onOpenDrillDown?: () => void;
+  onOpenNavigator?: () => void;
 }
 
 export function ShiftOverviewBanner({
@@ -39,6 +41,7 @@ export function ShiftOverviewBanner({
   onOpenAdmin,
   onReopenShift,
   onOpenDrillDown,
+  onOpenNavigator,
 }: ShiftOverviewBannerProps) {
   const progress = getDayOverallProgress(dayData);
   const isSupervisor = currentUser?.role === 'SUPERVISOR' || currentUser?.role === 'ADMIN';
@@ -159,6 +162,18 @@ export function ShiftOverviewBanner({
 
         {/* Global Action Toolbar */}
         <div className="flex items-center gap-2 flex-wrap w-full lg:w-auto justify-end">
+          {onOpenNavigator && (
+            <button
+              id="btn-banner-navigate-checklists"
+              onClick={onOpenNavigator}
+              className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 hover:from-blue-500 hover:to-violet-500 text-white rounded-xl text-xs sm:text-sm font-black transition-all shadow-md shadow-blue-600/30 active:scale-95 cursor-pointer border border-blue-400/40"
+              title="Open Screen-Covering Operational Groups & Checklists Navigator"
+            >
+              <ListChecks className="w-4 h-4 text-sky-200 animate-pulse" />
+              <span>Navigate to Checklists</span>
+            </button>
+          )}
+
           {isSupervisor && (
             <button
               id="btn-open-diagnosis"
