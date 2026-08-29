@@ -22,7 +22,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U194283',
     name: 'RAKESH PARMAR',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U194283',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -32,7 +32,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U194317',
     name: 'JASPREET MALIK',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U194317',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -42,7 +42,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U137790',
     name: 'DANISH MANZOOR',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U137790',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -52,7 +52,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U148038',
     name: 'PRIYANKA JAIN',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U148038',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -62,7 +62,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U152260',
     name: 'MANISH PARMAR',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U152260',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -72,7 +72,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U128206',
     name: 'ADITI BHALLA',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U128206',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -82,7 +82,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U177834',
     name: 'CHRISTY',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U177834',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -92,7 +92,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U151236',
     name: 'ARUN SINGH',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U151236',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -102,7 +102,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U193966',
     name: 'ANKITA DUTTA',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U193966',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -112,7 +112,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U148685',
     name: 'ANKIT MISHRA',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U148685',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -122,7 +122,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U177840',
     name: 'BHAGWATI BISWAKARMA',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U177840',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -132,7 +132,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U141960',
     name: 'HARPREET SINGH',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U141960',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -142,7 +142,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U152261',
     name: 'RONAK SINGH',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U152261',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -152,7 +152,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U148030',
     name: 'SIMARPREET KAUR',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U148030',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -162,7 +162,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U125316',
     name: 'ABHAY TIWARI',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U125316',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -172,7 +172,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U184279',
     name: 'YASIR BHAT',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U184279',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -182,7 +182,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U152267',
     name: 'VAIBHAV',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U152267',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -192,7 +192,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U161306',
     name: 'PRAVEEN BALIYAN',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U161306',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -202,7 +202,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U148697',
     name: 'ISHA MANSURI',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U148697',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -212,7 +212,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U150984',
     name: 'IPSHITA KAUR',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U150984',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -222,7 +222,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U145815',
     name: 'PRACHI',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U145815',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -232,7 +232,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U193961',
     name: 'SIDHI SHARMA',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U193961',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -242,7 +242,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U191790',
     name: 'PAYAL',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U191790',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -252,7 +252,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U115470',
     name: 'KHUSHI',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U115470',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -262,7 +262,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U169709',
     name: 'MALVIKA VYAS',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U169709',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -272,7 +272,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U193967',
     name: 'SHIVANGI',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U193967',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -282,7 +282,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U145816',
     name: 'AASIF ALI',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U145816',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -292,7 +292,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U142564',
     name: 'KASHISH BACHHAS',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U142564',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -302,7 +302,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U115377',
     name: 'VINAY RAWAT',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U115377',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -312,7 +312,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U146671',
     name: 'KAJAL',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U146671',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -322,7 +322,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U145823',
     name: 'MANJEET KAUR',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U145823',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -332,7 +332,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U142565',
     name: 'SIMARJEET KAUR',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U142565',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -342,7 +342,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U143324',
     name: 'KRITIKA SHARMA',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U143324',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -352,7 +352,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U146675',
     name: 'KANIKA MEHTA',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U146675',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -362,7 +362,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U119170',
     name: 'MAYANK AGGARWAL',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U119170',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -372,7 +372,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U124807',
     name: 'AMIT KUMAR',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U124807',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -382,7 +382,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U154745',
     name: 'SHIVAM KUMAR',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U154745',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -392,7 +392,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U103735',
     name: 'SUJATA BHARTI',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U103735',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -402,7 +402,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U146554',
     name: 'MAYANK BANGARI',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U146554',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -412,7 +412,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U146557',
     name: 'SHUBHAM PRASAD',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U146557',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -422,7 +422,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U149989',
     name: 'VARUN SHARMA',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U149989',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -432,7 +432,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U193964',
     name: 'PREETI',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U193964',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -442,7 +442,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U102164',
     name: 'DAVINDER SINGH',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U102164',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -452,7 +452,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U102841',
     name: 'PAWANPREET',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U102841',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -462,7 +462,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U152823',
     name: 'AYUSH MEHRA',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U152823',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -472,7 +472,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U149994',
     name: 'SHUBHAM KESTWAL',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U149994',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -482,7 +482,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U155961',
     name: 'SUDIP KUMAR',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U155961',
     mustChangePassword: false,
     department: 'Ground Operations',
@@ -494,7 +494,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   {
     uNumber: 'U123456',
     name: 'U123456',
-    role: 'USER',
+    role: 'SUPERVISOR',
     passwordHash: 'U123456',
     mustChangePassword: false,
     department: 'Ground Operations',

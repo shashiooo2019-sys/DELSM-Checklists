@@ -2150,8 +2150,8 @@ export function ChecklistDrillDownView({
 
             <div className="space-y-3">
               <div>
-                <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">
-                  Supervisor / Admin Name <span className="text-rose-500">*</span>
+                <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">
+                  Username / Signature Identifier <span className="text-rose-500">*</span>
                 </label>
                 <div className="relative">
                   <User className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
@@ -2161,22 +2161,22 @@ export function ChecklistDrillDownView({
                     required
                     value={supervisorNameInput}
                     onChange={e => setSupervisorNameInput(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-sky-500/15 focus:border-sky-500 text-slate-800"
-                    placeholder="Enter your full signature name"
+                    className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500 text-slate-800"
+                    placeholder="Enter your username or signature name (e.g. U123456 or Duty Supervisor)"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold uppercase text-slate-400 mb-1">
-                  Shift Closure Handover / Remarks (Optional)
+                <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">
+                  Free Text Remarks & Handover Notes
                 </label>
                 <textarea
                   id="shift-close-supervisor-notes"
                   value={supervisorNotesInput}
                   onChange={e => setSupervisorNotesInput(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-sky-500/15 focus:border-sky-500 text-slate-800 h-20 resize-none"
-                  placeholder="Enter remarks, log handovers, or operational delays..."
+                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500 text-slate-800 h-24 resize-none"
+                  placeholder="Enter free text remarks, log handovers, operational observations, or delay explanations..."
                 />
               </div>
             </div>

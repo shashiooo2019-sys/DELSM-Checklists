@@ -75,7 +75,14 @@ function deduplicateUsers(users: UserAccount[]): UserAccount[] {
     if (LEGACY_DEMO_UNUMBERS.has(key)) continue;
     if (!seen.has(key)) {
       seen.add(key);
-      result.push(u);
+      // Upgrade all USER roles to SUPERVISOR role
+      const upgradedRole: UserAccount['role'] = u.role === 'ADMIN' ? 'ADMIN' : 'SUPERVISOR';
+      const upgradedBaseRole: UserRole = u.baseRole === 'ADMIN' ? 'ADMIN' : 'SUPERVISOR';
+      result.push({
+        ...u,
+        role: upgradedRole,
+        baseRole: upgradedBaseRole,
+      });
     }
   }
   return result;
@@ -86,7 +93,12 @@ function getLocalUsers(): UserAccount[] {
     try {
       const stored = localStorage.getItem('aviation_users_local');
       if (stored) {
-        return JSON.parse(stored) as UserAccount[];
+        const parsed = JSON.parse(stored) as UserAccount[];
+        return parsed.map((u) => ({
+          ...u,
+          role: u.role === 'ADMIN' ? 'ADMIN' : 'SUPERVISOR',
+          baseRole: u.baseRole === 'ADMIN' ? 'ADMIN' : 'SUPERVISOR',
+        }));
       }
     } catch (e) {
       console.error('Error loading users from localStorage:', e);
@@ -161,7 +173,17 @@ export function getActiveSession(): UserAccount | null {
   const stored = getSessionItem(SESSION_STORAGE_KEY);
   if (!stored) return null;
   try {
-    return JSON.parse(stored);
+    const user = JSON.parse(stored) as UserAccount;
+    if (user) {
+      const resolvedRole: UserAccount['role'] = user.role === 'ADMIN' ? 'ADMIN' : 'SUPERVISOR';
+      const resolvedBaseRole: UserRole = user.baseRole === 'ADMIN' ? 'ADMIN' : 'SUPERVISOR';
+      return {
+        ...user,
+        role: resolvedRole,
+        baseRole: resolvedBaseRole,
+      };
+    }
+    return user;
   } catch {
     return null;
   }

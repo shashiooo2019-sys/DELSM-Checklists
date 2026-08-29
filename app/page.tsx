@@ -532,7 +532,9 @@ export default function AviationGroundOpsPage() {
   const handleCloseShift = (notes?: string, supervisorName?: string) => {
     if (!currentUser) return;
 
-    const signature = supervisorName ? `${supervisorName} (${currentUser.uNumber})` : `${currentUser.name} (${currentUser.uNumber})`;
+    const signature = supervisorName 
+      ? (supervisorName.includes('(') ? supervisorName : `${supervisorName} (${currentUser.uNumber})`) 
+      : `${currentUser.name} (${currentUser.uNumber})`;
 
     const updatedGroups = dayData.groups.map((grp) => {
       if (grp.name.includes('Day Shift') || grp.code === 'DAY-OPS') {

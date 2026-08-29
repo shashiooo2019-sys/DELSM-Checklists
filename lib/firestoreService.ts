@@ -203,10 +203,12 @@ export const DEMO_USER_UNUMBERS = new Set(['u10482', 'u20914', 'u33418', 'u44920
 
 // Convert Firestore User Doc to UserAccount
 export function firestoreUserToAccount(data: FirestoreUserData, uid?: string): UserAccount {
+  // Upgrade role if legacy 'USER'
+  const resolvedRole: UserAccount['role'] = data.role === 'ADMIN' ? 'ADMIN' : 'SUPERVISOR';
   return {
     uNumber: data.u_number,
     name: data.name,
-    role: data.role,
+    role: resolvedRole,
     passwordHash: data.password_hash || data.u_number || 'ACTIVE',
     mustChangePassword: false,
     department: data.department || 'Ground Operations',
@@ -214,7 +216,7 @@ export function firestoreUserToAccount(data: FirestoreUserData, uid?: string): U
   };
 }
 
-// Ensure default users exist in Firestore and purge any legacy demo data
+// Ensure default users exist in Firestore and upgrade all user accounts to SUPERVISOR role
 export async function seedDefaultUsersIfMissing(): Promise<void> {
   try {
     // 1. Purge legacy demo users if present in Firestore
@@ -225,13 +227,16 @@ export async function seedDefaultUsersIfMissing(): Promise<void> {
         if (DEMO_USER_UNUMBERS.has(uNum)) {
           const { deleteDoc } = await import('firebase/firestore');
           await deleteDoc(d.ref);
+        } else if (d.data()?.role === 'USER') {
+          // Upgrade existing Firestore document from USER to SUPERVISOR
+          await updateDoc(d.ref, { role: 'SUPERVISOR' });
         }
       }
     } catch (e) {
       console.warn('Notice while cleaning demo users from Firestore:', e);
     }
 
-    // 2. Ensure core admin & supervisor accounts exist
+    // 2. Ensure core admin & supervisor accounts exist with SUPERVISOR / ADMIN roles
     for (const def of DEFAULT_USERS) {
       const email = uNumberToEmail(def.uNumber);
       const q = query(collection(db, 'users'), where('u_number', '==', def.uNumber));
@@ -250,9 +255,13 @@ export async function seedDefaultUsersIfMissing(): Promise<void> {
           created_at: serverTimestamp(),
         });
       } else {
-        await updateDoc(snap.docs[0].ref, {
+        const existingDoc = snap.docs[0];
+        const existingRole = existingDoc.data()?.role;
+        const targetRole = existingRole === 'ADMIN' ? 'ADMIN' : def.role;
+        await updateDoc(existingDoc.ref, {
           password_hash: def.passwordHash,
           is_first_login: def.mustChangePassword,
+          role: targetRole,
         });
       }
     }
@@ -378,6 +387,33 @@ export async function loginWithFirebase(
     };
   } catch (err: any) {
     console.error('Login error:', err);
+    // Fallback to local default users if remote Firestore connection encounters any issue
+    const defaultUser = DEFAULT_USERS.find(
+      (u) => u.uNumber.toLowerCase() === lowerUsername
+    );
+    if (defaultUser) {
+      if (pwd === defaultUser.passwordHash) {
+        return {
+          success: true,
+          user: {
+            uNumber: defaultUser.uNumber,
+            name: defaultUser.name,
+            role: defaultUser.role === 'ADMIN' ? 'ADMIN' : 'SUPERVISOR',
+            baseRole: defaultUser.role === 'ADMIN' ? 'ADMIN' : 'SUPERVISOR',
+            passwordHash: defaultUser.passwordHash,
+            mustChangePassword: false,
+            department: defaultUser.department,
+            createdDate: defaultUser.createdDate || new Date().toISOString(),
+          },
+          mustChangePassword: false,
+        };
+      } else {
+        return {
+          success: false,
+          error: 'Invalid password. Please check your credentials.',
+        };
+      }
+    }
     return {
       success: false,
       error: 'Authentication failed. Please verify your credentials.',

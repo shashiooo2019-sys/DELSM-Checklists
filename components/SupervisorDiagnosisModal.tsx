@@ -59,9 +59,12 @@ export function SupervisorDiagnosisModal({
   const [isTabsFrameExpanded, setIsTabsFrameExpanded] = useState<boolean>(false);
 
   // Sign-off details - Pre-fill with active logged in user credentials if available
-  const [signoffUNumber, setSignoffUNumber] = useState<string>(currentUser?.uNumber || '');
-  const [signoffName, setSignoffName] = useState<string>(currentUser?.name || '');
-  const [shiftClosureRemarks, setShiftClosureRemarks] = useState<string>('');
+  const [signoffUNumber, setSignoffUNumber] = useState<string>(() => currentUser?.uNumber || '');
+  const [signoffName, setSignoffName] = useState<string>(() => currentUser?.name || '');
+  const [shiftClosureRemarks, setShiftClosureRemarks] = useState<string>(() => 
+    currentUser?.uNumber ? `Shift operational handover verified and signed off by ${currentUser.name} (${currentUser.uNumber}).` : ''
+  );
+  const [showShiftClosePromptModal, setShowShiftClosePromptModal] = useState<boolean>(false);
 
   if (!isOpen) return null;
 
@@ -479,15 +482,15 @@ export function SupervisorDiagnosisModal({
                   <span className="text-[11px] text-slate-500 font-mono font-bold">Supervisor Authorization Required</span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
                     <label className="block text-[11px] font-black text-slate-700 mb-1">
-                      U-Number <span className="text-rose-500">*</span>
+                      Username / U-Number <span className="text-rose-500">*</span>
                     </label>
                     <input
                       id="input-signoff-unumber"
                       type="text"
-                      placeholder="e.g. U12345"
+                      placeholder="e.g. U123456"
                       value={signoffUNumber}
                       onChange={(e) => setSignoffUNumber(e.target.value)}
                       className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-[inset_0_1px_2px_rgba(0,0,0,0.06)] transition"
@@ -500,23 +503,23 @@ export function SupervisorDiagnosisModal({
                     <input
                       id="input-signoff-name"
                       type="text"
-                      placeholder="e.g. John Doe (Duty Supervisor)"
+                      placeholder="e.g. Duty Supervisor"
                       value={signoffName}
                       onChange={(e) => setSignoffName(e.target.value)}
                       className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-[inset_0_1px_2px_rgba(0,0,0,0.06)] transition"
                     />
                   </div>
-                  <div>
+                  <div className="sm:col-span-2">
                     <label className="block text-[11px] font-black text-slate-700 mb-1">
-                      Final Handover Remarks (Optional)
+                      Free Text Remarks & Handover Notes
                     </label>
-                    <input
+                    <textarea
                       id="input-signoff-remarks"
-                      type="text"
-                      placeholder="e.g. Operations executed smoothly, shift handed over."
+                      rows={2}
+                      placeholder="Enter free text remarks, operational delays, handover notes, or observations..."
                       value={shiftClosureRemarks}
                       onChange={(e) => setShiftClosureRemarks(e.target.value)}
-                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-[inset_0_1px_2px_rgba(0,0,0,0.06)] transition"
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-[inset_0_1px_2px_rgba(0,0,0,0.06)] transition resize-y min-h-[50px]"
                     />
                   </div>
                 </div>
@@ -592,7 +595,7 @@ export function SupervisorDiagnosisModal({
                     {isBlocked 
                       ? hasExceptions && !verifiedExceptions 
                         ? 'Check the box above to accept skipped / not done items.'
-                        : 'Please enter Supervisor U-Number and Name above.'
+                        : 'Please enter Username and Name above.'
                       : 'All requirements satisfied. Ready to finalize.'}
                   </span>
 
@@ -600,7 +603,7 @@ export function SupervisorDiagnosisModal({
                     id="btn-shift-verify-and-close"
                     type="button"
                     disabled={isBlocked}
-                    onClick={handleShiftCloseAction}
+                    onClick={() => setShowShiftClosePromptModal(true)}
                     className={`px-6 py-3 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition cursor-pointer ${
                       isBlocked
                         ? 'btn-3d-white text-slate-400 opacity-60 cursor-not-allowed'
@@ -661,6 +664,121 @@ export function SupervisorDiagnosisModal({
                 </span>
               </button>
             )}
+          </div>
+        )}
+        {/* Prompt Modal for Username & Free Text on Shift Verify and Close */}
+        {showShiftClosePromptModal && (
+          <div className="fixed inset-0 z-60 flex items-center justify-center p-3 bg-slate-900/80 backdrop-blur-xs animate-in fade-in">
+            <div 
+              id="modal-shift-close-prompt"
+              className="bg-white rounded-2xl border border-slate-300 shadow-[0_25px_60px_-10px_rgba(0,0,0,0.5)] max-w-lg w-full overflow-hidden text-slate-900 animate-in zoom-in-95"
+            >
+              <div className="p-4 sm:p-5 bg-amber-500 text-slate-950 flex items-center justify-between border-b border-amber-600">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-amber-600/30 flex items-center justify-center">
+                    <ShieldCheck className="w-5 h-5 text-slate-950" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black uppercase tracking-wider text-slate-950">
+                      {dayShiftOnly ? 'Day Shift Verify & Close Authorization' : 'Shift Verify & Close Authorization'}
+                    </h3>
+                    <p className="text-[11px] font-semibold text-slate-900/80">
+                      Shift Date: {dayData.date}
+                    </p>
+                  </div>
+                </div>
+                <button
+                  id="btn-close-shift-prompt-x"
+                  type="button"
+                  onClick={() => setShowShiftClosePromptModal(false)}
+                  className="p-1 rounded-lg hover:bg-amber-600/30 text-slate-950 transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-5 space-y-4">
+                <p className="text-xs text-slate-600 leading-relaxed font-medium">
+                  Please prompt and verify your username and enter any free text handover remarks to authorize and permanently lock the operational shift record.
+                </p>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-black text-slate-800 mb-1">
+                      Username / U-Number <span className="text-rose-500">*</span>
+                    </label>
+                    <div className="relative">
+                      <User className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                      <input
+                        id="prompt-shift-close-unumber"
+                        type="text"
+                        required
+                        placeholder="e.g. U123456"
+                        value={signoffUNumber}
+                        onChange={(e) => setSignoffUNumber(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:bg-white transition"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-black text-slate-800 mb-1">
+                      Full Name / Role <span className="text-rose-500">*</span>
+                    </label>
+                    <input
+                      id="prompt-shift-close-name"
+                      type="text"
+                      required
+                      placeholder="e.g. Duty Supervisor"
+                      value={signoffName}
+                      onChange={(e) => setSignoffName(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:bg-white transition"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-black text-slate-800 mb-1">
+                      Free Text Remarks & Handover Notes
+                    </label>
+                    <div className="relative">
+                      <textarea
+                        id="prompt-shift-close-remarks"
+                        rows={3}
+                        placeholder="Enter free text notes, operational observations, log handovers, or delay explanations..."
+                        value={shiftClosureRemarks}
+                        onChange={(e) => setShiftClosureRemarks(e.target.value)}
+                        className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:bg-white transition resize-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-4 bg-slate-100 border-t border-slate-200 flex items-center justify-end gap-2.5">
+                <button
+                  id="btn-cancel-prompt-shift-close"
+                  type="button"
+                  onClick={() => setShowShiftClosePromptModal(false)}
+                  className="px-4 py-2 text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-xl transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  id="btn-confirm-prompt-shift-close"
+                  type="button"
+                  disabled={!signoffUNumber.trim() || !signoffName.trim()}
+                  onClick={handleShiftCloseAction}
+                  className={`px-5 py-2 text-xs font-black uppercase tracking-wider rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-xs ${
+                    !signoffUNumber.trim() || !signoffName.trim()
+                      ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                      : 'btn-3d-emerald'
+                  }`}
+                >
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>Confirm Shift Verify & Close</span>
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>

@@ -8,6 +8,7 @@ import {
   Checklist, 
   ChecklistItem, 
   UserAccount,
+  UserRole,
   ChecklistVersionRecord
 } from '@/types/aviation';
 import { 
@@ -238,13 +239,13 @@ export function AdminPanel({
   // New User Form State
   const [newUNumber, setNewUNumber] = useState('');
   const [newUserName, setNewUserName] = useState('');
-  const [newUserRole, setNewUserRole] = useState<UserAccount['role']>('USER');
+  const [newUserRole, setNewUserRole] = useState<UserAccount['role']>('SUPERVISOR');
   const [newUserDept, setNewUserDept] = useState('Ground Operations');
 
   // Personnel Edit State
   const [editingUser, setEditingUser] = useState<UserAccount | null>(null);
   const [editUserName, setEditUserName] = useState('');
-  const [editUserRole, setEditUserRole] = useState<UserAccount['role']>('USER');
+  const [editUserRole, setEditUserRole] = useState<UserAccount['role']>('SUPERVISOR');
   const [editUserDept, setEditUserDept] = useState('Ground Operations');
   const [editUserIsAuthorized, setEditUserIsAuthorized] = useState<boolean>(true);
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
@@ -2487,6 +2488,27 @@ export function AdminPanel({
     showNotification('All demo accounts have been permanently purged from roster.');
   };
 
+  const handleUpgradeAllUsersToSupervisor = async () => {
+    setConfirmModal({
+      isOpen: true,
+      title: 'Upgrade All Users to Supervisor',
+      message: 'Are you sure you want to upgrade all personnel in the roster to SUPERVISOR role? (Administrator accounts will remain Admin).',
+      confirmLabel: 'Upgrade All',
+      variant: 'warning',
+      onConfirm: async () => {
+        const allUsers = loadUsers();
+        const upgradedList = allUsers.map((u) => ({
+          ...u,
+          role: (u.role === 'ADMIN' ? 'ADMIN' : 'SUPERVISOR') as UserAccount['role'],
+          baseRole: (u.baseRole === 'ADMIN' ? 'ADMIN' : 'SUPERVISOR') as UserRole,
+        }));
+        saveUsers(upgradedList);
+        setUsersList(upgradedList);
+        showNotification('All personnel accounts have been elevated to SUPERVISOR role and synced.');
+      },
+    });
+  };
+
   const handleDeleteUser = async (uNumber: string) => {
     if (uNumber.toLowerCase() === currentUser.uNumber.toLowerCase()) {
       showNotification('Cannot delete your own active administrator account.', 'error');
@@ -4196,9 +4218,20 @@ export function AdminPanel({
               {/* Users Search and Table */}
               <div className="space-y-3">
                 <div className="flex items-center justify-between flex-wrap gap-2">
-                  <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">
-                    Personnel Directory ({filteredUsers.length})
-                  </h3>
+                  <div className="flex items-center gap-3">
+                    <h3 className="text-xs font-bold uppercase tracking-wider text-slate-600">
+                      Personnel Directory ({filteredUsers.length})
+                    </h3>
+                    <button
+                      type="button"
+                      onClick={handleUpgradeAllUsersToSupervisor}
+                      className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-300 rounded-lg text-[11px] font-bold transition flex items-center gap-1 shadow-2xs"
+                      title="Elevate all personnel accounts to Supervisor role"
+                    >
+                      <ShieldCheck className="w-3.5 h-3.5 text-amber-600" />
+                      <span>Upgrade All to Supervisor</span>
+                    </button>
+                  </div>
 
                   <div className="relative w-64">
                     <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
