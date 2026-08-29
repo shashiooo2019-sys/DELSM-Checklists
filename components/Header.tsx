@@ -19,7 +19,8 @@ import {
   AlertTriangle,
   CheckCircle2,
   Lock,
-  TrendingUp
+  TrendingUp,
+  Search
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -33,6 +34,7 @@ interface HeaderProps {
   onOpenWhatsApp: () => void;
   onExportExcel: () => void;
   onOpenDrillDown?: () => void;
+  onOpenSearchChecklists?: () => void;
 }
 
 export function Header({
@@ -46,6 +48,7 @@ export function Header({
   onOpenWhatsApp,
   onExportExcel,
   onOpenDrillDown,
+  onOpenSearchChecklists,
 }: HeaderProps) {
   const [utcTime, setUtcTime] = useState<string>('');
   const [localTime, setLocalTime] = useState<string>('');
@@ -306,6 +309,19 @@ export function Header({
                 </div>
 
                 <div className="flex items-center gap-2">
+                  {/* Search Checklist Global Shortcut */}
+                  {onOpenSearchChecklists && (
+                    <button
+                      id="btn-header-search-checklists"
+                      onClick={onOpenSearchChecklists}
+                      className="btn-3d-white px-3 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer text-slate-800 hover:text-blue-600 transition"
+                      title="Search all operational checklists and launch for specific flights"
+                    >
+                      <Search className="w-3.5 h-3.5 text-blue-600" />
+                      <span className="hidden sm:inline">Find Checklist</span>
+                    </button>
+                  )}
+
                   {/* Supervisor/Admin Drill-Down Dashboard Shortcut on top */}
                   {(currentUser.role === 'SUPERVISOR' || currentUser.role === 'ADMIN') && onOpenDrillDown && (
                     <button

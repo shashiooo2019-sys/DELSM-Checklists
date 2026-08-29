@@ -44,6 +44,7 @@ import { WhatsAppShareModal } from '@/components/WhatsAppShareModal';
 import { AdminPanel } from '@/components/AdminPanel';
 import { AuditLogDrawer } from '@/components/AuditLogDrawer';
 import { ConfirmModal, ConfirmModalState } from '@/components/ConfirmModal';
+import { ChecklistSearchModal } from '@/components/ChecklistSearchModal';
 import { 
   Plane, 
   Building2, 
@@ -64,7 +65,8 @@ import {
   ChevronUp,
   MoreHorizontal,
   Menu,
-  X
+  X,
+  Sparkles
 } from 'lucide-react';
 
 export default function AviationGroundOpsPage() {
@@ -149,9 +151,10 @@ export default function AviationGroundOpsPage() {
   }>({ isOpen: false });
   const [isDayShiftWhatsAppOpen, setIsDayShiftWhatsAppOpen] = useState<boolean>(false);
 
-  // WhatsApp & Admin & Audit states
+  // WhatsApp & Admin & Audit & Checklist Search states
   const [isWhatsAppModalOpen, setIsWhatsAppModalOpen] = useState<boolean>(false);
   const [isDrillDownOpen, setIsDrillDownOpen] = useState<boolean>(false);
+  const [isChecklistSearchOpen, setIsChecklistSearchOpen] = useState<boolean>(false);
   const [reopenDrillDownAfterChecklistClose, setReopenDrillDownAfterChecklistClose] = useState<boolean>(false);
   const [isAdminPanelOpen, setIsAdminPanelOpen] = useState<boolean>(false);
   const [isAuditLogOpen, setIsAuditLogOpen] = useState<boolean>(false);
@@ -773,6 +776,7 @@ export default function AviationGroundOpsPage() {
         onOpenWhatsApp={() => setIsWhatsAppModalOpen(true)}
         onExportExcel={() => exportShiftToExcel(dayData)}
         onOpenDrillDown={() => setIsDrillDownOpen(true)}
+        onOpenSearchChecklists={() => setIsChecklistSearchOpen(true)}
       />
 
       {/* Main Container */}
@@ -948,14 +952,25 @@ export default function AviationGroundOpsPage() {
               <div className="pointer-events-none absolute right-10 top-0 bottom-0 w-8 bg-gradient-to-l from-white via-white/80 to-transparent hidden sm:block z-10" />
             </div>
 
-            {/* Search Input & Audit Log Trigger */}
-            <div className="flex items-center gap-2">
-              <div className="relative flex-1 sm:w-60">
+            {/* Search Input, Checklist Finder & Audit Log Trigger */}
+            <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+              <button
+                id="btn-open-checklist-search"
+                type="button"
+                onClick={() => setIsChecklistSearchOpen(true)}
+                className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs shrink-0 cursor-pointer"
+                title="Search all checklists and select flight turnaround"
+              >
+                <Search className="w-3.5 h-3.5" />
+                <span>Search Checklists</span>
+              </button>
+
+              <div className="relative flex-1 sm:w-56 min-w-[140px]">
                 <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
                 <input
                   id="input-group-search"
                   type="text"
-                  placeholder="Search flight or group..."
+                  placeholder="Filter groups..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white font-mono transition"
@@ -965,7 +980,7 @@ export default function AviationGroundOpsPage() {
               <button
                 id="btn-open-audit-trail"
                 onClick={() => setIsAuditLogOpen(true)}
-                className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl border border-slate-200 transition shadow-2xs"
+                className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl border border-slate-200 transition shadow-2xs cursor-pointer shrink-0"
                 title="View Real-Time Audit Log"
               >
                 <History className="w-4 h-4" />
@@ -1449,6 +1464,37 @@ export default function AviationGroundOpsPage() {
           </div>
         </div>
       )}
+
+      {/* Checklist Search Modal */}
+      <ChecklistSearchModal
+        isOpen={isChecklistSearchOpen}
+        onClose={() => setIsChecklistSearchOpen(false)}
+        dayData={dayData}
+        currentUser={currentUser}
+        onSelectChecklist={(grp, sub, chk) => {
+          setIsChecklistSearchOpen(false);
+          setActiveChecklistModal({
+            isOpen: true,
+            group: grp,
+            subGroup: sub,
+            checklist: chk,
+          });
+        }}
+      />
+
+      {/* Floating Search Action Button on Mobile */}
+      <div className="fixed bottom-5 right-5 sm:hidden z-40">
+        <button
+          id="btn-mobile-floating-search-checklist"
+          type="button"
+          onClick={() => setIsChecklistSearchOpen(true)}
+          className="w-13 h-13 rounded-full bg-blue-600 active:bg-blue-700 text-white shadow-xl shadow-blue-600/30 flex items-center justify-center border-2 border-white/50 active:scale-95 transition cursor-pointer"
+          title="Search Checklists & Choose Flight"
+          aria-label="Search Checklists & Choose Flight"
+        >
+          <Search className="w-6 h-6 stroke-[2.5]" />
+        </button>
+      </div>
 
       {confirmModal && (
         <ConfirmModal

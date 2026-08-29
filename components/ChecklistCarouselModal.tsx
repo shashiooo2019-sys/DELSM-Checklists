@@ -8,6 +8,8 @@ import {
   X, 
   ChevronLeft, 
   ChevronRight, 
+  ChevronUp,
+  ChevronDown,
   Check, 
   Pin, 
   SkipForward, 
@@ -21,7 +23,11 @@ import {
   Sparkles,
   HelpCircle,
   RotateCcw,
-  Lock
+  Lock,
+  Maximize2,
+  Minimize2,
+  Layers,
+  CheckCircle2
 } from 'lucide-react';
 
 interface ChecklistCarouselModalProps {
@@ -101,33 +107,154 @@ function ChecklistCarouselContent({
   const [remarksText, setRemarksText] = useState<string>(() => checklist.remarks || '');
   const [remarksError, setRemarksError] = useState<string | null>(null);
 
+  // Full Screen Mode State
+  const [isFullScreen, setIsFullScreen] = useState<boolean>(false);
+
   const currentItem = items[currentIndex];
   const totalItems = items.length;
 
+  // Touch & Mouse Swipe Gesture State
   const touchStartX = useRef<number | null>(null);
   const touchStartY = useRef<number | null>(null);
+  const [dragOffsetX, setDragOffsetX] = useState<number>(0);
+  const [dragOffsetY, setDragOffsetY] = useState<number>(0);
+  const [isDragging, setIsDragging] = useState<boolean>(false);
+  const [showSwipeDoneToast, setShowSwipeDoneToast] = useState<boolean>(false);
+
+  const triggerHaptic = (pattern: number[] = [20]) => {
+    if (typeof window !== 'undefined' && 'navigator' in window && navigator.vibrate) {
+      try {
+        navigator.vibrate(pattern);
+      } catch {}
+    }
+  };
 
   const handleTouchStart = (e: React.TouchEvent) => {
     touchStartX.current = e.touches[0].clientX;
     touchStartY.current = e.touches[0].clientY;
+    setIsDragging(true);
+    setDragOffsetX(0);
+    setDragOffsetY(0);
   };
 
-  const handleTouchEnd = (e: React.TouchEvent) => {
+  const handleTouchMove = (e: React.TouchEvent) => {
     if (touchStartX.current === null || touchStartY.current === null) return;
-    const diffX = e.changedTouches[0].clientX - touchStartX.current;
-    const diffY = e.changedTouches[0].clientY - touchStartY.current;
+    const currentX = e.touches[0].clientX;
+    const currentY = e.touches[0].clientY;
+    const diffX = currentX - touchStartX.current;
+    const diffY = currentY - touchStartY.current;
 
-    // Require swipe delta of at least 50px horizontally, with X movement being greater than Y
-    if (Math.abs(diffX) > Math.abs(diffY) && Math.abs(diffX) > 50) {
-      if (diffX > 0) {
-        goToPrev();
+    if (isFullScreen) {
+      if (Math.abs(diffX) > Math.abs(diffY)) {
+        setDragOffsetX(diffX);
+        setDragOffsetY(0);
       } else {
-        goToNext();
+        setDragOffsetX(0);
+        setDragOffsetY(diffY);
+      }
+    } else {
+      if (Math.abs(diffX) > Math.abs(diffY)) {
+        if (diffX < 0) {
+          // Dragging left (Mark Done)
+          setDragOffsetX(Math.max(-120, diffX));
+        } else {
+          // Dragging right (Previous)
+          setDragOffsetX(Math.min(120, diffX));
+        }
+      }
+    }
+  };
+
+  const handleTouchEnd = () => {
+    if (touchStartX.current === null || touchStartY.current === null) {
+      setIsDragging(false);
+      setDragOffsetX(0);
+      setDragOffsetY(0);
+      return;
+    }
+
+    const threshold = 40; // px threshold for gesture trigger
+
+    if (isFullScreen) {
+      const absX = Math.abs(dragOffsetX);
+      const absY = Math.abs(dragOffsetY);
+
+      // Gesture 1: Swipe Left -> DONE
+      if (dragOffsetX <= -threshold && absX >= absY) {
+        if (!isShiftClosed) {
+          triggerHaptic([35]);
+          handleMarkDone();
+          setShowSwipeDoneToast(true);
+          setTimeout(() => setShowSwipeDoneToast(false), 900);
+        }
+      }
+      // Gesture 2: Swipe Right -> EXIT FULL SCREEN
+      else if (dragOffsetX >= threshold && absX >= absY) {
+        triggerHaptic([15]);
+        setIsFullScreen(false);
+      }
+      // Gesture 3 & 4: Swipe Up or Down -> EXIT FULL SCREEN
+      else if (absY >= threshold && absY > absX) {
+        triggerHaptic([15]);
+        setIsFullScreen(false);
+      }
+    } else {
+      // Standard Mode: Swipe Left -> Mark Done
+      if (dragOffsetX <= -45) {
+        if (!isShiftClosed) {
+          triggerHaptic([25]);
+          handleMarkDone();
+          setShowSwipeDoneToast(true);
+          setTimeout(() => setShowSwipeDoneToast(false), 900);
+        }
+      } 
+      // Standard Mode: Swipe Right -> Previous Item
+      else if (dragOffsetX >= 45) {
+        triggerHaptic([15]);
+        goToPrev();
       }
     }
 
+    setDragOffsetX(0);
+    setDragOffsetY(0);
+    setIsDragging(false);
     touchStartX.current = null;
     touchStartY.current = null;
+  };
+
+  // Mouse Drag support for desktop browser testing
+  const handleMouseDown = (e: React.MouseEvent) => {
+    touchStartX.current = e.clientX;
+    touchStartY.current = e.clientY;
+    setIsDragging(true);
+    setDragOffsetX(0);
+    setDragOffsetY(0);
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (!isDragging || touchStartX.current === null || touchStartY.current === null) return;
+    const diffX = e.clientX - touchStartX.current;
+    const diffY = e.clientY - touchStartY.current;
+
+    if (isFullScreen) {
+      if (Math.abs(diffX) > Math.abs(diffY)) {
+        setDragOffsetX(diffX);
+        setDragOffsetY(0);
+      } else {
+        setDragOffsetX(0);
+        setDragOffsetY(diffY);
+      }
+    } else {
+      if (Math.abs(diffX) > Math.abs(diffY)) {
+        setDragOffsetX(diffX < 0 ? Math.max(-120, diffX) : Math.min(120, diffX));
+      }
+    }
+  };
+
+  const handleMouseUp = () => {
+    if (isDragging) {
+      handleTouchEnd();
+    }
   };
 
   const goToNext = () => {
@@ -250,6 +377,26 @@ function ChecklistCarouselContent({
     if (isRemarksModalOpen || isSkipReasonModalOpen || isNonComplianceModalOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (isFullScreen) {
+        if (e.key === 'Escape' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+          setIsFullScreen(false);
+        } else if (e.key === 'ArrowLeft' || e.key.toLowerCase() === 'd') {
+          if (!isShiftClosed) {
+            handleMarkDone();
+            setShowSwipeDoneToast(true);
+            setTimeout(() => setShowSwipeDoneToast(false), 900);
+          }
+        } else if (e.key.toLowerCase() === 'f') {
+          setIsFullScreen(false);
+        }
+        return;
+      }
+
+      if (e.key.toLowerCase() === 'f') {
+        setIsFullScreen(true);
+        return;
+      }
+
       if (e.key === 'ArrowRight') {
         goToNext();
       } else if (e.key === 'ArrowLeft') {
@@ -364,516 +511,694 @@ function ChecklistCarouselContent({
     });
   };
 
+  // Adaptive font size helper based on text length to prevent overflow and maximize visibility
+  const getAdaptiveFontClass = (text: string, isFull: boolean = false) => {
+    const len = text.length;
+    if (isFull) {
+      if (len < 40) return 'text-3xl sm:text-5xl md:text-6xl lg:text-7xl';
+      if (len < 100) return 'text-2xl sm:text-4xl md:text-5xl lg:text-6xl';
+      if (len < 200) return 'text-xl sm:text-3xl md:text-4xl lg:text-5xl';
+      return 'text-lg sm:text-2xl md:text-3xl lg:text-4xl';
+    }
+    // Standard carousel view
+    if (len < 40) return 'text-2xl sm:text-3xl md:text-4xl lg:text-5xl';
+    if (len < 100) return 'text-xl sm:text-2xl md:text-3xl lg:text-4xl';
+    if (len < 200) return 'text-lg sm:text-xl md:text-2xl lg:text-3xl';
+    return 'text-base sm:text-lg md:text-xl lg:text-2xl';
+  };
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-6 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
-      <div 
-        id="checklist-carousel-modal-container"
-        className="w-full max-w-2xl bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden flex flex-col text-slate-900 max-h-[95vh]"
-      >
-        {/* Header with Telemetry & Close */}
-        <div className="p-4 sm:p-5 bg-white border-b border-slate-100 flex items-center justify-between shrink-0">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[11px] font-mono font-bold px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-0.5 sm:p-1.5 md:p-2 bg-slate-900/60 backdrop-blur-xs animate-in fade-in overflow-hidden">
+      {/* FULL SCREEN VIEW MODE (All buttons hidden, gestures: Left=Done, Right/Up/Down=Exit) */}
+      {isFullScreen ? (
+        <div
+          id="checklist-fullscreen-container"
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+          className="fixed inset-0 z-[100] w-screen h-screen bg-gradient-to-b from-slate-950 via-slate-900 to-slate-950 text-white flex flex-col justify-between p-3 sm:p-5 md:p-8 select-none overflow-hidden cursor-grab active:cursor-grabbing"
+        >
+          {/* Top Telemetry & Status Bar (All Action Buttons Hidden) */}
+          <div className="flex items-center justify-between gap-2 shrink-0 pb-2 border-b border-slate-800/80">
+            <div className="flex items-center gap-2 flex-wrap min-w-0">
+              <span className="px-2.5 py-0.5 rounded-lg bg-blue-600 text-white font-mono text-xs font-bold tracking-wider uppercase shadow-sm shrink-0">
                 {groupName}
               </span>
-              <span className="text-xs text-slate-500 font-medium">/ {subGroupName}</span>
-            </div>
-            <h2 className="text-base sm:text-lg font-bold text-slate-900 tracking-tight flex items-center gap-2 flex-wrap">
-              <span>{checklist.title}</span>
-              <span className="text-[11px] font-mono font-bold px-2 py-0.5 rounded bg-purple-50 text-purple-700 border border-purple-200">
-                {checklist.version || 'v1.0'}
+              <span className="text-xs text-slate-400 font-medium shrink-0">/ {subGroupName}</span>
+              <span className="text-xs sm:text-sm font-semibold text-slate-200 truncate">
+                {checklist.title}
               </span>
-              {checklist.versionDate && (
-                <span className="text-[10px] text-slate-500 font-normal font-mono">
-                  (Rev {checklist.versionDate})
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="px-2.5 py-0.5 rounded-full bg-slate-800/90 text-slate-200 border border-slate-700 text-xs font-mono font-bold">
+                ITEM {currentIndex + 1} OF {totalItems}
+              </span>
+
+              {/* Minimal Exit Button for mouse clickers */}
+              <button
+                type="button"
+                onClick={() => setIsFullScreen(false)}
+                className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition shadow-sm cursor-pointer"
+                title="Exit Full Screen (or Swipe Right / Up / Down)"
+              >
+                <Minimize2 className="w-4 h-4 text-slate-300" />
+              </button>
+            </div>
+          </div>
+
+          {/* Center Main Stage: Huge Checklist Item Description taking up most part of screen */}
+          <div className="flex-1 flex flex-col justify-center items-center py-2 sm:py-4 px-2 sm:px-4 max-w-5xl mx-auto w-full text-center space-y-3 sm:space-y-4 min-h-0">
+            {/* Sequence & Mandatory Status Tag */}
+            <div className="flex items-center justify-center gap-2 sm:gap-3 flex-wrap animate-in fade-in shrink-0">
+              <span className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-blue-600/30 border-2 border-blue-400 text-blue-300 font-mono text-base sm:text-xl font-black flex items-center justify-center shadow-md">
+                #{currentItem.sequenceOrder}
+              </span>
+
+              {currentItem.isMandatory ? (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/40 text-xs sm:text-sm font-black uppercase tracking-wider shadow-sm">
+                  <ShieldAlert className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-rose-400" />
+                  Mandatory Safety Item
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800 text-slate-300 border border-slate-700 text-xs sm:text-sm font-bold uppercase">
+                  Optional Item
                 </span>
               )}
-            </h2>
+
+              {currentItem.status === 'done' && (
+                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-xs sm:text-sm font-black uppercase tracking-wider">
+                  <Check className="w-3.5 h-3.5 text-emerald-400 stroke-[3]" /> DONE
+                </span>
+              )}
+              {currentItem.status === 'pinned' && (
+                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs sm:text-sm font-black uppercase tracking-wider">
+                  <Pin className="w-3.5 h-3.5 text-amber-400" /> PINNED
+                </span>
+              )}
+              {currentItem.status === 'skipped' && (
+                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-slate-800 text-slate-400 border border-slate-700 text-xs sm:text-sm font-bold uppercase">
+                  SKIPPED
+                </span>
+              )}
+              {currentItem.status === 'missed' && (
+                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-rose-900/50 text-rose-300 border border-rose-700 text-xs sm:text-sm font-black uppercase tracking-wider">
+                  <X className="w-3.5 h-3.5 text-rose-400 stroke-[3]" /> MISSED ❌
+                </span>
+              )}
+              {currentItem.status === 'incorrectly_executed' && (
+                <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-amber-900/50 text-amber-300 border border-amber-700 text-xs sm:text-sm font-black uppercase tracking-wider">
+                  <AlertTriangle className="w-3.5 h-3.5 text-amber-400" /> INCORRECTLY EXECUTED ❌
+                </span>
+              )}
+            </div>
+
+            {/* Huge Item Description taking up most part of screen */}
+            <div className="w-full flex-1 flex flex-col justify-center overflow-y-auto px-2 py-2 scrollbar-thin min-h-0">
+              <p className={`${getAdaptiveFontClass(currentItem.text, true)} font-extrabold text-white leading-tight sm:leading-snug tracking-tight drop-shadow-md break-words select-text`}>
+                {currentItem.text}
+              </p>
+
+              {currentItem.skipReason && (
+                <p className="mt-3 text-xs sm:text-sm text-amber-300 bg-amber-950/50 border border-amber-800/60 p-2.5 rounded-xl inline-block max-w-2xl mx-auto shadow-sm">
+                  Skip Note: {currentItem.skipReason}
+                </p>
+              )}
+              {currentItem.remark && (
+                <div className="mt-3 p-2.5 rounded-xl bg-rose-950/50 border border-rose-800/60 text-xs sm:text-sm text-rose-300 inline-block max-w-2xl mx-auto text-left shadow-sm">
+                  <span className="font-bold flex items-center gap-1 text-rose-400 mb-0.5">
+                    <MessageSquare className="w-3.5 h-3.5 text-rose-400" />
+                    Operator Remark:
+                  </span>
+                  <p className="font-mono text-rose-200">{currentItem.remark}</p>
+                </div>
+              )}
+            </div>
+
+            {/* Gesture feedback indicators on drag */}
+            {dragOffsetX < -30 && (
+              <div className="p-2.5 bg-emerald-600 text-white rounded-xl text-xs sm:text-sm font-black tracking-wider uppercase animate-pulse shadow-lg flex items-center gap-1.5 shrink-0">
+                <Check className="w-4 h-4 stroke-[3]" />
+                <span>Release to Mark DONE</span>
+              </div>
+            )}
+            {(dragOffsetX > 30 || Math.abs(dragOffsetY) > 30) && (
+              <div className="p-2.5 bg-slate-800 text-white rounded-xl text-xs sm:text-sm font-bold tracking-wider uppercase animate-pulse shadow-lg flex items-center gap-1.5 shrink-0">
+                <Minimize2 className="w-4 h-4" />
+                <span>Release to Exit Full Screen</span>
+              </div>
+            )}
           </div>
 
-          <div className="flex items-center gap-2">
-            {!isShiftClosed && (
-              <button
-                id="btn-reset-carousel-checklist"
-                type="button"
-                onClick={handleResetChecklist}
-                className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl transition text-xs font-bold flex items-center gap-1.5 shrink-0 shadow-2xs"
-                title="Reset all items back to Not Done and start over"
-              >
-                <RotateCcw className="w-3.5 h-3.5 text-rose-600 shrink-0" />
-                <span className="hidden sm:inline">Reset Checklist</span>
-              </button>
-            )}
+          {/* Swipe Done Success Toast overlay in Full Screen */}
+          {showSwipeDoneToast && (
+            <div className="absolute inset-0 bg-emerald-600/95 backdrop-blur-sm flex flex-col items-center justify-center text-white p-6 animate-in zoom-in-95 duration-150 z-30">
+              <div className="w-14 h-14 rounded-full bg-white text-emerald-600 flex items-center justify-center shadow-2xl mb-2">
+                <Check className="w-8 h-8 stroke-[3]" />
+              </div>
+              <span className="text-xl sm:text-2xl font-black tracking-wide">ITEM MARKED DONE</span>
+              <span className="text-xs text-emerald-100 font-mono mt-0.5">Advancing to next checklist task...</span>
+            </div>
+          )}
 
-            <button
-              id="btn-view-all-checklist"
-              type="button"
-              onClick={() => setIsViewAllModalOpen(true)}
-              className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl transition text-xs font-bold flex items-center gap-1.5 shrink-0 shadow-2xs"
-              title="View all checklist points in read-only mode"
-            >
-              <FileText className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-              <span>View All</span>
-            </button>
+          {/* Bottom Gesture Navigation Guide (All Buttons Hidden) */}
+          <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] sm:text-xs text-slate-400 font-mono flex-wrap gap-1.5 shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold flex items-center gap-1">
+                👈 Swipe Left: Mark Done
+              </span>
+            </div>
 
-            <button
-              id="btn-close-carousel"
-              onClick={isShiftClosed ? onClose : handleSaveProgressDraft}
-              className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition"
-              title={isShiftClosed ? "Close modal" : "Save Progress and Close"}
-            >
-              <X className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-2">
+              <span className="px-2.5 py-0.5 rounded-full bg-slate-800/90 text-slate-300 border border-slate-700 font-medium">
+                👉 Swipe Right · 👆 Up · 👇 Down: Exit Full Screen
+              </span>
+            </div>
           </div>
         </div>
+      ) : (
+        /* STANDARD CAROUSEL VIEW MODE (Expanded screen, adaptive font, minimized margins) */
+        <div 
+          id="checklist-carousel-modal-container"
+          className="w-full max-w-6xl bg-white border border-slate-200 rounded-xl sm:rounded-2xl shadow-2xl overflow-hidden flex flex-col text-slate-900 h-[98vh] max-h-[98vh]"
+        >
+          {/* Streamlined Ultra-Compact Top Header */}
+          <div className="px-3 py-1.5 sm:px-5 sm:py-2 bg-white border-b border-slate-100 flex items-center justify-between shrink-0 gap-2">
+            <div className="flex items-center gap-2 flex-wrap min-w-0">
+              <span className="text-[10px] sm:text-[11px] font-mono font-bold px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200 shrink-0">
+                {groupName}
+              </span>
+              <span className="text-xs text-slate-400 font-medium shrink-0">/ {subGroupName}</span>
+              <h2 className="text-xs sm:text-sm font-bold text-slate-900 tracking-tight truncate flex items-center gap-1">
+                <span>{checklist.title}</span>
+                <span className="text-[10px] font-mono font-bold px-1.5 py-0.2 rounded bg-purple-50 text-purple-700 border border-purple-200">
+                  {checklist.version || 'v1.0'}
+                </span>
+              </h2>
+            </div>
 
-        {isShiftClosed && (
-          <div className="px-4 py-2.5 bg-amber-50 border-b border-amber-200 text-amber-900 text-xs font-bold flex items-center gap-2 justify-center shrink-0">
-            <Lock className="w-4 h-4 text-amber-600 shrink-0" />
-            <span>Operational Shift is Closed & Archived. Reopen the shift as a supervisor to modify checks.</span>
+            <div className="flex items-center gap-1 shrink-0">
+              {/* Full Screen Mode Toggle Button */}
+              <button
+                id="btn-toggle-fullscreen"
+                type="button"
+                onClick={() => setIsFullScreen(true)}
+                className="px-2 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded-lg transition text-xs font-bold flex items-center gap-1 shadow-2xs cursor-pointer"
+                title="Expand to Full Screen Mode (All buttons hidden, gestures enabled, [F] shortcut)"
+              >
+                <Maximize2 className="w-3 h-3 text-sky-400" />
+                <span className="hidden md:inline text-[11px]">Full Screen</span>
+              </button>
+
+              {!isShiftClosed && (
+                <button
+                  id="btn-reset-carousel-checklist"
+                  type="button"
+                  onClick={handleResetChecklist}
+                  className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg transition text-xs font-bold flex items-center gap-1 shadow-2xs cursor-pointer"
+                  title="Reset all items back to Not Done and start over"
+                >
+                  <RotateCcw className="w-3 h-3 text-rose-600 shrink-0" />
+                  <span className="hidden md:inline text-[11px]">Reset</span>
+                </button>
+              )}
+
+              <button
+                id="btn-view-all-checklist"
+                type="button"
+                onClick={() => setIsViewAllModalOpen(true)}
+                className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg transition text-xs font-bold flex items-center gap-1 shadow-2xs cursor-pointer"
+                title="View all checklist points in read-only mode"
+              >
+                <FileText className="w-3 h-3 text-blue-600 shrink-0" />
+                <span className="hidden md:inline text-[11px]">View All</span>
+              </button>
+
+              <button
+                id="btn-close-carousel"
+                onClick={isShiftClosed ? onClose : handleSaveProgressDraft}
+                className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition cursor-pointer"
+                title={isShiftClosed ? "Close modal" : "Save Progress and Close"}
+              >
+                <X className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+            </div>
           </div>
-        )}
 
-        {/* Progress Bar & Stepper Info */}
-        <div className="px-4 sm:px-6 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs text-slate-600 shrink-0 gap-3">
-          <div className="flex items-center gap-2.5 font-mono">
-            {/* Real-time Carousel Checklist Status Donut Arc */}
-            <div className="relative flex items-center justify-center shrink-0" style={{ width: 36, height: 36 }}>
-              <svg width={36} height={36} className="transform -rotate-90">
-                <circle
-                  cx={18}
-                  cy={18}
-                  r={14}
-                  fill="none"
-                  stroke="#F1F5F9"
-                  strokeWidth={4}
+          {isShiftClosed && (
+            <div className="px-3 py-1 bg-amber-50 border-b border-amber-200 text-amber-900 text-xs font-bold flex items-center gap-2 justify-center shrink-0">
+              <Lock className="w-3 h-3 text-amber-600 shrink-0" />
+              <span>Operational Shift is Closed & Archived. Reopen shift to modify.</span>
+            </div>
+          )}
+
+          {/* Streamlined Step Details & Progress Bar (Reduced Vertical Space) */}
+          <div className="px-3 sm:px-5 py-1 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs text-slate-600 shrink-0 gap-2">
+            <div className="flex items-center gap-2 font-mono">
+              <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[11px] font-black border border-blue-200">
+                STEP {currentIndex + 1} OF {totalItems}
+              </span>
+              {pinnedCount > 0 && (
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-amber-50 text-amber-800 text-[10px] font-bold border border-amber-300">
+                  <Pin className="w-2.5 h-2.5 text-amber-600" />
+                  {pinnedCount} PINNED
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] text-slate-500 hidden sm:flex items-center gap-1">
+                <span>Done: <strong className="text-emerald-700 font-bold">{doneCount}</strong></span>
+                <span>·</span>
+                <span>Skip: <strong className="text-slate-700 font-semibold">{skippedCount}</strong></span>
+                {(missedCount > 0 || incorrectlyCount > 0) && (
+                  <>
+                    <span>·</span>
+                    <span className="text-rose-700 font-bold">Issues: {missedCount + incorrectlyCount}</span>
+                  </>
+                )}
+              </span>
+              <div className="w-20 sm:w-28 h-1.5 bg-slate-200 rounded-full overflow-hidden flex shadow-2xs">
+                <div 
+                  className="h-full bg-emerald-600 transition-all duration-300"
+                  style={{ width: `${Math.round((doneCount / totalItems) * 100)}%` }}
                 />
-                {/* Compliant Done Checks */}
-                {doneCount > 0 && (
-                  <circle
-                    cx={18}
-                    cy={18}
-                    r={14}
-                    fill="none"
-                    stroke="#10B981"
-                    strokeWidth={4}
-                    strokeDasharray={`${(doneCount / totalItems) * (2 * Math.PI * 14)} ${2 * Math.PI * 14}`}
-                    strokeDashoffset={0}
-                    strokeLinecap="round"
-                    className="transition-all duration-300 ease-out"
-                  />
-                )}
-                {/* Exceptions Checks */}
                 {(skippedCount + pinnedCount) > 0 && (
-                  <circle
-                    cx={18}
-                    cy={18}
-                    r={14}
-                    fill="none"
-                    stroke="#F59E0B"
-                    strokeWidth={4}
-                    strokeDasharray={`${((skippedCount + pinnedCount) / totalItems) * (2 * Math.PI * 14)} ${2 * Math.PI * 14}`}
-                    strokeDashoffset={-((doneCount / totalItems) * (2 * Math.PI * 14))}
-                    strokeLinecap="round"
-                    className="transition-all duration-300 ease-out"
+                  <div 
+                    className="h-full bg-amber-500 transition-all duration-300"
+                    style={{ width: `${Math.round(((skippedCount + pinnedCount) / totalItems) * 100)}%` }}
                   />
                 )}
-                {/* Non-compliance Issues */}
-                {(missedCount + incorrectlyCount) > 0 && (
-                  <circle
-                    cx={18}
-                    cy={18}
-                    r={14}
-                    fill="none"
-                    stroke="#EF4444"
-                    strokeWidth={4}
-                    strokeDasharray={`${((missedCount + incorrectlyCount) / totalItems) * (2 * Math.PI * 14)} ${2 * Math.PI * 14}`}
-                    strokeDashoffset={-(((doneCount + skippedCount + pinnedCount) / totalItems) * (2 * Math.PI * 14))}
-                    strokeLinecap="round"
-                    className="transition-all duration-300 ease-out"
+                {(missedCount > 0 || incorrectlyCount > 0) && (
+                  <div 
+                    className="h-full bg-rose-600 transition-all duration-300"
+                    style={{ width: `${Math.round(((missedCount + incorrectlyCount) / totalItems) * 100)}%` }}
                   />
                 )}
-              </svg>
-              <span className="absolute text-[9px] font-black text-slate-900 font-mono leading-none">
+              </div>
+              <span className="text-[10px] font-mono font-black text-slate-700">
                 {totalItems > 0 ? Math.round(((doneCount + skippedCount + pinnedCount) / totalItems) * 100) : 0}%
               </span>
             </div>
-
-            <span>
-              STEP <strong className="text-slate-900 text-sm font-bold">{currentIndex + 1}</strong> OF {totalItems}
-            </span>
-            {pinnedCount > 0 && (
-              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 text-[10px] font-bold border border-amber-300">
-                <Pin className="w-3 h-3 text-amber-600" />
-                {pinnedCount} PINNED
-              </span>
-            )}
           </div>
 
-          <div className="flex items-center gap-3">
-            <span className="text-[11px] text-slate-500 flex items-center gap-2 flex-wrap">
-              <span>Done: <strong className="text-emerald-700 font-bold">{doneCount}</strong></span>
-              <span>·</span>
-              <span>Skipped: <strong className="text-slate-700 font-semibold">{skippedCount}</strong></span>
-              {(missedCount > 0 || incorrectlyCount > 0) && (
-                <>
-                  <span>·</span>
-                  <span className="text-rose-700 font-bold">Missed: {missedCount}</span>
-                  <span>·</span>
-                  <span className="text-rose-800 font-bold">Incorrect: {incorrectlyCount}</span>
-                </>
-              )}
-            </span>
-            <div className="w-20 sm:w-24 h-2 bg-slate-200 rounded-full overflow-hidden flex">
-              <div 
-                className="h-full bg-emerald-600 transition-all duration-300"
-                style={{ width: `${Math.round((doneCount / totalItems) * 100)}%` }}
-              />
-              {(skippedCount + pinnedCount) > 0 && (
-                <div 
-                  className="h-full bg-amber-500 transition-all duration-300"
-                  style={{ width: `${Math.round(((skippedCount + pinnedCount) / totalItems) * 100)}%` }}
-                />
-              )}
-              {(missedCount > 0 || incorrectlyCount > 0) && (
-                <div 
-                  className="h-full bg-rose-600 transition-all duration-300"
-                  style={{ width: `${Math.round(((missedCount + incorrectlyCount) / totalItems) * 100)}%` }}
-                />
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Carousel Body */}
-        <div className="p-4 sm:p-6 flex-1 overflow-y-auto flex flex-col justify-between space-y-6 bg-slate-50/50">
-          {/* Skip Warning Alert Toast */}
-          {skipAlert && (
-            <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-900 text-xs flex items-start gap-3 animate-in shake shadow-2xs">
-              <ShieldAlert className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
-              <div className="space-y-0.5">
-                <div className="font-bold text-rose-900">Action Restricted by Safety Rule</div>
-                <div className="text-rose-800 leading-relaxed">{skipAlert}</div>
-              </div>
-              <button 
-                onClick={() => setSkipAlert(null)}
-                className="ml-auto text-rose-600 hover:text-rose-800 text-xs font-bold"
-              >
-                Dismiss
-              </button>
-            </div>
-          )}
-
-          {/* Single Focused Item Card */}
-          {currentItem && (
-            <div 
-              id={`carousel-card-item-${currentIndex}`}
-              onTouchStart={handleTouchStart}
-              onTouchEnd={handleTouchEnd}
-              className={`bg-white border-2 rounded-2xl p-4 sm:p-6 flex flex-col justify-between shadow-sm relative min-h-[240px] select-none touch-pan-y ${
-                currentItem.status === 'missed' || currentItem.status === 'incorrectly_executed'
-                  ? 'border-rose-300 ring-1 ring-rose-200'
-                  : 'border-slate-200'
-              }`}
-            >
-              {/* Card Meta Badges */}
-              <div className="flex items-center justify-between flex-wrap gap-2 pb-3 border-b border-slate-100">
-                <div className="flex items-center gap-2">
-                  <span className="w-7 h-7 rounded-lg bg-blue-50 border border-blue-200 text-blue-700 font-mono text-xs font-bold flex items-center justify-center">
-                    #{currentItem.sequenceOrder}
-                  </span>
-                  <span className="text-xs font-mono uppercase text-slate-500 font-semibold">Sequence Item</span>
+          {/* Carousel Body: Major portion dedicated to Checklist Item Details with Zero Space Waste */}
+          <div className="p-2 sm:p-3 md:p-4 flex-1 overflow-hidden flex flex-col justify-between space-y-2 bg-slate-50/50 min-h-0">
+            {/* Skip Warning Alert Toast */}
+            {skipAlert && (
+              <div className="p-2 bg-rose-50 border border-rose-200 rounded-lg text-rose-900 text-xs flex items-start gap-2 animate-in shake shadow-2xs shrink-0">
+                <ShieldAlert className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                <div className="space-y-0.5">
+                  <div className="font-bold text-rose-900">Action Restricted by Safety Rule</div>
+                  <div className="text-rose-800 leading-tight">{skipAlert}</div>
                 </div>
-
-                <div className="flex items-center gap-2">
-                  {currentItem.isMandatory ? (
-                    <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-xs font-bold uppercase tracking-wider">
-                      <ShieldAlert className="w-3.5 h-3.5 text-rose-600" />
-                      Mandatory
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200 text-xs font-bold uppercase">
-                      Optional Item
-                    </span>
-                  )}
-
-                  {/* Status Indicator */}
-                  {currentItem.status === 'done' && (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold">
-                      <Check className="w-3.5 h-3.5 text-emerald-600" /> DONE
-                    </span>
-                  )}
-                  {currentItem.status === 'pinned' && (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-300 text-xs font-bold">
-                      <Pin className="w-3.5 h-3.5 text-amber-600" /> PINNED
-                    </span>
-                  )}
-                  {currentItem.status === 'skipped' && (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-xs font-bold border border-slate-200">
-                      SKIPPED
-                    </span>
-                  )}
-                  {currentItem.status === 'missed' && (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-300 text-xs font-extrabold shadow-2xs">
-                      <X className="w-3.5 h-3.5 text-rose-600 stroke-[3]" /> MISSED ❌
-                    </span>
-                  )}
-                  {currentItem.status === 'incorrectly_executed' && (
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-100 text-rose-900 border border-rose-300 text-xs font-extrabold shadow-2xs">
-                      <AlertTriangle className="w-3.5 h-3.5 text-rose-600" /> INCORRECTLY EXECUTED ❌
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              {/* Item Text */}
-              <div className="py-4 sm:py-5 overflow-y-auto max-h-[220px] pr-1.5 scrollbar-thin">
-                <p className="text-base sm:text-lg font-semibold text-slate-900 leading-relaxed break-words">
-                  {currentItem.text}
-                </p>
-                {currentItem.skipReason && (
-                  <p className="mt-2.5 text-xs text-slate-600 italic bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-                    Skip Note: {currentItem.skipReason}
-                  </p>
-                )}
-                {currentItem.remark && (
-                  <div className="mt-2.5 p-3 rounded-xl bg-rose-50 border border-rose-200 text-xs text-rose-900 space-y-0.5">
-                    <span className="font-bold flex items-center gap-1">
-                      <MessageSquare className="w-3 h-3 text-rose-600" />
-                      Operator Non-Compliance Remark:
-                    </span>
-                    <p className="font-mono text-rose-950 font-medium">{currentItem.remark}</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Card Bottom Nav Arrows */}
-              <div className="flex items-center justify-between text-xs text-slate-500 pt-3 border-t border-slate-100">
-                <button
-                  id="btn-prev-card"
-                  onClick={goToPrev}
-                  disabled={currentIndex === 0}
-                  className="flex items-center gap-1 text-slate-600 hover:text-slate-900 disabled:opacity-30 disabled:pointer-events-none transition py-1 px-2 rounded-lg font-semibold"
+                <button 
+                  onClick={() => setSkipAlert(null)}
+                  className="ml-auto text-rose-600 hover:text-rose-800 text-xs font-bold cursor-pointer"
                 >
-                  <ChevronLeft className="w-4 h-4" /> Previous
-                </button>
-
-                <span className="font-mono text-[11px] text-slate-400 text-center">
-                  <span className="hidden sm:inline">Keyboard: [D] Done · [P] Pin · [S] Skip · [M] Missed · [I] Incorrect</span>
-                  <span className="inline sm:hidden">Swipe left/right to navigate</span>
-                </span>
-
-                <button
-                  id="btn-next-card"
-                  onClick={goToNext}
-                  disabled={currentIndex === totalItems - 1}
-                  className="flex items-center gap-1 text-slate-600 hover:text-slate-900 disabled:opacity-30 disabled:pointer-events-none transition py-1 px-2 rounded-lg font-semibold"
-                >
-                  Next <ChevronRight className="w-4 h-4" />
+                  Dismiss
                 </button>
               </div>
-            </div>
-          )}
-
-          {/* Action Control Deck */}
-          <div className="space-y-2">
-            {/* Row 1: Primary Actions (DONE, PIN, SKIP) */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-              {/* DONE Button */}
-              <button
-                id="btn-action-done"
-                type="button"
-                disabled={isShiftClosed}
-                onClick={handleMarkDone}
-                className={`py-3 px-3.5 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${
-                  currentItem?.status === 'done'
-                    ? 'bg-emerald-700 text-white ring-2 ring-emerald-400'
-                    : 'bg-emerald-600 hover:bg-emerald-700 text-white'
-                }`}
-              >
-                <Check className="w-4 h-4" />
-                <span>DONE (Mark Checked)</span>
-              </button>
-
-              {/* PIN Button */}
-              <button
-                id="btn-action-pin"
-                type="button"
-                disabled={isShiftClosed}
-                onClick={handlePinItem}
-                className={`py-3 px-3.5 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition disabled:opacity-50 disabled:cursor-not-allowed ${
-                  currentItem?.status === 'pinned'
-                    ? 'bg-amber-500 text-slate-950 ring-2 ring-amber-400'
-                    : 'bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800'
-                }`}
-                title="Defer processing to complete later"
-              >
-                <Pin className="w-4 h-4 text-amber-700" />
-                <span>PIN (Defer Card)</span>
-              </button>
-
-              {/* SKIP Button */}
-              <button
-                id="btn-action-skip"
-                type="button"
-                disabled={isShiftClosed}
-                onClick={handleAttemptSkip}
-                className={`py-3 px-3.5 rounded-xl font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition border disabled:opacity-50 disabled:cursor-not-allowed ${
-                  currentItem?.isMandatory
-                    ? 'bg-slate-100 border-slate-200 text-slate-400 hover:border-rose-300 hover:text-rose-600'
-                    : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700'
-                }`}
-                title={currentItem?.isMandatory ? 'Mandatory items cannot be skipped' : 'Skip optional item'}
-              >
-                <SkipForward className="w-4 h-4" />
-                <span>SKIP {currentItem?.isMandatory ? '(Restricted)' : '(Optional)'}</span>
-              </button>
-            </div>
-
-            {/* Row 2: Non-Compliance Options (Marked with Red Cross) */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
-              {/* MISSED Button (Red Cross) */}
-              <button
-                id="btn-action-missed"
-                type="button"
-                disabled={isShiftClosed}
-                onClick={() => handleOpenNonComplianceModal('missed')}
-                className={`py-2.5 px-3.5 rounded-xl font-extrabold text-xs flex items-center justify-center gap-2 transition border shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed ${
-                  currentItem?.status === 'missed'
-                    ? 'bg-rose-700 text-white border-rose-800 ring-2 ring-rose-400'
-                    : 'bg-rose-50 hover:bg-rose-100 border-rose-300 text-rose-800 hover:border-rose-400'
-                }`}
-                title="Mark item as Missed with mandatory remark"
-              >
-                <X className="w-4 h-4 text-rose-600 stroke-[3] shrink-0" />
-                <span>❌ MISSED ITEM (Requires Remark)</span>
-              </button>
-
-              {/* INCORRECTLY EXECUTED Button (Red Cross) */}
-              <button
-                id="btn-action-incorrect"
-                type="button"
-                disabled={isShiftClosed}
-                onClick={() => handleOpenNonComplianceModal('incorrectly_executed')}
-                className={`py-2.5 px-3.5 rounded-xl font-extrabold text-xs flex items-center justify-center gap-2 transition border shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed ${
-                  currentItem?.status === 'incorrectly_executed'
-                    ? 'bg-rose-900 text-white border-rose-950 ring-2 ring-rose-400'
-                    : 'bg-amber-50 hover:bg-rose-100 border-rose-300 text-rose-900 hover:border-rose-400'
-                }`}
-                title="Mark item as Incorrectly Executed with mandatory remark"
-              >
-                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                <span>❌ INCORRECTLY EXECUTED (Requires Remark)</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Quick Jump Thumbnail Rail */}
-          <div className="space-y-1.5 pt-2">
-            <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 flex items-center justify-between">
-              <span>Card Overview Navigator:</span>
-              <span className="font-normal text-slate-400">Click to jump</span>
-            </div>
-            <div className="flex flex-wrap items-center gap-1.5 pb-1.5">
-              {items.map((item, idx) => {
-                const isActive = idx === currentIndex;
-                let bgClass = 'bg-white border-slate-200 text-slate-700';
-                if (item.status === 'done') bgClass = 'bg-emerald-50 border-emerald-300 text-emerald-800';
-                else if (item.status === 'pinned') bgClass = 'bg-amber-50 border-amber-300 text-amber-900';
-                else if (item.status === 'skipped') bgClass = 'bg-slate-100 border-slate-200 text-slate-400';
-                else if (item.status === 'missed' || item.status === 'incorrectly_executed') bgClass = 'bg-rose-100 border-rose-300 text-rose-900 font-extrabold';
-
-                return (
-                  <button
-                    key={`${item.id}-${idx}`}
-                    id={`btn-jump-card-${idx}`}
-                    onClick={() => {
-                      setCurrentIndex(idx);
-                      setSkipAlert(null);
-                    }}
-                    className={`min-w-[40px] h-9 rounded-xl border text-xs font-mono font-bold flex items-center justify-center gap-1 px-1.5 transition shrink-0 ${bgClass} ${
-                      isActive ? 'ring-2 ring-blue-600 scale-105 shadow-xs' : 'hover:border-slate-400'
-                    }`}
-                  >
-                    <span>{idx + 1}</span>
-                    {item.status === 'done' && <Check className="w-3 h-3 text-emerald-600 shrink-0" />}
-                    {item.status === 'pinned' && <Pin className="w-2.5 h-2.5 text-amber-600 shrink-0" />}
-                    {(item.status === 'missed' || item.status === 'incorrectly_executed') && <X className="w-3 h-3 text-rose-600 stroke-[3] shrink-0" />}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-
-        {/* Footer with Final Submit Action */}
-        <div className="p-4 sm:p-5 bg-white border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
-          <div className="text-xs text-slate-600 text-center sm:text-left">
-            {!canSubmit ? (
-              <span className="text-amber-800 font-bold flex items-center gap-1.5">
-                <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                <span>
-                  Cannot submit:{' '}
-                  {notDoneCount > 0 && `${notDoneCount} pending `}
-                  {pinnedCount > 0 && `${pinnedCount} pinned unresolved`}
-                </span>
-              </span>
-            ) : (missedCount > 0 || incorrectlyCount > 0) ? (
-              <span className="text-rose-900 font-extrabold flex items-center gap-1.5 bg-rose-50 px-3 py-1.5 rounded-lg border border-rose-200">
-                <X className="w-4 h-4 text-rose-600 stroke-[3] shrink-0" />
-                <span>
-                  Completed with Missed/Incorrect execution ({missedCount > 0 ? `${missedCount} Missed` : ''}{missedCount > 0 && incorrectlyCount > 0 ? ', ' : ''}{incorrectlyCount > 0 ? `${incorrectlyCount} Incorrectly Executed` : ''})
-                </span>
-              </span>
-            ) : (
-              <span className="text-emerald-700 font-bold flex items-center gap-1.5">
-                <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                <span>All checklist items processed. Ready for authorization.</span>
-              </span>
             )}
-          </div>
 
-          <div className="flex items-center gap-3 w-full sm:w-auto">
-            {isShiftClosed ? (
-              <button
-                id="btn-close-readonly"
-                type="button"
-                onClick={onClose}
-                className="w-full sm:w-auto px-6 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs rounded-xl transition"
-              >
-                Close (Read Only Mode)
-              </button>
-            ) : (
-              <>
-                <button
-                  id="btn-save-draft"
-                  type="button"
-                  onClick={handleSaveProgressDraft}
-                  className="w-full sm:w-auto px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition"
-                >
-                  Save Draft & Exit
-                </button>
-
-                <button
-                  id="btn-complete-submit-checklist"
-                  type="button"
-                  onClick={handleOpenRemarksModal}
-                  disabled={!canSubmit}
-                  className={`w-full sm:w-auto px-6 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-sm transition ${
-                    canSubmit
-                      ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20'
-                      : 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+            {/* Prominent Focused Item Card Taking Up Dominant Major Portion of Screen */}
+            {currentItem && (
+              <div className="relative overflow-hidden rounded-xl sm:rounded-2xl flex-1 flex flex-col min-h-0">
+                {/* Swipe Left Background Action Indicator (Mark Done) */}
+                <div 
+                  className={`absolute inset-0 bg-emerald-600 rounded-xl sm:rounded-2xl flex items-center justify-end px-6 text-white font-black text-sm tracking-wider transition-opacity duration-150 ${
+                    dragOffsetX < 0 ? 'opacity-100' : 'opacity-0'
                   }`}
                 >
-                  <Send className="w-4 h-4" />
-                  <span>Submit Checklist</span>
-                </button>
-              </>
+                  <div className="flex items-center gap-2 transform transition-transform" style={{ transform: `scale(${Math.min(1.25, 0.8 + Math.abs(dragOffsetX) / 80)})` }}>
+                    <span className="uppercase text-xs font-mono font-extrabold">Mark Done</span>
+                    <div className="w-8 h-8 rounded-full bg-white/20 border border-white/40 flex items-center justify-center">
+                      <Check className="w-5 h-5 text-white stroke-[3]" />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Swipe Right Background Action Indicator (Previous Item) */}
+                <div 
+                  className={`absolute inset-0 bg-slate-700 rounded-xl sm:rounded-2xl flex items-center justify-start px-6 text-white font-bold text-sm tracking-wider transition-opacity duration-150 ${
+                    dragOffsetX > 0 ? 'opacity-100' : 'opacity-0'
+                  }`}
+                >
+                  <div className="flex items-center gap-2 transform transition-transform" style={{ transform: `scale(${Math.min(1.25, 0.8 + Math.abs(dragOffsetX) / 80)})` }}>
+                    <div className="w-8 h-8 rounded-full bg-white/20 border border-white/40 flex items-center justify-center">
+                      <ChevronLeft className="w-5 h-5 text-white" />
+                    </div>
+                    <span className="uppercase text-xs font-mono">Previous</span>
+                  </div>
+                </div>
+
+                {/* Card Container with Adaptive Typography and Flex Expansion */}
+                <div 
+                  id={`carousel-card-item-${currentIndex}`}
+                  onTouchStart={handleTouchStart}
+                  onTouchMove={handleTouchMove}
+                  onTouchEnd={handleTouchEnd}
+                  onMouseDown={handleMouseDown}
+                  onMouseMove={handleMouseMove}
+                  onMouseUp={handleMouseUp}
+                  style={{
+                    transform: dragOffsetX !== 0 ? `translateX(${dragOffsetX}px)` : 'translateX(0)',
+                    transition: isDragging ? 'none' : 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+                  }}
+                  className={`bg-white border-2 rounded-xl sm:rounded-2xl p-3 sm:p-5 md:p-6 flex flex-col justify-between shadow-sm relative flex-1 min-h-0 select-none touch-pan-y z-10 ${
+                    currentItem.status === 'missed' || currentItem.status === 'incorrectly_executed'
+                      ? 'border-rose-300 ring-1 ring-rose-200'
+                      : currentItem.status === 'done'
+                      ? 'border-emerald-300'
+                      : 'border-slate-200'
+                  }`}
+                >
+                  {/* Card Meta Badges */}
+                  <div className="flex items-center justify-between flex-wrap gap-1.5 pb-2 border-b border-slate-100 shrink-0">
+                    <div className="flex items-center gap-1.5">
+                      <span className="px-2.5 py-0.5 rounded-lg bg-blue-600 text-white font-mono text-xs sm:text-sm font-black flex items-center justify-center shadow-2xs">
+                        ITEM #{currentItem.sequenceOrder}
+                      </span>
+                      <span className="text-[11px] font-mono font-bold uppercase text-slate-500 hidden sm:inline">
+                        Checklist Item Details
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      {currentItem.isMandatory ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-[11px] sm:text-xs font-black uppercase tracking-wider">
+                          <ShieldAlert className="w-3 h-3 text-rose-600" />
+                          Mandatory
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 text-[11px] sm:text-xs font-bold uppercase">
+                          Optional
+                        </span>
+                      )}
+
+                      {/* Status Indicator */}
+                      {currentItem.status === 'done' && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] sm:text-xs font-black uppercase tracking-wider animate-in zoom-in-95">
+                          <Check className="w-3 h-3 text-emerald-600 stroke-[3]" /> DONE
+                        </span>
+                      )}
+                      {currentItem.status === 'pinned' && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-300 text-[11px] sm:text-xs font-black uppercase tracking-wider">
+                          <Pin className="w-3 h-3 text-amber-600" /> PINNED
+                        </span>
+                      )}
+                      {currentItem.status === 'skipped' && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 text-[11px] sm:text-xs font-bold border border-slate-200 uppercase">
+                          SKIPPED
+                        </span>
+                      )}
+                      {currentItem.status === 'missed' && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-300 text-[11px] sm:text-xs font-extrabold shadow-2xs">
+                          <X className="w-3 h-3 text-rose-600 stroke-[3]" /> MISSED ❌
+                        </span>
+                      )}
+                      {currentItem.status === 'incorrectly_executed' && (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-100 text-rose-900 border border-rose-300 text-[11px] sm:text-xs font-extrabold shadow-2xs">
+                          <AlertTriangle className="w-3 h-3 text-rose-600" /> INCORRECT ❌
+                        </span>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => setIsFullScreen(true)}
+                        className="p-1 text-slate-400 hover:text-slate-800 hover:bg-slate-100 rounded-md transition cursor-pointer"
+                        title="Enter Full Screen View"
+                      >
+                        <Maximize2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Checklist Item Details Displayed Prominently in Major Portion of Screen with Adaptive Sizing */}
+                  <div className="py-2 sm:py-4 flex-1 flex flex-col justify-center overflow-y-auto pr-1 scrollbar-thin min-h-0">
+                    <p className={`${getAdaptiveFontClass(currentItem.text, false)} font-black text-slate-900 leading-tight sm:leading-snug tracking-tight break-words select-text`}>
+                      {currentItem.text}
+                    </p>
+
+                    {currentItem.skipReason && (
+                      <p className="mt-2 text-xs sm:text-sm text-slate-600 italic bg-slate-50 p-2 rounded-lg border border-slate-200">
+                        Skip Note: {currentItem.skipReason}
+                      </p>
+                    )}
+                    {currentItem.remark && (
+                      <div className="mt-2 p-2.5 rounded-lg bg-rose-50 border border-rose-200 text-xs sm:text-sm text-rose-900 space-y-0.5">
+                        <span className="font-bold flex items-center gap-1">
+                          <MessageSquare className="w-3.5 h-3.5 text-rose-600" />
+                          Operator Non-Compliance Remark:
+                        </span>
+                        <p className="font-mono text-rose-950 font-medium">{currentItem.remark}</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Swipe Done Success Toast overlay in standard view */}
+                  {showSwipeDoneToast && (
+                    <div className="absolute inset-0 bg-emerald-600/90 backdrop-blur-xs rounded-xl sm:rounded-2xl flex flex-col items-center justify-center text-white p-4 animate-in zoom-in-95 duration-150 z-20">
+                      <div className="w-10 h-10 rounded-full bg-white text-emerald-600 flex items-center justify-center shadow-lg mb-1.5">
+                        <Check className="w-6 h-6 stroke-[3]" />
+                      </div>
+                      <span className="text-sm sm:text-base font-black tracking-wide">ITEM MARKED DONE</span>
+                      <span className="text-xs text-emerald-100 font-mono mt-0.5">Advancing to next task...</span>
+                    </div>
+                  )}
+
+                  {/* Card Bottom Nav Arrows */}
+                  <div className="flex items-center justify-between text-xs text-slate-500 pt-1.5 border-t border-slate-100 shrink-0">
+                    <button
+                      id="btn-prev-card"
+                      onClick={goToPrev}
+                      disabled={currentIndex === 0}
+                      className="flex items-center gap-1 text-slate-600 hover:text-slate-900 disabled:opacity-30 disabled:pointer-events-none transition py-0.5 px-2 rounded font-semibold cursor-pointer active:scale-95 text-xs"
+                    >
+                      <ChevronLeft className="w-3.5 h-3.5" /> Prev
+                    </button>
+
+                    <span className="font-mono text-[10px] text-slate-400 text-center">
+                      <span className="hidden sm:inline">Shortcuts: [D] Done · [F] Full Screen · [P] Pin · [S] Skip</span>
+                      <span className="inline sm:hidden">Swipe Left = Done</span>
+                    </span>
+
+                    <button
+                      id="btn-next-card"
+                      onClick={goToNext}
+                      disabled={currentIndex === totalItems - 1}
+                      className="flex items-center gap-1 text-slate-600 hover:text-slate-900 disabled:opacity-30 disabled:pointer-events-none transition py-0.5 px-2 rounded font-semibold cursor-pointer active:scale-95 text-xs"
+                    >
+                      Next <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              </div>
             )}
+
+            {/* Action Control Deck (Slim & Responsive) */}
+            <div className="space-y-1 shrink-0">
+              {/* Row 1: Primary Actions (DONE, PIN, SKIP) */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-1.5">
+                {/* DONE Button */}
+                <button
+                  id="btn-action-done"
+                  type="button"
+                  disabled={isShiftClosed}
+                  onClick={handleMarkDone}
+                  className={`py-2 px-2.5 rounded-lg font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 transition shadow-sm disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${
+                    currentItem?.status === 'done'
+                      ? 'bg-emerald-700 text-white ring-2 ring-emerald-400'
+                      : 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                  }`}
+                >
+                  <Check className="w-4 h-4 stroke-[3]" />
+                  <span>DONE (Mark Checked)</span>
+                </button>
+
+                {/* PIN Button */}
+                <button
+                  id="btn-action-pin"
+                  type="button"
+                  disabled={isShiftClosed}
+                  onClick={handlePinItem}
+                  className={`py-2 px-2.5 rounded-lg font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${
+                    currentItem?.status === 'pinned'
+                      ? 'bg-amber-500 text-slate-950 ring-2 ring-amber-400 font-black'
+                      : 'bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-800'
+                  }`}
+                  title="Defer processing to complete later"
+                >
+                  <Pin className="w-3.5 h-3.5 text-amber-700" />
+                  <span>PIN (Defer Card)</span>
+                </button>
+
+                {/* SKIP Button */}
+                <button
+                  id="btn-action-skip"
+                  type="button"
+                  disabled={isShiftClosed}
+                  onClick={handleAttemptSkip}
+                  className={`py-2 px-2.5 rounded-lg font-bold text-xs sm:text-sm flex items-center justify-center gap-1.5 transition border disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${
+                    currentItem?.isMandatory
+                      ? 'bg-slate-100 border-slate-200 text-slate-400 hover:border-rose-300 hover:text-rose-600'
+                      : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700'
+                  }`}
+                  title={currentItem?.isMandatory ? 'Mandatory items cannot be skipped' : 'Skip optional item'}
+                >
+                  <SkipForward className="w-3.5 h-3.5" />
+                  <span>SKIP {currentItem?.isMandatory ? '(Restricted)' : '(Optional)'}</span>
+                </button>
+              </div>
+
+              {/* Row 2: Non-Compliance Options (Marked with Red Cross) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                {/* MISSED Button (Red Cross) */}
+                <button
+                  id="btn-action-missed"
+                  type="button"
+                  disabled={isShiftClosed}
+                  onClick={() => handleOpenNonComplianceModal('missed')}
+                  className={`py-1.5 px-2.5 rounded-lg font-extrabold text-xs flex items-center justify-center gap-1.5 transition border shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${
+                    currentItem?.status === 'missed'
+                      ? 'bg-rose-700 text-white border-rose-800 ring-2 ring-rose-400'
+                      : 'bg-rose-50 hover:bg-rose-100 border-rose-300 text-rose-800 hover:border-rose-400'
+                  }`}
+                  title="Mark item as Missed with mandatory remark"
+                >
+                  <X className="w-3.5 h-3.5 text-rose-600 stroke-[3] shrink-0" />
+                  <span>❌ MISSED ITEM (Remark)</span>
+                </button>
+
+                {/* INCORRECTLY EXECUTED Button (Red Cross) */}
+                <button
+                  id="btn-action-incorrect"
+                  type="button"
+                  disabled={isShiftClosed}
+                  onClick={() => handleOpenNonComplianceModal('incorrectly_executed')}
+                  className={`py-1.5 px-2.5 rounded-lg font-extrabold text-xs flex items-center justify-center gap-1.5 transition border shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer ${
+                    currentItem?.status === 'incorrectly_executed'
+                      ? 'bg-rose-900 text-white border-rose-950 ring-2 ring-rose-400'
+                      : 'bg-amber-50 hover:bg-rose-100 border-rose-300 text-rose-900 hover:border-rose-400'
+                  }`}
+                  title="Mark item as Incorrectly Executed with mandatory remark"
+                >
+                  <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                  <span>❌ INCORRECT (Remark)</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Compact Bottom Card Overview Navigator */}
+            <div className="space-y-0.5 pt-0.5 shrink-0">
+              <div className="text-[10px] font-mono font-bold uppercase tracking-wider text-slate-400 flex items-center justify-between">
+                <span>Card Navigator ({currentIndex + 1}/{totalItems}):</span>
+                <span className="font-normal text-slate-400">Click item to jump</span>
+              </div>
+              <div className="flex items-center gap-1 overflow-x-auto pb-0.5 scrollbar-thin">
+                {items.map((item, idx) => {
+                  const isActive = idx === currentIndex;
+                  let bgClass = 'bg-white border-slate-200 text-slate-700';
+                  if (item.status === 'done') bgClass = 'bg-emerald-50 border-emerald-300 text-emerald-800';
+                  else if (item.status === 'pinned') bgClass = 'bg-amber-50 border-amber-300 text-amber-900';
+                  else if (item.status === 'skipped') bgClass = 'bg-slate-100 border-slate-200 text-slate-400';
+                  else if (item.status === 'missed' || item.status === 'incorrectly_executed') bgClass = 'bg-rose-100 border-rose-300 text-rose-900 font-extrabold';
+
+                  return (
+                    <button
+                      key={`${item.id}-${idx}`}
+                      id={`btn-jump-card-${idx}`}
+                      onClick={() => {
+                        setCurrentIndex(idx);
+                        setSkipAlert(null);
+                      }}
+                      className={`min-w-[28px] h-6 rounded-md border text-[11px] font-mono font-bold flex items-center justify-center gap-0.5 px-1 transition shrink-0 cursor-pointer ${bgClass} ${
+                        isActive ? 'ring-2 ring-blue-600 font-black scale-105 shadow-xs' : 'hover:border-slate-400'
+                      }`}
+                      title={`Jump to item ${idx + 1}: ${item.text.slice(0, 40)}...`}
+                    >
+                      <span>{idx + 1}</span>
+                      {item.status === 'done' && <Check className="w-2.5 h-2.5 text-emerald-600 shrink-0" />}
+                      {item.status === 'pinned' && <Pin className="w-2.5 h-2.5 text-amber-600 shrink-0" />}
+                      {(item.status === 'missed' || item.status === 'incorrectly_executed') && <X className="w-2.5 h-2.5 text-rose-600 stroke-[3] shrink-0" />}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Streamlined Footer with Final Submit Action */}
+          <div className="px-3 py-1.5 sm:px-5 bg-white border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-2 shrink-0">
+            <div className="text-xs text-slate-600 text-center sm:text-left">
+              {!canSubmit ? (
+                <span className="text-amber-800 font-bold flex items-center gap-1">
+                  <AlertTriangle className="w-3 h-3 text-amber-600 shrink-0" />
+                  <span>
+                    Cannot submit:{' '}
+                    {notDoneCount > 0 && `${notDoneCount} pending `}
+                    {pinnedCount > 0 && `${pinnedCount} pinned unresolved`}
+                  </span>
+                </span>
+              ) : (missedCount > 0 || incorrectlyCount > 0) ? (
+                <span className="text-rose-900 font-extrabold flex items-center gap-1 bg-rose-50 px-2 py-0.5 rounded border border-rose-200 text-xs">
+                  <X className="w-3 h-3 text-rose-600 stroke-[3] shrink-0" />
+                  <span>
+                    Completed with Missed/Incorrect ({missedCount > 0 ? `${missedCount} Missed` : ''}{missedCount > 0 && incorrectlyCount > 0 ? ', ' : ''}{incorrectlyCount > 0 ? `${incorrectlyCount} Incorrect` : ''})
+                  </span>
+                </span>
+              ) : (
+                <span className="text-emerald-700 font-bold flex items-center gap-1 text-xs">
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                  <span>All items processed. Ready for submission.</span>
+                </span>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              {isShiftClosed ? (
+                <button
+                  id="btn-close-readonly"
+                  type="button"
+                  onClick={onClose}
+                  className="w-full sm:w-auto px-4 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs rounded-lg transition cursor-pointer"
+                >
+                  Close (Read Only Mode)
+                </button>
+              ) : (
+                <>
+                  <button
+                    id="btn-save-draft"
+                    type="button"
+                    onClick={handleSaveProgressDraft}
+                    className="w-full sm:w-auto px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-lg transition cursor-pointer"
+                  >
+                    Save Draft & Exit
+                  </button>
+
+                  <button
+                    id="btn-complete-submit-checklist"
+                    type="button"
+                    onClick={handleOpenRemarksModal}
+                    disabled={!canSubmit}
+                    className={`w-full sm:w-auto px-4 py-1.5 rounded-lg font-bold text-xs uppercase tracking-wider flex items-center justify-center gap-1 shadow-sm transition cursor-pointer ${
+                      canSubmit
+                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20'
+                        : 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200'
+                    }`}
+                  >
+                    <Send className="w-3 h-3" />
+                    <span>Submit Checklist</span>
+                  </button>
+                </>
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Non-Compliance Remark Sub-Modal (For Missed & Incorrectly Executed) */}
       {isNonComplianceModalOpen && (

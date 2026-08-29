@@ -1,18 +1,27 @@
-import type {Metadata} from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css'; // Global styles
 
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  userScalable: false,
+  viewportFit: 'cover',
+  themeColor: '#0f172a',
+};
+
 export const metadata: Metadata = {
-  title: 'DEL Ground Ops Turnaround Checklists Control',
-  description: 'DEL Ground Ops Turnaround Checklists Control system.',
+  title: 'DELSM Ground Ops Turnaround Checklists Control',
+  description: 'Mobile-responsive aviation ground operations checklist, supervisor verification, and shift management system with Excel import and WhatsApp reports.',
   openGraph: {
-    title: 'DEL Ground Ops Turnaround Checklists Control',
-    description: 'DEL Ground Ops Turnaround Checklists Control system.',
+    title: 'DELSM Ground Ops Turnaround Checklists Control',
+    description: 'Mobile-responsive aviation ground operations checklist, supervisor verification, and shift management system with Excel import and WhatsApp reports.',
     type: 'website',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'DEL Ground Ops Turnaround Checklists Control',
-    description: 'DEL Ground Ops Turnaround Checklists Control system.',
+    title: 'DELSM Ground Ops Turnaround Checklists Control',
+    description: 'Mobile-responsive aviation ground operations checklist, supervisor verification, and shift management system with Excel import and WhatsApp reports.',
   },
 };
 
