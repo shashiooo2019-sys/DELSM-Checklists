@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Checklist, ChecklistItem, UserAccount } from '@/types/aviation';
 import { ConfirmModal, ConfirmModalState } from './ConfirmModal';
 import confetti from 'canvas-confetti';
+import { soundEffects } from '@/lib/soundEffects';
 import { 
   X, 
   ChevronLeft, 
@@ -27,7 +28,9 @@ import {
   Maximize2,
   Minimize2,
   Layers,
-  CheckCircle2
+  CheckCircle2,
+  Volume2,
+  VolumeX
 } from 'lucide-react';
 
 interface ChecklistCarouselModalProps {
@@ -121,12 +124,63 @@ function ChecklistCarouselContent({
   const [isDragging, setIsDragging] = useState<boolean>(false);
   const [showSwipeDoneToast, setShowSwipeDoneToast] = useState<boolean>(false);
 
+  // Audio Mute State
+  const [isMuted, setIsMuted] = useState<boolean>(soundEffects.isMuted());
+
+  const toggleSoundMute = () => {
+    const nextState = soundEffects.toggleMute();
+    setIsMuted(nextState);
+    triggerHaptic([15]);
+    setNavigationToastText(nextState ? 'Audio Jingle Muted 🔇' : 'Audio Jingle Enabled 🔔');
+    setTimeout(() => setNavigationToastText(null), 2000);
+  };
+
+  // End of Checklist Rubberband & Navigation State
+  const [isRubberbanding, setIsRubberbanding] = useState<boolean>(false);
+  const [showEndOfChecklistPrompt, setShowEndOfChecklistPrompt] = useState<boolean>(false);
+  const [navigationToastText, setNavigationToastText] = useState<string | null>(null);
+
   const triggerHaptic = (pattern: number[] = [20]) => {
     if (typeof window !== 'undefined' && 'navigator' in window && navigator.vibrate) {
       try {
         navigator.vibrate(pattern);
       } catch {}
     }
+  };
+
+  const navigateToFirstSkippedOrPinned = () => {
+    // Find first skipped or pinned item in the checklist
+    let targetIdx = items.findIndex((i) => i.status === 'skipped' || i.status === 'pinned');
+    if (targetIdx === -1) {
+      targetIdx = items.findIndex((i) => i.status === 'not_done');
+    }
+
+    if (targetIdx >= 0) {
+      setCurrentIndex(targetIdx);
+      setShowEndOfChecklistPrompt(false);
+      setSkipAlert(null);
+      triggerHaptic([40, 60, 40]);
+      const targetItem = items[targetIdx];
+      const statusLabel = targetItem.status === 'skipped' ? 'SKIPPED' : targetItem.status === 'pinned' ? 'PINNED' : 'PENDING';
+      setNavigationToastText(`Navigated to ${statusLabel} Item #${targetItem.sequenceOrder}`);
+      setTimeout(() => setNavigationToastText(null), 3000);
+    } else {
+      setShowEndOfChecklistPrompt(false);
+    }
+  };
+
+  const navigateToSubmitChecklist = () => {
+    setIsRubberbanding(true);
+    setTimeout(() => setIsRubberbanding(false), 700);
+    setShowEndOfChecklistPrompt(false);
+    triggerHaptic([30, 40, 50]);
+    setNavigationToastText('All items processed! Navigating to Submit Checklist...');
+    setTimeout(() => setNavigationToastText(null), 2500);
+    setTimeout(() => {
+      setIsFullScreen(false);
+      setRemarksError(null);
+      setIsRemarksModalOpen(true);
+    }, 280);
   };
 
   const handleTouchStart = (e: React.TouchEvent) => {
@@ -143,10 +197,16 @@ function ChecklistCarouselContent({
     const currentY = e.touches[0].clientY;
     const diffX = currentX - touchStartX.current;
     const diffY = currentY - touchStartY.current;
+    const isAtEnd = currentIndex === totalItems - 1;
 
     if (isFullScreen) {
       if (Math.abs(diffX) > Math.abs(diffY)) {
-        setDragOffsetX(diffX);
+        if (isAtEnd && diffX < 0) {
+          // Elastic rubberband resistance at checklist boundary
+          setDragOffsetX(Math.max(-80, diffX * 0.35));
+        } else {
+          setDragOffsetX(diffX);
+        }
         setDragOffsetY(0);
       } else {
         setDragOffsetX(0);
@@ -155,8 +215,13 @@ function ChecklistCarouselContent({
     } else {
       if (Math.abs(diffX) > Math.abs(diffY)) {
         if (diffX < 0) {
-          // Dragging left (Mark Done)
-          setDragOffsetX(Math.max(-120, diffX));
+          if (isAtEnd) {
+            // Elastic rubberband resistance at checklist boundary
+            setDragOffsetX(Math.max(-75, diffX * 0.35));
+          } else {
+            // Dragging left (Mark Done)
+            setDragOffsetX(Math.max(-120, diffX));
+          }
         } else {
           // Dragging right (Previous)
           setDragOffsetX(Math.min(120, diffX));
@@ -174,43 +239,117 @@ function ChecklistCarouselContent({
     }
 
     const threshold = 40; // px threshold for gesture trigger
+    const isAtEnd = currentIndex === totalItems - 1;
 
     if (isFullScreen) {
       const absX = Math.abs(dragOffsetX);
       const absY = Math.abs(dragOffsetY);
 
-      // Gesture 1: Swipe Left -> DONE
+      // Gesture 1: Swipe Left
       if (dragOffsetX <= -threshold && absX >= absY) {
-        if (!isShiftClosed) {
-          triggerHaptic([35]);
-          handleMarkDone();
-          setShowSwipeDoneToast(true);
-          setTimeout(() => setShowSwipeDoneToast(false), 900);
+        if (isAtEnd) {
+          let updatedList = items;
+          if (!isShiftClosed && currentItem && currentItem.status !== 'done') {
+            soundEffects.playDoneJingle();
+            updatedList = [...items];
+            updatedList[currentIndex] = {
+              ...currentItem,
+              status: 'done',
+              actionBy: currentUser ? `${currentUser.name} (${currentUser.uNumber})` : 'Airside Operator',
+              actionAt: new Date().toISOString(),
+            };
+            setItems(updatedList);
+          }
+
+          const hasSkippedOrPinned = updatedList.some((i) => i.status === 'skipped' || i.status === 'pinned');
+          const hasUnprocessed = updatedList.some((i) => i.status === 'not_done');
+
+          // Trigger rubberband bounce effect
+          setIsRubberbanding(true);
+          setTimeout(() => setIsRubberbanding(false), 700);
+
+          if (hasSkippedOrPinned || hasUnprocessed) {
+            if (showEndOfChecklistPrompt) {
+              // Swiping left again while prompt is visible moves directly to first skipped/pinned item
+              navigateToFirstSkippedOrPinned();
+            } else {
+              triggerHaptic([40, 30, 40]);
+              setShowEndOfChecklistPrompt(true);
+            }
+          } else {
+            // No skipped items remain -> navigate to submit checklist with left swipe gesture
+            navigateToSubmitChecklist();
+          }
+        } else {
+          if (!isShiftClosed) {
+            triggerHaptic([35]);
+            handleMarkDone();
+            setShowSwipeDoneToast(true);
+            setTimeout(() => setShowSwipeDoneToast(false), 900);
+          }
         }
       }
       // Gesture 2: Swipe Right -> EXIT FULL SCREEN
       else if (dragOffsetX >= threshold && absX >= absY) {
         triggerHaptic([15]);
+        setShowEndOfChecklistPrompt(false);
         setIsFullScreen(false);
       }
       // Gesture 3 & 4: Swipe Up or Down -> EXIT FULL SCREEN
       else if (absY >= threshold && absY > absX) {
         triggerHaptic([15]);
+        setShowEndOfChecklistPrompt(false);
         setIsFullScreen(false);
       }
     } else {
-      // Standard Mode: Swipe Left -> Mark Done
-      if (dragOffsetX <= -45) {
-        if (!isShiftClosed) {
-          triggerHaptic([25]);
-          handleMarkDone();
-          setShowSwipeDoneToast(true);
-          setTimeout(() => setShowSwipeDoneToast(false), 900);
+      // Standard Mode: Swipe Left
+      if (dragOffsetX <= -35) {
+        if (isAtEnd) {
+          let updatedList = items;
+          if (!isShiftClosed && currentItem && currentItem.status !== 'done') {
+            soundEffects.playDoneJingle();
+            updatedList = [...items];
+            updatedList[currentIndex] = {
+              ...currentItem,
+              status: 'done',
+              actionBy: currentUser ? `${currentUser.name} (${currentUser.uNumber})` : 'Airside Operator',
+              actionAt: new Date().toISOString(),
+            };
+            setItems(updatedList);
+          }
+
+          const hasSkippedOrPinned = updatedList.some((i) => i.status === 'skipped' || i.status === 'pinned');
+          const hasUnprocessed = updatedList.some((i) => i.status === 'not_done');
+
+          // Trigger rubberband bounce effect
+          setIsRubberbanding(true);
+          setTimeout(() => setIsRubberbanding(false), 700);
+
+          if (hasSkippedOrPinned || hasUnprocessed) {
+            if (showEndOfChecklistPrompt) {
+              // Swiping left again while prompt is active jumps to first skipped/pinned item
+              navigateToFirstSkippedOrPinned();
+            } else {
+              triggerHaptic([40, 30, 40]);
+              setShowEndOfChecklistPrompt(true);
+            }
+          } else {
+            // No skipped items remain -> navigate to submit checklist with left swipe gesture
+            navigateToSubmitChecklist();
+          }
+        } else {
+          if (!isShiftClosed) {
+            triggerHaptic([25]);
+            handleMarkDone();
+            setShowSwipeDoneToast(true);
+            setTimeout(() => setShowSwipeDoneToast(false), 900);
+          }
         }
       } 
       // Standard Mode: Swipe Right -> Previous Item
       else if (dragOffsetX >= 45) {
         triggerHaptic([15]);
+        setShowEndOfChecklistPrompt(false);
         goToPrev();
       }
     }
@@ -235,10 +374,15 @@ function ChecklistCarouselContent({
     if (!isDragging || touchStartX.current === null || touchStartY.current === null) return;
     const diffX = e.clientX - touchStartX.current;
     const diffY = e.clientY - touchStartY.current;
+    const isAtEnd = currentIndex === totalItems - 1;
 
     if (isFullScreen) {
       if (Math.abs(diffX) > Math.abs(diffY)) {
-        setDragOffsetX(diffX);
+        if (isAtEnd && diffX < 0) {
+          setDragOffsetX(Math.max(-80, diffX * 0.35));
+        } else {
+          setDragOffsetX(diffX);
+        }
         setDragOffsetY(0);
       } else {
         setDragOffsetX(0);
@@ -246,7 +390,15 @@ function ChecklistCarouselContent({
       }
     } else {
       if (Math.abs(diffX) > Math.abs(diffY)) {
-        setDragOffsetX(diffX < 0 ? Math.max(-120, diffX) : Math.min(120, diffX));
+        if (diffX < 0) {
+          if (isAtEnd) {
+            setDragOffsetX(Math.max(-75, diffX * 0.35));
+          } else {
+            setDragOffsetX(Math.max(-120, diffX));
+          }
+        } else {
+          setDragOffsetX(Math.min(120, diffX));
+        }
       }
     }
   };
@@ -261,6 +413,21 @@ function ChecklistCarouselContent({
     if (currentIndex < totalItems - 1) {
       setCurrentIndex((prev) => prev + 1);
       setSkipAlert(null);
+      setShowEndOfChecklistPrompt(false);
+    } else {
+      // Reached end of checklist on last item
+      const hasSkippedOrPinned = items.some((i) => i.status === 'skipped' || i.status === 'pinned');
+      const hasUnprocessed = items.some((i) => i.status === 'not_done');
+
+      setIsRubberbanding(true);
+      setTimeout(() => setIsRubberbanding(false), 700);
+
+      if (hasSkippedOrPinned || hasUnprocessed) {
+        setShowEndOfChecklistPrompt(true);
+      } else {
+        // No skipped items remain -> navigate to submit checklist
+        navigateToSubmitChecklist();
+      }
     }
   };
 
@@ -268,11 +435,16 @@ function ChecklistCarouselContent({
     if (currentIndex > 0) {
       setCurrentIndex((prev) => prev - 1);
       setSkipAlert(null);
+      setShowEndOfChecklistPrompt(false);
     }
   };
 
   const handleMarkDone = () => {
     if (!currentItem) return;
+    
+    // Play celebratory affirmative aviation jingle sound
+    soundEffects.playDoneJingle();
+
     const updated = [...items];
     updated[currentIndex] = {
       ...currentItem,
@@ -285,7 +457,22 @@ function ChecklistCarouselContent({
 
     // Auto-advance if not on last item
     if (currentIndex < totalItems - 1) {
+      setShowEndOfChecklistPrompt(false);
       setTimeout(() => setCurrentIndex((prev) => prev + 1), 220);
+    } else {
+      // Reached end of checklist on last item
+      const hasSkippedOrPinned = updated.some((i) => i.status === 'skipped' || i.status === 'pinned');
+      const hasUnprocessed = updated.some((i) => i.status === 'not_done');
+
+      setIsRubberbanding(true);
+      setTimeout(() => setIsRubberbanding(false), 700);
+
+      if (hasSkippedOrPinned || hasUnprocessed) {
+        setShowEndOfChecklistPrompt(true);
+      } else {
+        // No skipped items remain -> navigate to submit checklist
+        navigateToSubmitChecklist();
+      }
     }
   };
 
@@ -377,6 +564,26 @@ function ChecklistCarouselContent({
     if (isRemarksModalOpen || isSkipReasonModalOpen || isNonComplianceModalOpen) return;
 
     const handleKeyDown = (e: KeyboardEvent) => {
+      // If end-of-checklist prompt is visible, handle Y / N / Enter / Escape / ArrowLeft
+      if (showEndOfChecklistPrompt) {
+        if (e.key.toLowerCase() === 'y' || e.key === 'Enter' || e.key === 'ArrowLeft') {
+          e.preventDefault();
+          navigateToFirstSkippedOrPinned();
+          return;
+        }
+        if (e.key.toLowerCase() === 'n' || e.key === 'Escape') {
+          e.preventDefault();
+          setShowEndOfChecklistPrompt(false);
+          return;
+        }
+      }
+
+      // Toggle sound mute with 'u' key or Shift+'m'
+      if (e.key.toLowerCase() === 'u' || (e.shiftKey && e.key.toLowerCase() === 'm')) {
+        toggleSoundMute();
+        return;
+      }
+
       if (isFullScreen) {
         if (e.key === 'Escape' || e.key === 'ArrowRight' || e.key === 'ArrowUp' || e.key === 'ArrowDown') {
           setIsFullScreen(false);
@@ -558,20 +765,121 @@ function ChecklistCarouselContent({
                 ITEM {currentIndex + 1} OF {totalItems}
               </span>
 
-              {/* Minimal Exit Button for mouse clickers */}
+              {/* Mute / Unmute Button in Full Screen Mode */}
               <button
+                id="btn-toggle-sound-fullscreen"
+                type="button"
+                onClick={toggleSoundMute}
+                className={`p-1.5 px-2 sm:px-2.5 rounded-xl transition shadow-sm cursor-pointer flex items-center gap-1.5 text-xs font-bold ${
+                  isMuted 
+                    ? 'bg-slate-800 hover:bg-slate-700 text-slate-400 border border-slate-700' 
+                    : 'bg-emerald-950/90 hover:bg-emerald-900 text-emerald-300 border border-emerald-600/60 shadow-emerald-950/50'
+                }`}
+                title={isMuted ? "Unmute audio jingle (Shortcut: U)" : "Mute audio jingle (Shortcut: U)"}
+              >
+                {isMuted ? (
+                  <>
+                    <VolumeX className="w-4 h-4 text-slate-400" />
+                    <span className="hidden sm:inline">Muted</span>
+                  </>
+                ) : (
+                  <>
+                    <Volume2 className="w-4 h-4 text-emerald-400" />
+                    <span className="hidden sm:inline">Sound On</span>
+                  </>
+                )}
+              </button>
+
+              {/* Exit Full Screen Button */}
+              <button
+                id="btn-exit-fullscreen"
                 type="button"
                 onClick={() => setIsFullScreen(false)}
-                className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition shadow-sm cursor-pointer"
-                title="Exit Full Screen (or Swipe Right / Up / Down)"
+                className="p-1.5 px-2 sm:px-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition shadow-sm cursor-pointer flex items-center gap-1.5 text-xs font-bold border border-slate-700"
+                title="Exit Full Screen (or Swipe Right / Up / Down, [F] or [Esc])"
               >
                 <Minimize2 className="w-4 h-4 text-slate-300" />
+                <span className="hidden sm:inline">Exit Full</span>
               </button>
             </div>
           </div>
 
           {/* Center Main Stage: Huge Checklist Item Description taking up most part of screen */}
-          <div className="flex-1 flex flex-col justify-center items-center py-2 sm:py-4 px-2 sm:px-4 max-w-5xl mx-auto w-full text-center space-y-3 sm:space-y-4 min-h-0">
+          <div 
+            style={{
+              transform: dragOffsetX !== 0 ? `translateX(${dragOffsetX}px)` : 'translateX(0)',
+              transition: isDragging ? 'none' : 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+            }}
+            className={`flex-1 flex flex-col justify-center items-center py-2 sm:py-4 px-2 sm:px-4 max-w-5xl mx-auto w-full text-center space-y-3 sm:space-y-4 min-h-0 relative ${
+              isRubberbanding ? 'animate-rubberband-bounce' : ''
+            }`}
+          >
+            {/* End of Checklist Prompt Overlay in Full Screen */}
+            {showEndOfChecklistPrompt && (
+              <div className="absolute inset-x-2 sm:inset-x-6 top-1/2 -translate-y-1/2 max-w-xl mx-auto bg-slate-900/95 border-2 border-amber-400/90 rounded-2xl p-5 sm:p-6 text-white shadow-2xl backdrop-blur-md animate-in zoom-in-95 duration-200 z-40 text-center space-y-4">
+                <div className="w-12 h-12 rounded-full bg-amber-500/20 border border-amber-400/50 flex items-center justify-center mx-auto text-amber-300 shadow-md">
+                  <SkipForward className="w-6 h-6 animate-pulse" />
+                </div>
+                
+                <div className="space-y-1">
+                  <span className="text-xs font-mono font-bold uppercase tracking-wider text-amber-400">
+                    Checklist Boundary Reached
+                  </span>
+                  <h3 className="text-lg sm:text-xl font-black text-white">
+                    You have reached the end of the checklist.
+                  </h3>
+                  <p className="text-sm text-slate-300 font-medium">
+                    Do you want to navigate to skipped items?
+                  </p>
+                </div>
+
+                {/* Badges of skipped / pinned items */}
+                <div className="flex items-center justify-center gap-2 text-xs font-mono flex-wrap">
+                  {skippedCount > 0 && (
+                    <span className="px-2.5 py-1 rounded-full bg-slate-800 border border-slate-700 text-slate-300 font-bold">
+                      {skippedCount} Skipped Item{skippedCount > 1 ? 's' : ''}
+                    </span>
+                  )}
+                  {pinnedCount > 0 && (
+                    <span className="px-2.5 py-1 rounded-full bg-amber-950/80 border border-amber-600/60 text-amber-300 font-bold">
+                      {pinnedCount} Pinned Item{pinnedCount > 1 ? 's' : ''}
+                    </span>
+                  )}
+                  {notDoneCount > 0 && (
+                    <span className="px-2.5 py-1 rounded-full bg-blue-950/80 border border-blue-600/60 text-blue-300 font-bold">
+                      {notDoneCount} Incomplete Item{notDoneCount > 1 ? 's' : ''}
+                    </span>
+                  )}
+                </div>
+
+                {/* Action buttons */}
+                <div className="flex items-center justify-center gap-3 pt-1 flex-wrap">
+                  <button
+                    id="btn-confirm-navigate-skipped-fullscreen"
+                    type="button"
+                    onClick={navigateToFirstSkippedOrPinned}
+                    className="btn-3d-amber px-5 py-2.5 rounded-xl text-sm font-black flex items-center gap-2 cursor-pointer shadow-lg active:scale-95"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                    <span>Yes, Navigate to Skipped Items</span>
+                  </button>
+                  
+                  <button
+                    id="btn-dismiss-navigate-skipped-fullscreen"
+                    type="button"
+                    onClick={() => setShowEndOfChecklistPrompt(false)}
+                    className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-sm font-bold transition cursor-pointer active:scale-95"
+                  >
+                    Dismiss
+                  </button>
+                </div>
+                
+                <p className="text-[11px] font-mono text-amber-300/80">
+                  👉 Swipe left again or press [Y] / [Enter] to navigate immediately
+                </p>
+              </div>
+            )}
+
             {/* Sequence & Mandatory Status Tag */}
             <div className="flex items-center justify-center gap-2 sm:gap-3 flex-wrap animate-in fade-in shrink-0">
               <span className="w-9 h-9 sm:w-11 sm:h-11 rounded-xl sm:rounded-2xl bg-blue-600/30 border-2 border-blue-400 text-blue-300 font-mono text-base sm:text-xl font-black flex items-center justify-center shadow-md">
@@ -667,8 +975,20 @@ function ChecklistCarouselContent({
           {/* Bottom Gesture Navigation Guide (All Buttons Hidden) */}
           <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-[11px] sm:text-xs text-slate-400 font-mono flex-wrap gap-1.5 shrink-0">
             <div className="flex items-center gap-2">
-              <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 font-bold flex items-center gap-1">
-                👈 Swipe Left: Mark Done
+              <span className={`px-2.5 py-0.5 rounded-full border font-bold flex items-center gap-1 ${
+                currentIndex === totalItems - 1 && (pinnedCount === 0 && notDoneCount === 0 && skippedCount === 0)
+                  ? 'bg-purple-950/80 text-purple-300 border-purple-500/60 shadow-sm animate-pulse'
+                  : currentIndex === totalItems - 1
+                  ? 'bg-amber-950/80 text-amber-300 border-amber-500/60 shadow-sm'
+                  : 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40'
+              }`}>
+                {currentIndex === totalItems - 1 ? (
+                  (pinnedCount === 0 && notDoneCount === 0 && skippedCount === 0) 
+                    ? '👈 Swipe Left: Submit Checklist 🏁' 
+                    : '👈 Swipe Left: Rubberband & Skipped Items'
+                ) : (
+                  '👈 Swipe Left: Mark Done'
+                )}
               </span>
             </div>
 
@@ -700,17 +1020,45 @@ function ChecklistCarouselContent({
               </h2>
             </div>
 
-            <div className="flex items-center gap-1 shrink-0">
-              {/* Full Screen Mode Toggle Button */}
+            <div className="flex items-center gap-1.5 shrink-0">
+              {/* Prominent Full Screen Mode Toggle Button */}
               <button
                 id="btn-toggle-fullscreen"
                 type="button"
                 onClick={() => setIsFullScreen(true)}
-                className="px-2 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded-lg transition text-xs font-bold flex items-center gap-1 shadow-2xs cursor-pointer"
+                className="px-2.5 sm:px-3 py-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-lg transition-all text-xs font-black flex items-center gap-1.5 shadow-sm hover:shadow-md border border-blue-400/40 cursor-pointer active:scale-95 group"
                 title="Expand to Full Screen Mode (All buttons hidden, gestures enabled, [F] shortcut)"
               >
-                <Maximize2 className="w-3 h-3 text-sky-400" />
-                <span className="hidden md:inline text-[11px]">Full Screen</span>
+                <Maximize2 className="w-3.5 h-3.5 text-sky-200 group-hover:scale-110 transition-transform" />
+                <span className="text-xs tracking-tight font-extrabold">Full Screen</span>
+                <span className="hidden sm:inline text-[10px] font-mono px-1 py-0.2 rounded bg-blue-900/60 border border-blue-400/30 text-sky-200">
+                  F
+                </span>
+              </button>
+
+              {/* Mute / Unmute Button */}
+              <button
+                id="btn-toggle-sound"
+                type="button"
+                onClick={toggleSoundMute}
+                className={`px-2 sm:px-2.5 py-1 rounded-lg transition text-xs font-bold flex items-center gap-1.5 shadow-2xs border cursor-pointer active:scale-95 ${
+                  isMuted 
+                    ? 'bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-300' 
+                    : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border-emerald-300'
+                }`}
+                title={isMuted ? "Unmute audio jingle (Shortcut: U)" : "Mute audio jingle (Shortcut: U)"}
+              >
+                {isMuted ? (
+                  <>
+                    <VolumeX className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                    <span className="hidden md:inline text-[11px]">Muted</span>
+                  </>
+                ) : (
+                  <>
+                    <Volume2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                    <span className="hidden md:inline text-[11px]">Sound On</span>
+                  </>
+                )}
               </button>
 
               {!isShiftClosed && (
@@ -869,6 +1217,8 @@ function ChecklistCarouselContent({
                     transition: isDragging ? 'none' : 'transform 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
                   }}
                   className={`bg-white border-2 rounded-xl sm:rounded-2xl p-3 sm:p-5 md:p-6 flex flex-col justify-between shadow-sm relative flex-1 min-h-0 select-none touch-pan-y z-10 ${
+                    isRubberbanding ? 'animate-rubberband-bounce' : ''
+                  } ${
                     currentItem.status === 'missed' || currentItem.status === 'incorrectly_executed'
                       ? 'border-rose-300 ring-1 ring-rose-200'
                       : currentItem.status === 'done'
@@ -876,6 +1226,72 @@ function ChecklistCarouselContent({
                       : 'border-slate-200'
                   }`}
                 >
+                  {/* End of Checklist Prompt Overlay in Standard View */}
+                  {showEndOfChecklistPrompt && (
+                    <div className="absolute inset-2 sm:inset-4 bg-slate-900/95 border-2 border-amber-400 rounded-xl sm:rounded-2xl p-4 sm:p-6 text-white shadow-2xl backdrop-blur-md flex flex-col items-center justify-center text-center space-y-3 sm:space-y-4 animate-in zoom-in-95 duration-200 z-30">
+                      <div className="w-12 h-12 rounded-full bg-amber-500/20 border border-amber-400/50 flex items-center justify-center text-amber-300 shadow-md">
+                        <SkipForward className="w-6 h-6 animate-pulse" />
+                      </div>
+
+                      <div className="space-y-1 max-w-md">
+                        <span className="text-[11px] sm:text-xs font-mono font-bold uppercase tracking-wider text-amber-400">
+                          Checklist Boundary Reached
+                        </span>
+                        <h3 className="text-base sm:text-lg md:text-xl font-black text-white">
+                          You have reached the end of the checklist.
+                        </h3>
+                        <p className="text-xs sm:text-sm text-slate-300 font-medium">
+                          Do you want to navigate to skipped items?
+                        </p>
+                      </div>
+
+                      {/* Skipped / Pinned Counts */}
+                      <div className="flex items-center justify-center gap-2 text-xs font-mono flex-wrap">
+                        {skippedCount > 0 && (
+                          <span className="px-2.5 py-0.5 rounded-full bg-slate-800 border border-slate-700 text-slate-300 font-bold">
+                            {skippedCount} Skipped
+                          </span>
+                        )}
+                        {pinnedCount > 0 && (
+                          <span className="px-2.5 py-0.5 rounded-full bg-amber-950/80 border border-amber-600/60 text-amber-300 font-bold">
+                            {pinnedCount} Pinned
+                          </span>
+                        )}
+                        {notDoneCount > 0 && (
+                          <span className="px-2.5 py-0.5 rounded-full bg-blue-950/80 border border-blue-600/60 text-blue-300 font-bold">
+                            {notDoneCount} Incomplete
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Navigation confirmation buttons */}
+                      <div className="flex items-center justify-center gap-2.5 pt-1 flex-wrap">
+                        <button
+                          id="btn-confirm-navigate-skipped-standard"
+                          type="button"
+                          onClick={navigateToFirstSkippedOrPinned}
+                          className="btn-3d-amber px-4 py-2 sm:px-5 sm:py-2.5 rounded-xl text-xs sm:text-sm font-black flex items-center gap-1.5 cursor-pointer shadow-lg active:scale-95"
+                        >
+                          <RotateCcw className="w-4 h-4" />
+                          <span>Yes, Navigate to Skipped Items</span>
+                        </button>
+
+                        <button
+                          id="btn-dismiss-navigate-skipped-standard"
+                          type="button"
+                          onClick={() => setShowEndOfChecklistPrompt(false)}
+                          className="px-3 py-2 sm:px-4 sm:py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white border border-slate-700 text-xs sm:text-sm font-bold transition cursor-pointer active:scale-95"
+                        >
+                          Dismiss
+                        </button>
+                      </div>
+
+                      <p className="text-[10px] sm:text-[11px] font-mono text-amber-300/80">
+                        👉 Swipe left again or press [Y] / [Enter] to navigate
+                      </p>
+                    </div>
+                  )}
+
                   {/* Card Meta Badges */}
                   <div className="flex items-center justify-between flex-wrap gap-1.5 pb-2 border-b border-slate-100 shrink-0">
                     <div className="flex items-center gap-1.5">
@@ -1202,7 +1618,7 @@ function ChecklistCarouselContent({
 
       {/* Non-Compliance Remark Sub-Modal (For Missed & Incorrectly Executed) */}
       {isNonComplianceModalOpen && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
           <div 
             id="non-compliance-remark-modal-container"
             className="w-full max-w-md bg-white border border-rose-300 rounded-2xl p-6 space-y-4 shadow-2xl text-slate-900"
@@ -1270,7 +1686,7 @@ function ChecklistCarouselContent({
 
       {/* Optional Skip Reason Sub-Modal */}
       {isSkipReasonModalOpen && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
           <div className="w-full max-w-md bg-white border border-slate-200 rounded-2xl p-6 space-y-4 shadow-2xl">
             <div className="flex items-center gap-2 text-slate-900 font-bold">
               <HelpCircle className="w-5 h-5 text-sky-600" />
@@ -1310,7 +1726,7 @@ function ChecklistCarouselContent({
 
       {/* Free-Text Remarks Mandatory Modal on Final Submit */}
       {isRemarksModalOpen && (
-        <div className="fixed inset-0 z-60 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
           <div 
             id="mandatory-remarks-modal-container"
             className="w-full max-w-lg bg-white border border-slate-200 rounded-2xl p-6 space-y-5 shadow-2xl text-slate-900"
@@ -1379,7 +1795,7 @@ function ChecklistCarouselContent({
 
       {/* View All Read-Only Modal */}
       {isViewAllModalOpen && (
-        <div className="fixed inset-6 z-60 flex items-center justify-center p-3 sm:p-6 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+        <div className="fixed inset-6 z-[120] flex items-center justify-center p-3 sm:p-6 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
           <div className="w-full max-w-3xl bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden flex flex-col text-slate-900 max-h-[90vh]">
             {/* Modal Header */}
             <div className="p-4 sm:p-5 bg-slate-900 text-white flex items-center justify-between shrink-0">
@@ -1502,6 +1918,15 @@ function ChecklistCarouselContent({
           </div>
         </div>
       )}
+
+      {/* Floating Navigation Toast (e.g. Navigated to Skipped/Pinned Item) */}
+      {navigationToastText && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[110] px-4 py-2.5 rounded-xl bg-slate-900/95 text-amber-300 border-2 border-amber-400 font-mono text-xs sm:text-sm font-bold shadow-2xl backdrop-blur-md flex items-center gap-2 animate-in slide-in-from-bottom-4 duration-200">
+          <RotateCcw className="w-4 h-4 text-amber-400 animate-spin" style={{ animationIterationCount: 1, animationDuration: '0.6s' }} />
+          <span>{navigationToastText}</span>
+        </div>
+      )}
+
       {confirmModal && (
         <ConfirmModal
           {...confirmModal}

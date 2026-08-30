@@ -233,3 +233,33 @@
     inset 0 1px 0 0 rgba(255, 255, 255, 0.2);
 }
 
+/* Rubberband elastic bounce keyframes and classes */
+@keyframes rubberbandBounceLeft {
+  0% {
+    transform: translateX(0) scaleX(1) scaleY(1);
+  }
+  30% {
+    transform: translateX(-35px) scaleX(1.12) scaleY(0.92);
+  }
+  45% {
+    transform: translateX(18px) scaleX(0.94) scaleY(1.04);
+  }
+  60% {
+    transform: translateX(-10px) scaleX(1.05) scaleY(0.97);
+  }
+  75% {
+    transform: translateX(5px) scaleX(0.98) scaleY(1.02);
+  }
+  90% {
+    transform: translateX(-2px) scaleX(1.01) scaleY(0.99);
+  }
+  100% {
+    transform: translateX(0) scaleX(1) scaleY(1);
+  }
+}
+
+.animate-rubberband-bounce {
+  animation: rubberbandBounceLeft 0.65s cubic-bezier(0.2, 0.9, 0.3, 1.2) forwards;
+}
+
+
