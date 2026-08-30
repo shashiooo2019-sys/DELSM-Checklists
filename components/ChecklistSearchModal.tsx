@@ -35,7 +35,9 @@ import {
   AlertTriangle,
   MessageSquare,
   ListChecks,
-  Eye
+  Eye,
+  Layers,
+  MousePointerClick
 } from 'lucide-react';
 
 interface ChecklistSearchModalProps {
@@ -51,7 +53,290 @@ interface SearchableChecklistItem {
   subGroup: SubOperationalGroup;
   group: OperationalGroup;
   isFlightRelated: boolean;
-  matchedItemText?: string;
+  matchedItems?: string[];
+  fuzzyScore?: number;
+}
+
+const SYNONYM_MAP: Record<string, string[]> = {
+  pax: ['passenger', 'passengers', 'board', 'deboard', 'boarding', 'deboarding', 'crew'],
+  bag: ['baggage', 'bags', 'luggage', 'cargo', 'uld', 'hold'],
+  bags: ['baggage', 'luggage', 'cargo', 'uld'],
+  ramp: ['ground', 'safety', 'marshalling', 'chocks', 'apron', 'cone', 'fod'],
+  fuel: ['fueling', 'refueling', 'bowser', 'tanker', 'fuel'],
+  gate: ['bridge', 'aerobridge', 'boarding', 'terminal', 'gate'],
+  clean: ['cabin', 'cleaning', 'catering', 'lavatory', 'trash'],
+  dt: ['delay', 'pushback', 'departure', 'on-time'],
+  delay: ['pushback', 'departure', 'on-time', 'slot'],
+  sec: ['security', 'screening', 'seal', 'clearance'],
+};
+
+// Fuzzy match calculator for checklist search
+function calculateFuzzyMatch(
+  query: string,
+  entry: SearchableChecklistItem
+): { isMatched: boolean; matchedItems: string[]; score: number } {
+  const cleanQuery = query.trim().toLowerCase();
+  if (!cleanQuery) return { isMatched: true, matchedItems: [], score: 100 };
+
+  const queryTokens = cleanQuery.split(/\s+/).filter(Boolean);
+  const matchedItemTexts: string[] = [];
+  let score = 0;
+
+  // 1. Title Match
+  const titleLower = entry.checklist.title.toLowerCase();
+  if (titleLower.includes(cleanQuery)) {
+    score += 100;
+  } else {
+    const titleMatchedTokens = queryTokens.filter((token) => titleLower.includes(token));
+    if (titleMatchedTokens.length > 0) {
+      score += titleMatchedTokens.length * 35;
+    }
+  }
+
+  // 2. Group / Subgroup Match
+  const groupLower = entry.group.name.toLowerCase();
+  const subLower = entry.subGroup.name.toLowerCase();
+  if (groupLower.includes(cleanQuery) || subLower.includes(cleanQuery)) {
+    score += 40;
+  }
+
+  // 3. Item-level fuzzy & synonym match
+  for (const item of entry.checklist.items) {
+    const itemTextLower = item.text.toLowerCase();
+    const itemRemarkLower = (item.remark || '').toLowerCase();
+
+    // Direct substring check
+    if (itemTextLower.includes(cleanQuery) || itemRemarkLower.includes(cleanQuery)) {
+      if (!matchedItemTexts.includes(item.text)) {
+        matchedItemTexts.push(item.text);
+      }
+      score += 50;
+      continue;
+    }
+
+    // Token-level check with synonyms
+    let tokenMatches = 0;
+    for (const token of queryTokens) {
+      if (itemTextLower.includes(token) || itemRemarkLower.includes(token)) {
+        tokenMatches++;
+        continue;
+      }
+
+      const synonyms = SYNONYM_MAP[token] || [];
+      if (synonyms.some((syn) => itemTextLower.includes(syn) || itemRemarkLower.includes(syn))) {
+        tokenMatches++;
+        continue;
+      }
+
+      // Prefix / fuzzy word match
+      const words = itemTextLower.split(/\s+/);
+      const isFuzzy = words.some((w) => {
+        if (token.length >= 3 && w.startsWith(token.substring(0, 3))) return true;
+        return false;
+      });
+      if (isFuzzy) {
+        tokenMatches++;
+      }
+    }
+
+    if (tokenMatches > 0) {
+      if (!matchedItemTexts.includes(item.text)) {
+        matchedItemTexts.push(item.text);
+      }
+      score += tokenMatches * 25;
+    }
+  }
+
+  return {
+    isMatched: score > 0,
+    matchedItems: matchedItemTexts,
+    score,
+  };
+}
+
+// 3D Tile Button Component with Tilt, Lift, and Details on Hover
+function Checklist3DTile({
+  entry,
+  searchTerm,
+  onClick,
+}: {
+  entry: SearchableChecklistItem;
+  searchTerm: string;
+  onClick: () => void;
+}) {
+  const [tilt, setTilt] = useState({ x: 0, y: 0 });
+  const [isHovered, setIsHovered] = useState(false);
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left - rect.width / 2;
+    const y = e.clientY - rect.top - rect.height / 2;
+    setTilt({
+      x: Number(((y / rect.height) * -8).toFixed(2)),
+      y: Number(((x / rect.width) * 8).toFixed(2)),
+    });
+  };
+
+  const handleMouseLeave = () => {
+    setTilt({ x: 0, y: 0 });
+    setIsHovered(false);
+  };
+
+  const isCompleted = isChecklistComplete(entry.checklist);
+  const totalItems = entry.checklist.items.length;
+  const mandatoryItems = entry.checklist.items.filter((i) => i.isMandatory).length;
+  const isDayShift = entry.group.code === 'DAY-OPS' || entry.group.name.toLowerCase().includes('day shift');
+
+  return (
+    <div
+      onMouseMove={handleMouseMove}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={handleMouseLeave}
+      onClick={onClick}
+      style={{
+        transform: `perspective(800px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg) translateY(${
+          isHovered ? '-6px' : '0px'
+        })`,
+        transition: isHovered ? 'transform 0.08s ease-out' : 'transform 0.3s ease-out, box-shadow 0.3s ease-out',
+      }}
+      className={`group relative rounded-2xl p-4 sm:p-5 cursor-pointer select-none transition-all duration-200 transform-gpu flex flex-col justify-between ${
+        entry.isFlightRelated
+          ? 'bg-gradient-to-br from-white via-blue-50/40 to-blue-100/30 border-2 border-blue-200 hover:border-blue-500 shadow-[0_6px_0_0_rgba(191,219,254,0.9),0_10px_20px_-3px_rgba(37,99,235,0.12)] hover:shadow-[0_16px_32px_-4px_rgba(37,99,235,0.25),0_10px_0_0_rgba(59,130,246,0.6)]'
+          : isDayShift
+          ? 'bg-gradient-to-br from-white via-amber-50/30 to-amber-100/30 border-2 border-amber-300 hover:border-amber-500 shadow-[0_6px_0_0_rgba(253,230,138,0.95),0_10px_20px_-3px_rgba(217,119,6,0.12)] hover:shadow-[0_16px_32px_-4px_rgba(245,158,11,0.25),0_10px_0_0_rgba(217,119,6,0.6)]'
+          : 'bg-gradient-to-br from-white via-slate-50 to-indigo-50/30 border-2 border-slate-300 hover:border-indigo-500 shadow-[0_6px_0_0_rgba(203,213,225,0.95),0_10px_20px_-3px_rgba(15,23,42,0.12)] hover:shadow-[0_16px_32px_-4px_rgba(79,70,229,0.22),0_10px_0_0_rgba(99,102,241,0.6)]'
+      }`}
+    >
+      {/* 3D Sheen Highlight Overlay */}
+      <div className="absolute inset-0 rounded-2xl bg-gradient-to-t from-transparent via-white/20 to-white/40 pointer-events-none" />
+
+      {/* Card Header & Badges */}
+      <div className="relative z-10 space-y-3">
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          {entry.isFlightRelated ? (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-600 text-white text-[10px] font-black tracking-wider uppercase shadow-xs">
+              <Plane className="w-3 h-3 text-sky-200 transform -rotate-45" />
+              Flight Turnaround
+            </span>
+          ) : isDayShift ? (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-500 text-slate-950 text-[10px] font-black tracking-wider uppercase shadow-xs">
+              <Sun className="w-3 h-3 text-amber-950" />
+              Day Shift Handover
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-600 text-white text-[10px] font-black tracking-wider uppercase shadow-xs">
+              <Building2 className="w-3 h-3 text-indigo-200" />
+              Terminal Operations
+            </span>
+          )}
+
+          <div className="flex items-center gap-1.5">
+            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded-md bg-white/80 text-slate-700 border border-slate-200 shadow-2xs">
+              {entry.checklist.version || 'v1.0'}
+            </span>
+            {isCompleted && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold border border-emerald-300">
+                <Check className="w-3 h-3 text-emerald-700 stroke-[3]" /> DONE
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Title */}
+        <div>
+          <h4 className="text-base sm:text-lg font-black text-slate-900 tracking-tight group-hover:text-blue-700 transition-colors flex items-center gap-2">
+            <span>{entry.checklist.title}</span>
+            {isCompleted && <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />}
+          </h4>
+          <p className="text-xs text-slate-500 font-medium mt-0.5">
+            Group: <strong className="text-slate-700">{entry.group.name}</strong> · Sub: <strong className="text-slate-700">{entry.subGroup.name}</strong>
+          </p>
+        </div>
+
+        {/* Task Stats Bar */}
+        <div className="flex items-center gap-2 text-xs font-semibold text-slate-600 bg-white/70 backdrop-blur-xs p-2 rounded-xl border border-slate-200/80">
+          <ListChecks className="w-4 h-4 text-blue-600" />
+          <span>{totalItems} Tasks</span>
+          <span className="text-slate-300">|</span>
+          <span className="text-rose-700 font-bold">{mandatoryItems} Mandatory</span>
+          <span className="text-slate-300">|</span>
+          <span className="text-slate-500">{totalItems - mandatoryItems} Optional</span>
+        </div>
+
+        {/* Matched Items Pill if Search Match */}
+        {entry.matchedItems && entry.matchedItems.length > 0 && (
+          <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-950 space-y-1">
+            <div className="flex items-center gap-1.5 font-bold text-blue-900 text-[11px]">
+              <Sparkles className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+              <span>Fuzzy Matched {entry.matchedItems.length} Task(s):</span>
+            </div>
+            <p className="text-[11px] text-blue-900 italic line-clamp-2">
+              &ldquo;{entry.matchedItems[0]}&rdquo;
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* 3D Action Execute Button (Triggers Prompt or Direct Launch) */}
+      <div className="relative z-10 pt-4 mt-3 border-t border-slate-200/80 flex items-center justify-between gap-2">
+        <span className="text-[11px] font-bold text-slate-500 flex items-center gap-1">
+          <MousePointerClick className="w-3.5 h-3.5 text-blue-600 animate-bounce" />
+          {entry.isFlightRelated ? 'Click to select flight' : 'Click to launch carousel'}
+        </span>
+
+        {entry.isFlightRelated ? (
+          <button
+            type="button"
+            className="px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 group-hover:from-blue-500 group-hover:to-indigo-500 text-white rounded-xl text-xs font-black shadow-md shadow-blue-600/30 flex items-center gap-1.5 transition active:scale-95"
+          >
+            <Plane className="w-3.5 h-3.5" />
+            <span>Select Flight & Execute</span>
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        ) : (
+          <button
+            type="button"
+            className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 group-hover:from-emerald-500 group-hover:to-teal-500 text-white rounded-xl text-xs font-black shadow-md shadow-emerald-600/30 flex items-center gap-1.5 transition active:scale-95"
+          >
+            <Play className="w-3.5 h-3.5 fill-current" />
+            <span>Execute Now</span>
+          </button>
+        )}
+      </div>
+
+      {/* Details Preview Card on Hover */}
+      {isHovered && (
+        <div className="mt-3 p-3 bg-white/95 rounded-xl border border-blue-300 shadow-md space-y-2 animate-in fade-in zoom-in-95 text-xs text-slate-800">
+          <div className="flex items-center justify-between text-[11px] font-bold text-slate-600 border-b border-slate-200 pb-1">
+            <span>HOVER TASK PREVIEW ({totalItems} items)</span>
+            <span className="text-blue-700 font-mono">v{entry.checklist.version || '1.0'}</span>
+          </div>
+          <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1">
+            {entry.checklist.items.slice(0, 4).map((item, iIdx) => (
+              <div key={`hover-item-${iIdx}`} className="flex items-start gap-1.5 text-[11px] leading-tight">
+                <span className="font-mono text-[10px] font-bold text-blue-700 bg-blue-50 px-1 rounded shrink-0">
+                  #{item.sequenceOrder}
+                </span>
+                <span className="line-clamp-1 font-medium text-slate-700">
+                  {item.text}
+                </span>
+                {item.isMandatory && (
+                  <span className="text-[9px] font-bold text-rose-600 bg-rose-50 px-1 rounded border border-rose-200 shrink-0 ml-auto">
+                    REQ
+                  </span>
+                )}
+              </div>
+            ))}
+            {totalItems > 4 && (
+              <p className="text-[10px] text-slate-400 text-center font-bold pt-0.5">
+                + {totalItems - 4} more items in this checklist
+              </p>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function ChecklistSearchModal({
@@ -63,13 +348,11 @@ export function ChecklistSearchModal({
 }: ChecklistSearchModalProps) {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<'all' | 'flight' | 'terminal' | 'dayshift'>('all');
-  const [expandedChecklistIds, setExpandedChecklistIds] = useState<Record<string, boolean>>({});
-  
+
   // Step state: 'search' | 'flight_picker'
   const [modalStep, setModalStep] = useState<'search' | 'flight_picker'>('search');
   const [pendingChecklistData, setPendingChecklistData] = useState<{
     checklistTitle: string;
-    checklistSuffix?: string;
     targetChecklist: Checklist;
     sourceGroup: OperationalGroup;
     sourceSubGroup: SubOperationalGroup;
@@ -78,20 +361,11 @@ export function ChecklistSearchModal({
 
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const toggleChecklistExpand = (checklistKey: string, e?: React.MouseEvent) => {
-    if (e) e.stopPropagation();
-    setExpandedChecklistIds((prev) => ({
-      ...prev,
-      [checklistKey]: prev[checklistKey] === undefined ? true : !prev[checklistKey],
-    }));
-  };
-
   const resetState = () => {
     setModalStep('search');
     setPendingChecklistData(null);
     setSelectedFlightGroupId(null);
     setSearchTerm('');
-    setExpandedChecklistIds({});
   };
 
   const handleCloseModal = () => {
@@ -113,7 +387,7 @@ export function ChecklistSearchModal({
     return (dayData?.groups || []).filter((g) => g.isFlightGroup);
   }, [dayData]);
 
-  // Flattened catalogue of unique / available checklists across all operational groups
+  // Catalogue of unique checklists across all operational groups (DEDUPLICATING FLIGHT CHECKLISTS ONLY ONCE)
   const allChecklistEntries = useMemo<SearchableChecklistItem[]>(() => {
     const entries: SearchableChecklistItem[] = [];
     const seenChecklistKeys = new Set<string>();
@@ -122,9 +396,10 @@ export function ChecklistSearchModal({
       const isFlight = group.isFlightGroup;
       for (const sub of group.subGroups || []) {
         for (const chk of sub.checklists || []) {
-          // Unique key to avoid duplicate entries for turnaround templates
-          const key = isFlight ? `flight-${chk.title.toLowerCase()}` : `group-${group.id}-${chk.id}`;
-          
+          const normTitle = chk.title.trim().toLowerCase();
+          // DEDUPLICATION: For flight groups, show each flight turnaround checklist template ONLY ONCE
+          const key = isFlight ? `flight-template-${normTitle}` : `group-${group.id}-${sub.id}-${chk.id}`;
+
           if (!seenChecklistKeys.has(key)) {
             seenChecklistKeys.add(key);
             entries.push({
@@ -140,46 +415,40 @@ export function ChecklistSearchModal({
     return entries;
   }, [dayData]);
 
-  // Filtered search results
+  // Filtered and Fuzzy-Searched Checklist Results
   const filteredResults = useMemo(() => {
-    const query = searchTerm.trim().toLowerCase();
+    const results = allChecklistEntries
+      .map((entry) => {
+        // Category filter
+        const isDayShift = entry.group.code === 'DAY-OPS' || entry.group.name.toLowerCase().includes('day shift');
+        if (selectedCategory === 'flight' && !entry.isFlightRelated) return null;
+        if (selectedCategory === 'terminal' && (entry.isFlightRelated || isDayShift)) return null;
+        if (selectedCategory === 'dayshift' && !isDayShift) return null;
 
-    return allChecklistEntries.filter((entry) => {
-      // Category filter
-      const isDayShift = entry.group.code === 'DAY-OPS' || entry.group.name.toLowerCase().includes('day shift');
-      if (selectedCategory === 'flight' && !entry.isFlightRelated) return false;
-      if (selectedCategory === 'terminal' && (entry.isFlightRelated || isDayShift)) return false;
-      if (selectedCategory === 'dayshift' && !isDayShift) return false;
+        const { isMatched, matchedItems, score } = calculateFuzzyMatch(searchTerm, entry);
+        if (!isMatched) return null;
 
-      if (!query) return true;
+        const itemResult: SearchableChecklistItem = {
+          ...entry,
+          matchedItems,
+          fuzzyScore: score,
+        };
+        return itemResult;
+      })
+      .filter((item): item is SearchableChecklistItem => item !== null);
 
-      // Match title
-      if (entry.checklist.title.toLowerCase().includes(query)) return true;
-      // Match group or subgroup
-      if (entry.group.name.toLowerCase().includes(query) || entry.group.code.toLowerCase().includes(query)) return true;
-      if (entry.subGroup.name.toLowerCase().includes(query)) return true;
-      // Match items text
-      const matchedItem = entry.checklist.items.find((item) => item.text.toLowerCase().includes(query));
-      if (matchedItem) {
-        entry.matchedItemText = matchedItem.text;
-        return true;
-      }
-
-      return false;
-    });
+    return results.sort((a, b) => (b.fuzzyScore || 0) - (a.fuzzyScore || 0));
   }, [allChecklistEntries, searchTerm, selectedCategory]);
 
   const handleChecklistClick = (entry: SearchableChecklistItem) => {
     if (entry.isFlightRelated) {
-      // Prompt for flight selection
+      // Prompt user to pick a target flight
       setPendingChecklistData({
         checklistTitle: entry.checklist.title,
-        checklistSuffix: entry.checklist.id.split('-').pop(),
         targetChecklist: entry.checklist,
         sourceGroup: entry.group,
         sourceSubGroup: entry.subGroup,
       });
-      // Do not pre-select any flight group by default
       setSelectedFlightGroupId(null);
       setModalStep('flight_picker');
     } else {
@@ -210,7 +479,6 @@ export function ChecklistSearchModal({
       if (targetChk) break;
     }
 
-    // Fallback: if not found by exact title, pick first checklist in first subGroup
     if (!targetChk && flightGroup.subGroups.length > 0) {
       targetSub = flightGroup.subGroups[0];
       targetChk = targetSub.checklists[0] || pendingChecklistData.targetChecklist;
@@ -230,125 +498,13 @@ export function ChecklistSearchModal({
     return 'DEL Station Flight';
   };
 
-  // Helper to render an item row inside cards
-  const renderItemDetailRow = (item: ChecklistItem, idx: number, highlightQuery?: string) => {
-    const isDone = item.status === 'done';
-    const isPinned = item.status === 'pinned';
-    const isSkipped = item.status === 'skipped';
-    const isMissed = item.status === 'missed';
-    const isIncorrect = item.status === 'incorrectly_executed';
-    const isPending = item.status === 'not_done';
-
-    return (
-      <div 
-        key={`detail-${item.id || idx}`}
-        className={`p-3 rounded-xl border transition-all text-xs flex flex-col gap-1.5 ${
-          isDone
-            ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950'
-            : isMissed || isIncorrect
-            ? 'bg-rose-50/80 border-rose-200 text-rose-950'
-            : isPinned
-            ? 'bg-amber-50/70 border-amber-200 text-amber-950'
-            : isSkipped
-            ? 'bg-slate-100/80 border-slate-200 text-slate-700'
-            : 'bg-white border-slate-200 text-slate-900 shadow-2xs hover:border-slate-300'
-        }`}
-      >
-        <div className="flex items-center justify-between gap-2 flex-wrap">
-          <div className="flex items-center gap-2">
-            <span className={`w-6 h-6 rounded-md font-mono text-[11px] font-bold flex items-center justify-center shrink-0 ${
-              isDone 
-                ? 'bg-emerald-600 text-white' 
-                : isMissed || isIncorrect 
-                ? 'bg-rose-600 text-white' 
-                : isPinned 
-                ? 'bg-amber-500 text-slate-950' 
-                : 'bg-slate-100 text-slate-700 border border-slate-200'
-            }`}>
-              #{item.sequenceOrder}
-            </span>
-
-            {item.isMandatory ? (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 text-[10px] font-extrabold uppercase border border-rose-200 shrink-0">
-                <ShieldAlert className="w-3 h-3 text-rose-600" />
-                Mandatory
-              </span>
-            ) : (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px] font-bold uppercase border border-slate-200 shrink-0">
-                Optional
-              </span>
-            )}
-          </div>
-
-          <div className="flex items-center gap-1.5 shrink-0">
-            {isDone && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold border border-emerald-300">
-                <Check className="w-3 h-3 text-emerald-700 stroke-[3]" /> DONE
-              </span>
-            )}
-            {isPinned && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-extrabold border border-amber-300">
-                <Pin className="w-3 h-3 text-amber-700" /> PINNED
-              </span>
-            )}
-            {isSkipped && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-200 text-slate-700 text-[10px] font-bold">
-                SKIPPED
-              </span>
-            )}
-            {isMissed && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-rose-200 text-rose-900 text-[10px] font-black border border-rose-300">
-                MISSED ❌
-              </span>
-            )}
-            {isIncorrect && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-200 text-rose-950 text-[10px] font-black border border-rose-300">
-                <AlertTriangle className="w-3 h-3 text-rose-700" /> INCORRECT ❌
-              </span>
-            )}
-            {isPending && (
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-[10px] font-semibold border border-slate-200">
-                PENDING
-              </span>
-            )}
-          </div>
-        </div>
-
-        <p className="text-xs sm:text-sm font-semibold leading-relaxed break-words mt-0.5">
-          {item.text}
-        </p>
-
-        {(item.actionBy || item.skipReason || item.remark || item.actionAt) && (
-          <div className="pt-1.5 mt-0.5 border-t border-slate-200/70 text-[11px] text-slate-600 flex flex-wrap items-center justify-between gap-2">
-            {item.actionBy && (
-              <span>Actioned by: <strong className="text-slate-800 font-bold">{item.actionBy}</strong></span>
-            )}
-            {item.skipReason && (
-              <span className="text-amber-900 italic font-medium">Skip Note: {item.skipReason}</span>
-            )}
-            {item.remark && (
-              <span className="text-rose-900 font-bold flex items-center gap-1">
-                <MessageSquare className="w-3 h-3 text-rose-600" /> Remark: {item.remark}
-              </span>
-            )}
-            {item.actionAt && (
-              <span className="font-mono text-[10px] text-slate-500">
-                {new Date(item.actionAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </span>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  };
-
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 md:p-6 bg-slate-950/70 backdrop-blur-xs animate-in fade-in">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 md:p-6 bg-slate-950/75 backdrop-blur-xs animate-in fade-in">
       <div 
         id="checklist-search-modal"
-        className="w-full max-w-4xl bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden flex flex-col text-slate-900 max-h-[92vh] sm:max-h-[88vh]"
+        className="w-full max-w-5xl bg-white border border-slate-200 rounded-2xl shadow-2xl overflow-hidden flex flex-col text-slate-900 max-h-[92vh] sm:max-h-[88vh]"
       >
         {/* Modal Header */}
         <div className="p-4 sm:p-5 bg-gradient-to-r from-slate-900 via-slate-850 to-slate-900 text-white flex items-center justify-between shrink-0 shadow-sm border-b border-slate-800">
@@ -358,17 +514,17 @@ export function ChecklistSearchModal({
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h3 className="text-base sm:text-lg font-extrabold tracking-tight text-white">
-                  {modalStep === 'search' ? 'Checklist Search & Direct Execution' : 'Select Turnaround Flight'}
+                <h3 className="text-base sm:text-lg font-black tracking-tight text-white">
+                  {modalStep === 'search' ? 'Find & Execute Checklists' : 'Select Flight for Checklist Execution'}
                 </h3>
-                <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30">
-                  {modalStep === 'search' ? `${filteredResults.length} Checklists` : 'Flight Selector'}
+                <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30 font-bold">
+                  {modalStep === 'search' ? `${filteredResults.length} Unique Checklists` : 'Flight Picker Prompt'}
                 </span>
               </div>
               <p className="text-xs text-slate-300 font-medium">
                 {modalStep === 'search' 
-                  ? 'Browse all checklists with full item details, review safety points, and launch execution' 
-                  : `Assign "${pendingChecklistData?.checklistTitle}" to an active turnaround flight`}
+                  ? 'All flight turnaround templates listed ONCE. Search title & fuzzy task items with 3D tile buttons.' 
+                  : `Select which active turnaround flight to execute "${pendingChecklistData?.checklistTitle}" on.`}
               </p>
             </div>
           </div>
@@ -387,7 +543,7 @@ export function ChecklistSearchModal({
         {/* Modal Content */}
         {modalStep === 'search' ? (
           <div className="flex flex-col flex-1 overflow-hidden">
-            {/* Search Input Bar */}
+            {/* Search Input Bar & Category Filters */}
             <div className="p-4 bg-slate-50 border-b border-slate-200 space-y-3 shrink-0">
               <div className="relative">
                 <Search className="w-4 h-4 absolute left-3.5 top-3.5 text-slate-400 pointer-events-none" />
@@ -395,7 +551,7 @@ export function ChecklistSearchModal({
                   ref={inputRef}
                   id="input-checklist-search-query"
                   type="text"
-                  placeholder="Type checklist name, task text, or keyword (e.g. Gate, Ramp, Crew, Fuel, DT, Bags, SBD)..."
+                  placeholder="Type title or fuzzy item keyword (e.g., pax, fuel, ramp, bag, gate, deboard, cargo, cabin, security)..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="w-full pl-10 pr-10 py-3 bg-white border border-slate-300 rounded-xl text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-medium transition shadow-xs"
@@ -412,7 +568,7 @@ export function ChecklistSearchModal({
                 )}
               </div>
 
-              {/* Quick Filter Category Chips */}
+              {/* Category Filter Chips */}
               <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1">
                 <button
                   type="button"
@@ -423,7 +579,7 @@ export function ChecklistSearchModal({
                       : 'bg-white text-slate-600 hover:bg-slate-200 border border-slate-200'
                   }`}
                 >
-                  All Checklists ({allChecklistEntries.length})
+                  All Unique Checklists ({allChecklistEntries.length})
                 </button>
 
                 <button
@@ -436,7 +592,7 @@ export function ChecklistSearchModal({
                   }`}
                 >
                   <Plane className="w-3.5 h-3.5" />
-                  <span>Flight Turnarounds</span>
+                  <span>Flight Turnarounds (Deduplicated)</span>
                 </button>
 
                 <button
@@ -467,165 +623,32 @@ export function ChecklistSearchModal({
               </div>
             </div>
 
-            {/* Checklist Results List with Prominent Item Details */}
-            <div className="flex-1 overflow-y-auto p-3 sm:p-5 space-y-4 bg-slate-50/60">
+            {/* Checklist Results: 3D Tile Buttons Grid with Tilt & Hover Details */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-100/70">
               {filteredResults.length === 0 ? (
                 <div className="p-10 text-center bg-white border border-slate-200 rounded-2xl space-y-3 shadow-xs">
                   <AlertCircle className="w-10 h-10 text-slate-400 mx-auto" />
                   <h4 className="text-base font-bold text-slate-800">No checklists match &ldquo;{searchTerm}&rdquo;</h4>
                   <p className="text-xs text-slate-500 max-w-md mx-auto">
-                    Try searching by task keywords like &ldquo;Gate&rdquo;, &ldquo;Ramp&rdquo;, &ldquo;Arrival&rdquo;, &ldquo;Departure&rdquo;, &ldquo;Fueling&rdquo;, &ldquo;Weapons&rdquo;, or &ldquo;Crew&rdquo;.
+                    Try fuzzy keywords like &ldquo;pax&rdquo;, &ldquo;ramp&rdquo;, &ldquo;bag&rdquo;, &ldquo;fuel&rdquo;, &ldquo;gate&rdquo;, &ldquo;cargo&rdquo;, &ldquo;deboard&rdquo;, or &ldquo;clean&rdquo;.
                   </p>
                 </div>
               ) : (
-                filteredResults.map((entry, idx) => {
-                  const checklistKey = `chk-${entry.group.id}-${entry.checklist.id}-${idx}`;
-                  const isDayShift = entry.group.code === 'DAY-OPS' || entry.group.name.toLowerCase().includes('day shift');
-                  const isCompleted = isChecklistComplete(entry.checklist);
-                  const isPending = entry.checklist.status === 'pending';
-                  const totalItems = entry.checklist.items.length;
-                  const doneItems = entry.checklist.items.filter(i => i.status === 'done').length;
-                  const mandatoryItems = entry.checklist.items.filter(i => i.isMandatory).length;
-                  
-                  // By default in search mode, keep cards expanded or open so items are prominently visible
-                  const isExpanded = expandedChecklistIds[checklistKey] !== undefined ? expandedChecklistIds[checklistKey] : true;
-
-                  return (
-                    <div
-                      key={checklistKey}
-                      id={`search-card-${entry.checklist.id}`}
-                      className="bg-white border-2 border-slate-200 hover:border-blue-400/80 rounded-2xl overflow-hidden shadow-xs hover:shadow-md transition-all flex flex-col"
-                    >
-                      {/* Card Top Header */}
-                      <div className="p-4 sm:p-5 bg-gradient-to-b from-white to-slate-50/70 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                        <div className="space-y-1.5 flex-1 min-w-0">
-                          {/* Badges row */}
-                          <div className="flex items-center gap-2 flex-wrap">
-                            {entry.isFlightRelated ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-900 text-[10px] font-extrabold tracking-wide uppercase border border-blue-200">
-                                <Plane className="w-3 h-3 text-blue-700" />
-                                Flight Turnaround Template
-                              </span>
-                            ) : isDayShift ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-950 text-[10px] font-extrabold tracking-wide uppercase border border-amber-300">
-                                <Sun className="w-3 h-3 text-amber-700" />
-                                Day Shift Operations
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-800 text-[10px] font-extrabold tracking-wide uppercase border border-slate-200">
-                                <Building2 className="w-3 h-3 text-slate-700" />
-                                Terminal / Station
-                              </span>
-                            )}
-
-                            <span className="text-xs font-mono font-bold text-slate-700 bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
-                              {entry.group.name}
-                            </span>
-
-                            <span className="text-[10px] font-mono font-semibold px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200">
-                              {entry.checklist.version || 'v1.0'}
-                            </span>
-                          </div>
-
-                          {/* Title */}
-                          <div className="flex items-center gap-2">
-                            <h4 className="text-base sm:text-lg font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-                              <span>{entry.checklist.title}</span>
-                              {isCompleted && (
-                                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                              )}
-                            </h4>
-                          </div>
-
-                          {/* Quick Summary & Matched Task Notification */}
-                          <div className="flex items-center gap-3 text-xs text-slate-500 font-medium flex-wrap">
-                            <span className="font-semibold text-slate-700">
-                              {totalItems} items ({mandatoryItems} Mandatory)
-                            </span>
-                            <span>·</span>
-                            <span>
-                              Status: <strong className={isCompleted ? 'text-emerald-700 font-bold' : isPending ? 'text-amber-700 font-bold' : 'text-blue-700 font-bold'}>{entry.checklist.status.toUpperCase()}</strong>
-                            </span>
-                            <span>·</span>
-                            <span className="text-slate-600 font-mono text-[11px]">
-                              Done: <strong className="text-emerald-700">{doneItems}/{totalItems}</strong>
-                            </span>
-                          </div>
-
-                          {entry.matchedItemText && (
-                            <div className="p-2.5 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-950 flex items-start gap-2">
-                              <Sparkles className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-                              <div>
-                                <span className="font-bold text-blue-900">Search Matched Task:</span> &ldquo;{entry.matchedItemText}&rdquo;
-                              </div>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Action Buttons */}
-                        <div className="flex items-center gap-2 self-start sm:self-center shrink-0 flex-wrap">
-                          <button
-                            type="button"
-                            onClick={(e) => toggleChecklistExpand(checklistKey, e)}
-                            className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
-                            title={isExpanded ? 'Hide item list' : 'View all items'}
-                          >
-                            <ListChecks className="w-4 h-4 text-slate-600" />
-                            <span>{isExpanded ? 'Collapse Items' : `View All Items (${totalItems})`}</span>
-                            {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                          </button>
-
-                          {entry.isFlightRelated ? (
-                            <button
-                              type="button"
-                              onClick={() => handleChecklistClick(entry)}
-                              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-sm cursor-pointer"
-                            >
-                              <Plane className="w-3.5 h-3.5" />
-                              <span>Execute on Flight</span>
-                              <ChevronRight className="w-4 h-4" />
-                            </button>
-                          ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleChecklistClick(entry)}
-                              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-sm cursor-pointer"
-                            >
-                              <Play className="w-3.5 h-3.5 fill-current" />
-                              <span>Start Execution Carousel</span>
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Prominently Displayed Checklist Items Cards */}
-                      {isExpanded && (
-                        <div className="p-3 sm:p-5 bg-slate-50/80 border-t border-slate-200/80 space-y-2.5">
-                          <div className="flex items-center justify-between pb-1 text-xs font-bold text-slate-700">
-                            <span className="flex items-center gap-1.5 uppercase tracking-wider text-[11px] text-slate-500 font-mono">
-                              <ListChecks className="w-4 h-4 text-blue-600" />
-                              Checklist Execution Tasks ({totalItems} items)
-                            </span>
-                            <span className="text-[11px] font-normal text-slate-500">
-                              Click &ldquo;Execute on Flight / Start&rdquo; to execute step-by-step
-                            </span>
-                          </div>
-
-                          <div className="space-y-2 max-h-[340px] overflow-y-auto pr-1 scrollbar-thin">
-                            {entry.checklist.items.map((item, itemIdx) => 
-                              renderItemDetailRow(item, itemIdx, searchTerm)
-                            )}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 sm:gap-6">
+                  {filteredResults.map((entry, idx) => (
+                    <Checklist3DTile
+                      key={`chk-3d-tile-${entry.checklist.id}-${idx}`}
+                      entry={entry}
+                      searchTerm={searchTerm}
+                      onClick={() => handleChecklistClick(entry)}
+                    />
+                  ))}
+                </div>
               )}
             </div>
           </div>
         ) : (
-          /* Flight Selection Step */
+          /* Flight Selection Prompt Step */
           <div className="flex flex-col flex-1 overflow-hidden">
             {/* Target Checklist Header Bar */}
             <div className="p-4 bg-blue-50/90 border-b border-blue-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
@@ -639,41 +662,39 @@ export function ChecklistSearchModal({
                   <span>Back to Checklist Search</span>
                 </button>
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs font-bold text-slate-600">Selected Checklist:</span>
+                  <span className="text-xs font-bold text-slate-600">Selected Checklist Template:</span>
                   <span className="text-sm font-extrabold text-blue-900 bg-white px-2.5 py-1 rounded-lg border border-blue-200 shadow-2xs">
                     {pendingChecklistData?.checklistTitle}
                   </span>
                   <span className="text-xs text-slate-500 font-mono">
-                    ({pendingChecklistData?.targetChecklist.items.length || 0} items)
+                    ({pendingChecklistData?.targetChecklist.items.length || 0} tasks)
                   </span>
                 </div>
               </div>
 
-              <span className="text-xs text-blue-900 font-bold bg-blue-100/80 px-3 py-1.5 rounded-xl border border-blue-200 self-start sm:self-center">
-                Select turnaround flight below to start execution
+              <span className="text-xs text-blue-900 font-bold bg-blue-100 px-3 py-1.5 rounded-xl border border-blue-200 self-start sm:self-center">
+                Select turnaround flight below to launch execution
               </span>
             </div>
 
-            {/* Target Checklist Preview + Flight Selector Grid */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-5 space-y-4 bg-slate-50/60">
-              {/* Flight Cards Grid - Shown First */}
-              <div className="space-y-2">
+            {/* Flight Selector Cards Grid */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 bg-slate-50/60">
+              <div className="space-y-3">
                 <div className="flex items-center justify-between pb-1">
-                  <h5 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                  <h5 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5 font-mono">
                     <Plane className="w-4 h-4 text-blue-600" />
-                    Select Target Turnaround Flight
+                    Select Active Turnaround Flight for Execution
                   </h5>
                   <span className="text-[11px] font-medium text-slate-500">
-                    {selectedFlightGroupId ? 'Flight selected' : 'No flight selected — pick a flight below'}
+                    {selectedFlightGroupId ? 'Flight selected' : 'Click a flight card to pick'}
                   </span>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {flightGroups.map((flight) => {
                     const isSelected = selectedFlightGroupId === flight.id;
                     const routeText = getFlightRoute(flight.code || flight.name);
-                    
-                    // Check status of target checklist in this flight
+
                     let targetStatus = 'Not Started';
                     let completedCount = 0;
                     let totalCount = 0;
@@ -684,7 +705,7 @@ export function ChecklistSearchModal({
                           chk.id === pendingChecklistData?.targetChecklist.id
                         ) {
                           targetStatus = chk.status === 'completed' ? 'Completed' : chk.status === 'in_progress' ? 'In Progress' : 'Pending';
-                          completedCount = chk.items.filter(i => i.status === 'done' || i.status === 'skipped').length;
+                          completedCount = chk.items.filter((i) => i.status === 'done' || i.status === 'skipped').length;
                           totalCount = chk.items.length;
                         }
                       }
@@ -697,8 +718,8 @@ export function ChecklistSearchModal({
                         onClick={() => setSelectedFlightGroupId(flight.id)}
                         className={`p-4 rounded-2xl border-2 transition-all cursor-pointer flex flex-col justify-between space-y-3 ${
                           isSelected
-                            ? 'bg-blue-50/90 border-blue-600 ring-2 ring-blue-500/20 shadow-md'
-                            : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs'
+                            ? 'bg-blue-50/90 border-blue-600 ring-2 ring-blue-500/20 shadow-md translate-y-[-2px]'
+                            : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs hover:shadow-md'
                         }`}
                       >
                         <div className="flex items-start justify-between gap-2">
@@ -726,8 +747,8 @@ export function ChecklistSearchModal({
                           )}
                         </div>
 
-                        <div className="pt-2.5 border-t border-slate-200/80 flex items-center justify-between text-xs">
-                          <span className="text-slate-500 font-medium">Checklist Progress:</span>
+                        <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between text-xs">
+                          <span className="text-slate-500 font-medium">Flight Progress:</span>
                           <span className={`font-mono font-bold px-2 py-0.5 rounded ${
                             targetStatus === 'Completed'
                               ? 'bg-emerald-100 text-emerald-800'
@@ -752,7 +773,7 @@ export function ChecklistSearchModal({
                           }`}
                         >
                           <Play className="w-3.5 h-3.5 fill-current" />
-                          <span>Start on {flight.name}</span>
+                          <span>Execute Checklist on {flight.name}</span>
                         </button>
                       </div>
                     );
@@ -760,20 +781,17 @@ export function ChecklistSearchModal({
                 </div>
               </div>
 
-              {/* Target Checklist Item Details Inspection Box - Positioned at Bottom */}
+              {/* Checklist Task Preview Panel */}
               {pendingChecklistData?.targetChecklist && (
                 <div className="bg-white border border-slate-200 rounded-2xl p-4 shadow-xs space-y-2.5 mt-4">
                   <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                    <h5 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                    <h5 className="text-xs font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5 font-mono">
                       <ListChecks className="w-4 h-4 text-blue-600" />
-                      Tasks Included in This Turnaround Checklist
+                      Turnaround Tasks Preview ({pendingChecklistData.targetChecklist.items.length} tasks)
                     </h5>
-                    <span className="text-[11px] font-mono text-slate-500">
-                      {pendingChecklistData.targetChecklist.items.length} tasks ({pendingChecklistData.targetChecklist.items.filter(i => i.isMandatory).length} Mandatory)
-                    </span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[180px] overflow-y-auto pr-1 scrollbar-thin">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-[160px] overflow-y-auto pr-1">
                     {pendingChecklistData.targetChecklist.items.map((item, idx) => (
                       <div 
                         key={`preview-item-${item.id || idx}`}
@@ -783,20 +801,14 @@ export function ChecklistSearchModal({
                           #{item.sequenceOrder}
                         </span>
                         <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1 mb-0.5">
-                            {item.isMandatory ? (
-                              <span className="text-[9px] font-extrabold text-rose-700 bg-rose-50 px-1.5 py-0.2 rounded border border-rose-200 uppercase">
-                                Mandatory
-                              </span>
-                            ) : (
-                              <span className="text-[9px] font-bold text-slate-600 bg-slate-200/70 px-1.5 py-0.2 rounded uppercase">
-                                Optional
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-slate-800 font-medium line-clamp-2 leading-snug">
+                          {item.isMandatory && (
+                            <span className="text-[9px] font-extrabold text-rose-700 bg-rose-50 px-1 rounded border border-rose-200 uppercase mr-1">
+                              Mandatory
+                            </span>
+                          )}
+                          <span className="text-slate-800 font-medium">
                             {item.text}
-                          </p>
+                          </span>
                         </div>
                       </div>
                     ))}
@@ -819,12 +831,12 @@ export function ChecklistSearchModal({
                 type="button"
                 disabled={!selectedFlightGroupId}
                 onClick={() => {
-                  const targetFlight = flightGroups.find(g => g.id === selectedFlightGroupId);
+                  const targetFlight = flightGroups.find((g) => g.id === selectedFlightGroupId);
                   if (targetFlight) handleConfirmFlightSelection(targetFlight);
                 }}
                 className="px-6 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-2 transition cursor-pointer"
               >
-                <span>Launch on Selected Flight</span>
+                <span>Launch Execution on Selected Flight</span>
                 <ArrowRight className="w-4 h-4" />
               </button>
             </div>
@@ -834,3 +846,4 @@ export function ChecklistSearchModal({
     </div>
   );
 }
+

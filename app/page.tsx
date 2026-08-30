@@ -70,6 +70,134 @@ import {
   Sparkles
 } from 'lucide-react';
 
+function Silver3DButton({
+  children,
+  onClick,
+  active = false,
+  activeBgClass,
+  className = '',
+  id,
+  title,
+  ariaLabel,
+  type = 'button',
+}: {
+  children: React.ReactNode;
+  onClick?: () => void;
+  active?: boolean;
+  activeBgClass?: string;
+  className?: string;
+  id?: string;
+  title?: string;
+  ariaLabel?: string;
+  type?: 'button' | 'submit' | 'reset';
+}) {
+  const [tilt, setTilt] = useState({ x: 0, y: 0 });
+  const [isHovered, setIsHovered] = useState(false);
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLButtonElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left - rect.width / 2;
+    const y = e.clientY - rect.top - rect.height / 2;
+    setTilt({
+      x: Number(((y / rect.height) * -8).toFixed(2)),
+      y: Number(((x / rect.width) * 8).toFixed(2)),
+    });
+  };
+
+  const handleMouseLeave = () => {
+    setTilt({ x: 0, y: 0 });
+    setIsHovered(false);
+  };
+
+  return (
+    <button
+      id={id}
+      type={type}
+      onClick={onClick}
+      title={title}
+      aria-label={ariaLabel}
+      onMouseMove={handleMouseMove}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={handleMouseLeave}
+      style={{
+        transform: `perspective(600px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg) translateY(${
+          isHovered ? '-4px' : '0px'
+        })`,
+        transition: isHovered ? 'transform 0.05s ease-out' : 'transform 0.25s ease-out, box-shadow 0.25s ease-out',
+      }}
+      className={`relative rounded-xl border-2 font-bold uppercase tracking-wider transition-all duration-200 transform-gpu cursor-pointer shrink-0 ${
+        active
+          ? activeBgClass || 'bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 text-white border-slate-700 shadow-[0_5px_0_0_rgba(51,65,85,0.95),0_8px_16px_-2px_rgba(15,23,42,0.25)] hover:shadow-[0_8px_0_0_rgba(51,65,85,0.95),0_12px_20px_-3px_rgba(15,23,42,0.3)]'
+          : 'bg-gradient-to-br from-slate-100 via-white to-slate-200/90 text-slate-700 border-slate-300/90 hover:border-slate-400 shadow-[0_4px_0_0_rgba(203,213,225,0.95),0_6px_12px_-2px_rgba(15,23,42,0.12)] hover:shadow-[0_8px_0_0_rgba(148,163,184,0.95),0_12px_20px_-3px_rgba(15,23,42,0.18)]'
+      } ${className}`}
+    >
+      {/* Glossy top sheen overlay */}
+      <div className="absolute inset-0 rounded-xl bg-gradient-to-t from-transparent via-white/25 to-white/60 pointer-events-none z-0" />
+      <div className="relative z-10 flex items-center justify-center gap-1.5 w-full h-full">{children}</div>
+    </button>
+  );
+}
+
+function Silver3DInput({
+  id,
+  placeholder,
+  value,
+  onChange,
+  className = '',
+}: {
+  id?: string;
+  placeholder?: string;
+  value: string;
+  onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  className?: string;
+}) {
+  const [tilt, setTilt] = useState({ x: 0, y: 0 });
+  const [isHovered, setIsHovered] = useState(false);
+
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left - rect.width / 2;
+    const y = e.clientY - rect.top - rect.height / 2;
+    setTilt({
+      x: Number(((y / rect.height) * -6).toFixed(2)),
+      y: Number(((x / rect.width) * 6).toFixed(2)),
+    });
+  };
+
+  const handleMouseLeave = () => {
+    setTilt({ x: 0, y: 0 });
+    setIsHovered(false);
+  };
+
+  return (
+    <div
+      onMouseMove={handleMouseMove}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={handleMouseLeave}
+      style={{
+        transform: `perspective(600px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg) translateY(${
+          isHovered ? '-3px' : '0px'
+        })`,
+        transition: isHovered ? 'transform 0.05s ease-out' : 'transform 0.25s ease-out, box-shadow 0.25s ease-out',
+      }}
+      className={`relative rounded-xl border-2 border-slate-300/90 hover:border-slate-400 bg-gradient-to-br from-slate-100 via-white to-slate-200/90 shadow-[0_4px_0_0_rgba(203,213,225,0.95),0_6px_12px_-2px_rgba(15,23,42,0.12)] hover:shadow-[0_7px_0_0_rgba(148,163,184,0.95),0_10px_18px_-3px_rgba(15,23,42,0.18)] transition-all duration-200 transform-gpu overflow-hidden ${className}`}
+    >
+      <div className="absolute inset-0 rounded-xl bg-gradient-to-t from-transparent via-white/20 to-white/60 pointer-events-none z-0" />
+      <div className="relative z-10 flex items-center px-3 py-1.5">
+        <Search className="w-3.5 h-3.5 text-slate-500 shrink-0 mr-2" />
+        <input
+          id={id}
+          type="text"
+          placeholder={placeholder}
+          value={value}
+          onChange={onChange}
+          className="w-full bg-transparent text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none font-mono font-medium"
+        />
+      </div>
+    </div>
+  );
+}
+
 export default function AviationGroundOpsPage() {
   const currentUser = useSyncExternalStore(
     subscribeSession,
@@ -838,130 +966,115 @@ export default function AviationGroundOpsPage() {
         />
 
         {/* Operational Filter & Search Bar */}
-        <div className="flex flex-col gap-3 bg-white border border-slate-200 p-3 rounded-2xl shadow-sm overflow-hidden">
+        <div className="flex flex-col gap-3 bg-gradient-to-br from-slate-100/90 via-white to-slate-100/80 border-2 border-slate-300/90 p-3.5 rounded-2xl shadow-[0_6px_0_0_rgba(203,213,225,0.95),0_10px_20px_-3px_rgba(15,23,42,0.1)] overflow-hidden">
           <div className="flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
             {/* Quick Filter Tabs */}
             <div className="flex flex-row items-center gap-1.5 w-full lg:w-auto min-w-0 flex-1 overflow-hidden relative group">
               {/* Three-bars Menu Button to trigger Filter Pop-up Window */}
-              <button
+              <Silver3DButton
                 id="btn-filter-modal-trigger"
                 type="button"
                 onClick={() => setIsFilterModalOpen(true)}
-                className="p-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shrink-0 shadow-2xs"
+                className="px-3 py-2 text-xs"
                 title="Show all filter options in pop-up window"
-                aria-label="Show all filter options in pop-up window"
+                ariaLabel="Show all filter options in pop-up window"
               >
                 <Menu className="w-4 h-4 shrink-0" />
                 <span className="hidden sm:inline font-mono text-[11px] uppercase tracking-wider">Filters</span>
-              </button>
+              </Silver3DButton>
 
-              <button
+              <Silver3DButton
                 type="button"
                 onClick={() => setIsFilterModalOpen(true)}
-                className="sm:hidden flex items-center justify-between px-3 py-2 bg-slate-100 text-slate-700 rounded-xl font-bold text-xs uppercase tracking-wider transition hover:bg-slate-200 shrink-0 gap-2 border border-slate-200"
+                className="sm:hidden px-3 py-2 text-xs"
               >
                 <Filter className="w-3.5 h-3.5" />
                 <span className="capitalize">{filterCategory}</span>
-              </button>
+              </Silver3DButton>
 
               <div className="flex flex-row items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5 px-0.5 pr-2 scroll-smooth max-w-full touch-pan-x flex-1">
-                <button
+                <Silver3DButton
                   id="filter-tab-all"
                   type="button"
                   onClick={() => setFilterCategory('all')}
-                  className={`px-4 py-2.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition whitespace-nowrap shrink-0 text-center ${
-                    filterCategory === 'all'
-                      ? 'bg-slate-900 text-white shadow-sm'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
-                  }`}
+                  active={filterCategory === 'all'}
+                  activeBgClass="bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 text-white border-slate-700 shadow-[0_5px_0_0_rgba(51,65,85,0.95)]"
+                  className="px-4 py-2.5 sm:px-3.5 sm:py-2 text-xs whitespace-nowrap"
                 >
                   All Operations ({dayData.groups.length})
-                </button>
+                </Silver3DButton>
 
-                <button
+                <Silver3DButton
                   id="filter-tab-flights"
                   type="button"
                   onClick={() => setFilterCategory('flights')}
-                  className={`px-4 py-2.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition whitespace-nowrap shrink-0 flex items-center justify-center gap-1.5 ${
-                    filterCategory === 'flights'
-                      ? 'bg-blue-600 text-white shadow-sm'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
-                  }`}
+                  active={filterCategory === 'flights'}
+                  activeBgClass="bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 text-white border-blue-500 shadow-[0_5px_0_0_rgba(37,99,235,0.95)]"
+                  className="px-4 py-2.5 sm:px-3.5 sm:py-2 text-xs whitespace-nowrap"
                 >
                   <Plane className="w-3.5 h-3.5 shrink-0" />
                   <span>Flight Turnarounds (4)</span>
-                </button>
+                </Silver3DButton>
 
-                <button
+                <Silver3DButton
                   id="filter-tab-terminal"
                   type="button"
                   onClick={() => setFilterCategory('terminal')}
-                  className={`px-4 py-2.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition whitespace-nowrap shrink-0 flex items-center justify-center gap-1.5 ${
-                    filterCategory === 'terminal'
-                      ? 'bg-blue-600 text-white shadow-sm'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
-                  }`}
+                  active={filterCategory === 'terminal'}
+                  activeBgClass="bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-800 text-white border-blue-500 shadow-[0_5px_0_0_rgba(37,99,235,0.95)]"
+                  className="px-4 py-2.5 sm:px-3.5 sm:py-2 text-xs whitespace-nowrap"
                 >
                   <Building2 className="w-3.5 h-3.5 shrink-0" />
                   <span>Terminal & Infrastructure</span>
-                </button>
+                </Silver3DButton>
 
-                <button
+                <Silver3DButton
                   id="filter-tab-pending"
                   type="button"
                   onClick={() => setFilterCategory('pending')}
-                  className={`px-4 py-2.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition whitespace-nowrap shrink-0 text-center ${
-                    filterCategory === 'pending'
-                      ? 'bg-amber-500 text-slate-950 shadow-sm'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
-                  }`}
+                  active={filterCategory === 'pending'}
+                  activeBgClass="bg-gradient-to-br from-amber-400 via-amber-500 to-amber-600 text-slate-950 border-amber-400 shadow-[0_5px_0_0_rgba(217,119,6,0.95)]"
+                  className="px-4 py-2.5 sm:px-3.5 sm:py-2 text-xs whitespace-nowrap"
                 >
                   Pending Checks
-                </button>
+                </Silver3DButton>
 
-                <button
+                <Silver3DButton
                   id="filter-tab-completed"
                   type="button"
                   onClick={() => setFilterCategory('completed')}
-                  className={`px-4 py-2.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition whitespace-nowrap shrink-0 text-center ${
-                    filterCategory === 'completed'
-                      ? 'bg-emerald-600 text-white shadow-sm'
-                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200 hover:text-slate-900'
-                  }`}
+                  active={filterCategory === 'completed'}
+                  activeBgClass="bg-gradient-to-br from-emerald-600 via-emerald-700 to-teal-800 text-white border-emerald-500 shadow-[0_5px_0_0_rgba(5,150,105,0.95)]"
+                  className="px-4 py-2.5 sm:px-3.5 sm:py-2 text-xs whitespace-nowrap"
                 >
                   Completed
-                </button>
+                </Silver3DButton>
 
-                <button
+                <Silver3DButton
                   id="filter-tab-non-compliance"
                   type="button"
                   onClick={() => setFilterCategory('non-compliance')}
-                  className={`px-4 py-2.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-bold uppercase tracking-wider transition whitespace-nowrap shrink-0 flex items-center justify-center gap-1.5 ${
-                    filterCategory === 'non-compliance'
-                      ? 'bg-rose-600 text-white shadow-sm ring-2 ring-rose-500/30'
-                      : 'bg-rose-50 text-rose-800 hover:bg-rose-100 border border-rose-200/80'
-                  }`}
+                  active={filterCategory === 'non-compliance'}
+                  activeBgClass="bg-gradient-to-br from-rose-600 via-rose-700 to-rose-800 text-white border-rose-500 shadow-[0_5px_0_0_rgba(225,29,72,0.95)]"
+                  className="px-4 py-2.5 sm:px-3.5 sm:py-2 text-xs whitespace-nowrap"
                 >
-                  <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                  <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
                   <span>Non-Compliance ({nonComplianceGroupCount}) ❌</span>
-                </button>
+                </Silver3DButton>
               </div>
 
               {/* Overflow Ellipsis Button */}
-              <button
+              <Silver3DButton
                 id="filter-overflow-menu-btn"
                 type="button"
                 onClick={() => setIsFilterOverflowOpen(!isFilterOverflowOpen)}
+                active={isFilterOverflowOpen}
                 title="Expand all filter options in grid menu"
-                aria-label="Expand all filter options in grid menu"
-                className={`p-2.5 rounded-xl border text-xs font-bold transition flex items-center justify-center shrink-0 ${
-                  isFilterOverflowOpen
-                    ? 'bg-slate-900 text-white border-slate-900 ring-2 ring-slate-900/20 shadow-sm'
-                    : 'bg-slate-100 text-slate-700 hover:bg-slate-200 border-slate-200'
-                }`}
+                ariaLabel="Expand all filter options in grid menu"
+                className="p-2.5 text-xs"
               >
                 <MoreHorizontal className="w-4 h-4 shrink-0" />
-              </button>
+              </Silver3DButton>
 
               {/* Subtle right-hand fade gradient overlay indicating scrollability */}
               <div className="pointer-events-none absolute right-10 top-0 bottom-0 w-8 bg-gradient-to-l from-white via-white/80 to-transparent hidden sm:block z-10" />
@@ -969,48 +1082,46 @@ export default function AviationGroundOpsPage() {
 
             {/* Search Input, Checklist Finder & Audit Log Trigger */}
             <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-              <button
+              <Silver3DButton
                 id="btn-open-checklist-navigator"
                 type="button"
                 onClick={() => setIsNavigatorOpen(true)}
-                className="px-3.5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-xl text-xs font-black transition flex items-center gap-1.5 shadow-md shadow-blue-600/20 shrink-0 cursor-pointer border border-blue-400/40 active:scale-95"
+                active={true}
+                activeBgClass="bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 text-white border-blue-400/60 shadow-[0_5px_0_0_rgba(37,99,235,0.95)]"
+                className="px-3.5 py-2 text-xs font-black"
                 title="Open Screen-Covering Operational Groups & Checklists Navigator"
               >
                 <Sparkles className="w-3.5 h-3.5 text-sky-200 animate-pulse" />
                 <span>Navigate to Checklists</span>
-              </button>
+              </Silver3DButton>
 
-              <button
+              <Silver3DButton
                 id="btn-open-checklist-search"
                 type="button"
                 onClick={() => setIsChecklistSearchOpen(true)}
-                className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs shrink-0 cursor-pointer border border-slate-200"
+                className="px-3 py-2 text-xs"
                 title="Search all checklists and select flight turnaround"
               >
                 <Search className="w-3.5 h-3.5" />
                 <span>Search Checklists</span>
-              </button>
+              </Silver3DButton>
 
-              <div className="relative flex-1 sm:w-56 min-w-[140px]">
-                <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
-                <input
-                  id="input-group-search"
-                  type="text"
-                  placeholder="Filter groups..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white font-mono transition"
-                />
-              </div>
+              <Silver3DInput
+                id="input-group-search"
+                placeholder="Filter groups..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="flex-1 sm:w-56 min-w-[140px]"
+              />
 
-              <button
+              <Silver3DButton
                 id="btn-open-audit-trail"
                 onClick={() => setIsAuditLogOpen(true)}
-                className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl border border-slate-200 transition shadow-2xs cursor-pointer shrink-0"
+                className="p-2 text-xs"
                 title="View Real-Time Audit Log"
               >
                 <History className="w-4 h-4" />
-              </button>
+              </Silver3DButton>
             </div>
           </div>
 
@@ -1025,111 +1136,98 @@ export default function AviationGroundOpsPage() {
                 <span className="text-[10px] text-slate-400 font-medium">Select to apply</span>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                <button
+                <Silver3DButton
                   type="button"
                   onClick={() => {
                     setFilterCategory('all');
                     setIsFilterOverflowOpen(false);
                   }}
-                  className={`px-3 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition flex items-center justify-between border text-left ${
-                    filterCategory === 'all'
-                      ? 'bg-slate-900 text-white border-slate-900 shadow-sm'
-                      : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border-slate-200'
-                  }`}
+                  active={filterCategory === 'all'}
+                  className="px-3 py-2.5 text-xs text-left"
                 >
                   <span className="truncate">All Operations</span>
                   <span className="text-[10px] font-mono opacity-80 shrink-0">({dayData.groups.length})</span>
-                </button>
+                </Silver3DButton>
 
-                <button
+                <Silver3DButton
                   type="button"
                   onClick={() => {
                     setFilterCategory('flights');
                     setIsFilterOverflowOpen(false);
                   }}
-                  className={`px-3 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition flex items-center justify-between border text-left ${
-                    filterCategory === 'flights'
-                      ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                      : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border-slate-200'
-                  }`}
+                  active={filterCategory === 'flights'}
+                  activeBgClass="bg-gradient-to-br from-blue-600 to-indigo-700 text-white border-blue-500"
+                  className="px-3 py-2.5 text-xs text-left"
                 >
                   <div className="flex items-center gap-1.5 min-w-0">
                     <Plane className="w-3.5 h-3.5 shrink-0" />
                     <span className="truncate">Flight Turnarounds</span>
                   </div>
                   <span className="text-[10px] font-mono opacity-80 shrink-0">(4)</span>
-                </button>
+                </Silver3DButton>
 
-                <button
+                <Silver3DButton
                   type="button"
                   onClick={() => {
                     setFilterCategory('terminal');
                     setIsFilterOverflowOpen(false);
                   }}
-                  className={`px-3 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition flex items-center justify-between border text-left ${
-                    filterCategory === 'terminal'
-                      ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
-                      : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border-slate-200'
-                  }`}
+                  active={filterCategory === 'terminal'}
+                  activeBgClass="bg-gradient-to-br from-blue-600 to-indigo-700 text-white border-blue-500"
+                  className="px-3 py-2.5 text-xs text-left"
                 >
                   <div className="flex items-center gap-1.5 min-w-0">
                     <Building2 className="w-3.5 h-3.5 shrink-0" />
                     <span className="truncate">Terminal Ops</span>
                   </div>
-                </button>
+                </Silver3DButton>
 
-                <button
+                <Silver3DButton
                   type="button"
                   onClick={() => {
                     setFilterCategory('pending');
                     setIsFilterOverflowOpen(false);
                   }}
-                  className={`px-3 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition flex items-center justify-between border text-left ${
-                    filterCategory === 'pending'
-                      ? 'bg-amber-500 text-slate-950 border-amber-500 shadow-sm'
-                      : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border-slate-200'
-                  }`}
+                  active={filterCategory === 'pending'}
+                  activeBgClass="bg-gradient-to-br from-amber-400 via-amber-500 to-amber-600 text-slate-950 border-amber-400"
+                  className="px-3 py-2.5 text-xs text-left"
                 >
                   <span className="truncate">Pending Checks</span>
                   <Clock className="w-3 h-3 opacity-70 shrink-0" />
-                </button>
+                </Silver3DButton>
 
-                <button
+                <Silver3DButton
                   type="button"
                   onClick={() => {
                     setFilterCategory('completed');
                     setIsFilterOverflowOpen(false);
                   }}
-                  className={`px-3 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition flex items-center justify-between border text-left ${
-                    filterCategory === 'completed'
-                      ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
-                      : 'bg-slate-50 text-slate-700 hover:bg-slate-100 border-slate-200'
-                  }`}
+                  active={filterCategory === 'completed'}
+                  activeBgClass="bg-gradient-to-br from-emerald-600 to-teal-700 text-white border-emerald-500"
+                  className="px-3 py-2.5 text-xs text-left"
                 >
                   <span className="truncate">Completed</span>
                   <CheckCircle2 className="w-3 h-3 opacity-70 shrink-0" />
-                </button>
+                </Silver3DButton>
 
-                <button
+                <Silver3DButton
                   type="button"
                   onClick={() => {
                     setFilterCategory('non-compliance');
                     setIsFilterOverflowOpen(false);
                   }}
-                  className={`px-3 py-2.5 rounded-xl text-xs font-bold uppercase tracking-wider transition flex items-center justify-between border text-left ${
-                    filterCategory === 'non-compliance'
-                      ? 'bg-rose-600 text-white border-rose-600 shadow-sm'
-                      : 'bg-rose-50 text-rose-800 hover:bg-rose-100 border-rose-200'
-                  }`}
+                  active={filterCategory === 'non-compliance'}
+                  activeBgClass="bg-gradient-to-br from-rose-600 to-rose-800 text-white border-rose-500"
+                  className="px-3 py-2.5 text-xs text-left"
                 >
                   <div className="flex items-center gap-1.5 min-w-0">
-                    <AlertCircle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                    <AlertCircle className="w-3.5 h-3.5 text-rose-500 shrink-0" />
                     <span className="truncate">Non-Compliance</span>
                   </div>
-                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-100 text-rose-800 shrink-0">
+                  <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-rose-100/30 shrink-0">
                     {nonComplianceGroupCount}
                   </span>
-                </button>
+                </Silver3DButton>
               </div>
             </div>
           )}

@@ -38,6 +38,7 @@ import {
   deleteUserFromFirestore,
   subscribeToUsersFromFirestore,
   subscribeToAuditLogs,
+  safeJsonStringify,
 } from './firestoreService';
 import { db, auth } from './firebase';
 
@@ -119,7 +120,7 @@ if (typeof window !== 'undefined') {
     if (remoteUsers && remoteUsers.length > 0) {
       inMemoryUsers = deduplicateUsers([...remoteUsers, ...getLocalUsers()]);
       try {
-        localStorage.setItem('aviation_users_local', JSON.stringify(inMemoryUsers));
+        localStorage.setItem('aviation_users_local', safeJsonStringify(inMemoryUsers));
       } catch {}
       window.dispatchEvent(new Event('aviation_users_change'));
     }
@@ -129,7 +130,7 @@ if (typeof window !== 'undefined') {
     if (remoteUsers && remoteUsers.length > 0) {
       inMemoryUsers = deduplicateUsers([...remoteUsers, ...getLocalUsers()]);
       try {
-        localStorage.setItem('aviation_users_local', JSON.stringify(inMemoryUsers));
+        localStorage.setItem('aviation_users_local', safeJsonStringify(inMemoryUsers));
       } catch {}
       window.dispatchEvent(new Event('aviation_users_change'));
     }
@@ -154,7 +155,7 @@ export function saveUsers(users: UserAccount[]): void {
   inMemoryUsers = cleanList;
   if (typeof window !== 'undefined') {
     try {
-      localStorage.setItem('aviation_users_local', JSON.stringify(cleanList));
+      localStorage.setItem('aviation_users_local', safeJsonStringify(cleanList));
     } catch (e) {
       console.error('Error saving users to localStorage:', e);
     }
@@ -198,7 +199,7 @@ export function setActiveSession(user: UserAccount | null): void {
       window.dispatchEvent(new Event('aviation_session_change'));
     }
   } else {
-    setSessionItem(SESSION_STORAGE_KEY, JSON.stringify(user));
+    setSessionItem(SESSION_STORAGE_KEY, safeJsonStringify(user));
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new Event('aviation_session_change'));
     }
@@ -454,7 +455,7 @@ export function addOrUpdateUser(user: UserAccount, performer?: UserAccount): voi
   inMemoryUsers = deduplicateUsers(inMemoryUsers);
   if (typeof window !== 'undefined') {
     try {
-      localStorage.setItem('aviation_users_local', JSON.stringify(inMemoryUsers));
+      localStorage.setItem('aviation_users_local', safeJsonStringify(inMemoryUsers));
     } catch {}
   }
   saveUserToFirestore(user).catch((err) => {
@@ -473,7 +474,7 @@ export function deleteUserAccount(uNumber: string, adminUser: UserAccount): bool
   inMemoryUsers = inMemoryUsers.filter((u) => u.uNumber.toLowerCase() !== uNumber.toLowerCase());
   if (typeof window !== 'undefined') {
     try {
-      localStorage.setItem('aviation_users_local', JSON.stringify(inMemoryUsers));
+      localStorage.setItem('aviation_users_local', safeJsonStringify(inMemoryUsers));
     } catch {}
   }
   deleteUserFromFirestore(uNumber);

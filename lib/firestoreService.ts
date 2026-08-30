@@ -87,26 +87,48 @@ export interface FirestoreErrorInfo {
   };
 }
 
+export function safeJsonStringify(obj: any): string {
+  if (obj === undefined) return 'undefined';
+  if (obj === null) return 'null';
+  if (typeof obj !== 'object') return String(obj);
+
+  const seen = new WeakSet();
+  try {
+    return JSON.stringify(obj, (key, value) => {
+      if (typeof value === 'object' && value !== null) {
+        if (seen.has(value)) {
+          return '[Circular]';
+        }
+        seen.add(value);
+      }
+      return value;
+    });
+  } catch {
+    return String(obj);
+  }
+}
+
 export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
+  const errMessage = error instanceof Error ? error.message : String(error);
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: errMessage,
     authInfo: {
-      userId: auth.currentUser?.uid,
-      email: auth.currentUser?.email,
-      emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
+      userId: auth.currentUser?.uid || null,
+      email: auth.currentUser?.email || null,
+      emailVerified: auth.currentUser?.emailVerified || null,
+      isAnonymous: auth.currentUser?.isAnonymous || null,
+      tenantId: auth.currentUser?.tenantId || null,
       providerInfo:
         auth.currentUser?.providerData?.map((provider) => ({
-          providerId: provider.providerId,
-          email: provider.email,
+          providerId: String(provider.providerId || ''),
+          email: String(provider.email || ''),
         })) || [],
     },
     operationType,
     path,
   };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
+  console.error('Firestore Error: ', errMessage, errInfo);
+  throw new Error(`${operationType} error on ${path}: ${errMessage}`);
 }
 
 // ----------------- AUDIT TRAIL ENGINE -----------------
@@ -879,7 +901,7 @@ export async function saveDayDataToFirestore(
         closed_at: sanitized.closedAt || null,
         shift_notes: sanitized.shiftNotes || '',
         last_updated: serverTimestamp(),
-        raw_data: JSON.stringify(sanitized),
+        raw_data: safeJsonStringify(sanitized),
       },
       { merge: true }
     );
@@ -1077,7 +1099,7 @@ export function subscribeToAuditLogs(
         if (typeof data.details === 'string') {
           detailsStr = data.details;
         } else if (data.details && typeof data.details === 'object') {
-          detailsStr = data.details.message || JSON.stringify(data.details);
+          detailsStr = data.details.message || safeJsonStringify(data.details);
         }
 
         return {

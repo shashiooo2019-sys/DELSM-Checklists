@@ -352,23 +352,23 @@ export function Header({
                     </button>
                   )}
 
-                  <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-300 shadow-[inset_0_1px_2px_rgba(0,0,0,0.06)]">
+                  <div className="flex items-center gap-1.5">
                     <button
                       id="btn-switch-role"
                       onClick={onOpenLogin}
-                      className="p-1.5 text-blue-700 hover:text-blue-900 hover:bg-white rounded-lg transition text-xs font-bold flex items-center gap-1 shadow-2xs cursor-pointer"
+                      className="btn-3d-blue px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer transition-all"
                       title="Switch Sign-In Role or Change Login"
                     >
-                      <User className="w-3.5 h-3.5" />
+                      <User className="w-3.5 h-3.5 text-blue-100" />
                       <span className="hidden sm:inline">Switch Role</span>
                     </button>
                     <button
                       id="btn-logout"
                       onClick={onLogout}
-                      className="p-1.5 text-rose-600 hover:text-rose-800 hover:bg-white rounded-lg transition shadow-2xs cursor-pointer"
+                      className="btn-3d-white p-1.5 rounded-xl text-rose-600 hover:text-rose-700 cursor-pointer transition-all"
                       title="Logout"
                     >
-                      <LogOut className="w-4 h-4" />
+                      <LogOut className="w-4 h-4 text-rose-600" />
                     </button>
                   </div>
                 </div>
