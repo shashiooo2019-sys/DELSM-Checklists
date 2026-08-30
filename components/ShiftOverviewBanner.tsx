@@ -131,22 +131,28 @@ export function ShiftOverviewBanner({
   return (
     <div className="bg-white border border-slate-200/90 rounded-2xl p-4 sm:p-5 lg:p-6 shadow-xs text-slate-900 transition-all duration-300 hover:shadow-sm hover:border-slate-300">
       {/* Top Banner: Shift State & Action Controls */}
-      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 sm:pb-5 border-b border-slate-100">
-        <div className="space-y-2 flex-1 min-w-0">
+      <div className={`flex flex-col lg:flex-row lg:items-center justify-between gap-3 sm:gap-4 ${isExpanded ? 'pb-3.5 sm:pb-4 border-b border-slate-100' : ''}`}>
+        <div className="flex-1 min-w-0 flex flex-col justify-between gap-1.5">
           <div className="flex items-center gap-2.5 flex-wrap">
-            <span className="text-xs sm:text-sm font-mono font-bold px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 border border-slate-200 flex items-center gap-1.5 shadow-2xs">
-              <Activity className="w-4 h-4 text-blue-600 animate-pulse" />
+            <h2 className="text-lg sm:text-xl lg:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+              <span>DEL Ground Ops Turnaround Checklists Control</span>
+            </h2>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap text-xs font-mono font-bold">
+            <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 border border-slate-200 flex items-center gap-1.5 shadow-2xs">
+              <Activity className="w-3.5 h-3.5 text-blue-600 animate-pulse" />
               <span>SHIFT DATE: {dayData.date}</span>
             </span>
 
             {dayData.isShiftClosed ? (
-              <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-1.5 flex-wrap">
                 <span 
                   onClick={() => { if (isSupervisor) onOpenDrillDown?.(); }}
-                  className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs sm:text-sm font-bold uppercase tracking-wide ${isSupervisor ? 'cursor-pointer hover:bg-emerald-100' : ''}`}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold uppercase tracking-wide ${isSupervisor ? 'cursor-pointer hover:bg-emerald-100' : ''}`}
                   title={isSupervisor ? 'Click to open Supervisor Drill-Down Dashboard' : undefined}
                 >
-                  <Lock className="w-4 h-4 text-emerald-600" />
+                  <Lock className="w-3.5 h-3.5 text-emerald-600" />
                   Shift Verified & Closed
                 </span>
                 {isSupervisor && onReopenShift && (
@@ -161,7 +167,7 @@ export function ShiftOverviewBanner({
                         setShowReopenConfirm(false);
                       }
                     }}
-                    className={`px-3 py-1.5 border rounded-xl text-xs font-bold transition shadow-2xs cursor-pointer ${
+                    className={`px-2.5 py-1 border rounded-lg text-xs font-bold transition shadow-2xs cursor-pointer ${
                       showReopenConfirm
                         ? 'bg-amber-500 hover:bg-amber-600 border-amber-600 text-slate-950 animate-pulse font-extrabold'
                         : 'bg-rose-50 hover:bg-rose-100 border-rose-200 text-rose-700'
@@ -175,108 +181,106 @@ export function ShiftOverviewBanner({
             ) : (
               <span 
                 onClick={() => { if (isSupervisor) onOpenDrillDown?.(); }}
-                className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-xs sm:text-sm font-bold uppercase tracking-wide ${isSupervisor ? 'cursor-pointer hover:bg-amber-100' : ''}`}
+                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 text-amber-700 border border-amber-200 text-xs font-bold uppercase tracking-wide ${isSupervisor ? 'cursor-pointer hover:bg-amber-100' : ''}`}
                 title={isSupervisor ? 'Click to open Supervisor Drill-Down Dashboard' : undefined}
               >
-                <Clock className="w-4 h-4 text-amber-600 animate-spin" />
+                <Clock className="w-3.5 h-3.5 text-amber-600 animate-spin" />
                 Shift In-Progress
               </span>
             )}
 
             {dayData.closedBy && (
-              <span className="text-xs sm:text-sm text-slate-500">
+              <span className="text-xs text-slate-500">
                 Closed by: <strong className="text-slate-700 font-semibold">{dayData.closedBy}</strong>
               </span>
             )}
 
-            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] sm:text-xs font-mono font-bold">
+            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-mono font-bold">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
               REAL-TIME SYNCED
             </span>
           </div>
-
-          <div className="flex items-center gap-3 flex-wrap pt-0.5">
-            <h2 className="text-xl sm:text-2xl lg:text-3xl font-black text-slate-900 tracking-tight">
-              DEL Ground Ops Turnaround Checklists Control
-            </h2>
-          </div>
         </div>
 
-        {/* Global Action Toolbar */}
-        <div className="flex items-center gap-2.5 flex-wrap w-full lg:w-auto justify-start lg:justify-end">
-          {onOpenNavigator && (
-            <button
-              id="btn-banner-navigate-checklists"
-              onClick={onOpenNavigator}
-              className="flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600 hover:from-blue-500 hover:to-violet-500 text-white rounded-xl text-xs sm:text-sm md:text-base font-black transition-all shadow-md shadow-blue-600/30 active:scale-95 cursor-pointer border border-blue-400/40"
-              title="Open Screen-Covering Operational Groups & Checklists Navigator"
-            >
-              <ListChecks className="w-4.5 h-4.5 text-sky-200 animate-pulse" />
-              <span>Navigate to Checklists</span>
-            </button>
+        {/* Global Action Toolbar Dock */}
+        <div className="flex flex-wrap items-center gap-2 sm:gap-2.5 w-full lg:w-auto justify-start lg:justify-end shrink-0">
+          {isExpanded && (
+            <>
+              {onOpenNavigator && (
+                <button
+                  id="btn-banner-navigate-checklists"
+                  onClick={onOpenNavigator}
+                  className="btn-3d-blue flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-black transition cursor-pointer"
+                  title="Open Screen-Covering Operational Groups & Checklists Navigator"
+                >
+                  <ListChecks className="w-4 h-4 text-sky-200 animate-pulse" />
+                  <span>Navigate to Checklists</span>
+                </button>
+              )}
+
+              {isSupervisor && (
+                <button
+                  id="btn-open-diagnosis"
+                  onClick={() => onOpenDiagnosis()}
+                  className="btn-3d-amber flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer"
+                  title="Close Shift"
+                >
+                  <Stethoscope className="w-4 h-4 text-amber-100" />
+                  <span>Close Shift</span>
+                </button>
+              )}
+
+              <button
+                id="btn-open-whatsapp"
+                onClick={onOpenWhatsApp}
+                className="btn-3d-emerald flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer"
+                title="Generate WhatsApp Broadcast"
+              >
+                <Share2 className="w-4 h-4 text-emerald-100" />
+                <span>WhatsApp Summary</span>
+              </button>
+
+              <button
+                id="btn-export-excel-log"
+                onClick={onExportExcel}
+                className="btn-3d-white flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer"
+                title="Download Excel Shift Audit"
+              >
+                <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                <span>Excel Export</span>
+              </button>
+
+              {isAdmin && (
+                <button
+                  id="btn-open-admin-panel"
+                  onClick={onOpenAdmin}
+                  className="btn-3d-purple flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer"
+                  title="Admin Templates & User Management"
+                >
+                  <Sliders className="w-4 h-4" />
+                  <span>Admin Management</span>
+                </button>
+              )}
+            </>
           )}
 
-          {isSupervisor && (
-            <button
-              id="btn-open-diagnosis"
-              onClick={() => onOpenDiagnosis()}
-              className="btn-3d-amber flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition cursor-pointer"
-              title="Close Shift"
-            >
-              <Stethoscope className="w-4 h-4 text-amber-100" />
-              <span>Close Shift</span>
-            </button>
-          )}
-
-          <button
-            id="btn-open-whatsapp"
-            onClick={onOpenWhatsApp}
-            className="btn-3d-emerald flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition cursor-pointer"
-            title="Generate WhatsApp Broadcast"
-          >
-            <Share2 className="w-4 h-4 text-emerald-100" />
-            <span>WhatsApp Summary</span>
-          </button>
-
-          <button
-            id="btn-export-excel-log"
-            onClick={onExportExcel}
-            className="btn-3d-white flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition cursor-pointer"
-            title="Download Excel Shift Audit"
-          >
-            <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
-            <span>Excel Export</span>
-          </button>
-
-          {isAdmin && (
-            <button
-              id="btn-open-admin-panel"
-              onClick={onOpenAdmin}
-              className="flex items-center gap-1.5 px-4 py-2.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-xs sm:text-sm font-bold transition shadow-sm shadow-purple-600/20 cursor-pointer"
-              title="Admin Templates & User Management"
-            >
-              <Sliders className="w-4 h-4" />
-              <span>Admin Management</span>
-            </button>
-          )}
-
-          {/* Toggle Expand/Collapse Button */}
+          {/* Toggle Expand/Collapse Button - Always visible */}
           <button
             id="btn-toggle-shift-overview"
             type="button"
             onClick={() => setIsExpanded(!isExpanded)}
-            className="btn-3d-blue flex items-center gap-1.5 px-4 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition cursor-pointer text-white"
+            className="btn-3d-slate flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer text-white"
             title={isExpanded ? 'Collapse Overview Telemetry' : 'Expand Overview Telemetry'}
             aria-expanded={isExpanded}
           >
             {isExpanded ? (
               <>
-                <ChevronUp className="w-4 h-4 text-blue-100 shrink-0" />
+                <ChevronUp className="w-4 h-4 text-slate-200 shrink-0" />
                 <span>Collapse</span>
               </>
             ) : (
               <>
-                <ChevronDown className="w-4 h-4 text-blue-100 shrink-0" />
+                <ChevronDown className="w-4 h-4 text-slate-200 shrink-0" />
                 <span>Expand Overview</span>
               </>
             )}
