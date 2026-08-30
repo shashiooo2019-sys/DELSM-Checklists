@@ -110,8 +110,8 @@ function ChecklistCarouselContent({
   const [remarksText, setRemarksText] = useState<string>(() => checklist.remarks || '');
   const [remarksError, setRemarksError] = useState<string | null>(null);
 
-  // Full Screen Mode State
-  const [isFullScreen, setIsFullScreen] = useState<boolean>(false);
+  // Full Screen Mode State (Default to Full Screen for focused execution)
+  const [isFullScreen, setIsFullScreen] = useState<boolean>(true);
 
   const currentItem = items[currentIndex];
   const totalItems = items.length;
