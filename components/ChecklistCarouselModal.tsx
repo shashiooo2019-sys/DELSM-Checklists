@@ -659,13 +659,33 @@ function ChecklistCarouselContent({
       remarks: remarksText.trim(),
     };
 
-    // Trigger celebration confetti
+    // Play celebratory "Yay!" victory fanfare jingle
+    soundEffects.playYayJingle();
+
+    // Trigger celebration confetti / party poppers display
     try {
       confetti({
-        particleCount: 80,
-        spread: 60,
+        particleCount: 100,
+        spread: 70,
         origin: { y: 0.6 },
       });
+      // Second staggered burst for realistic party poppers effect
+      setTimeout(() => {
+        try {
+          confetti({
+            particleCount: 60,
+            angle: 60,
+            spread: 55,
+            origin: { x: 0 },
+          });
+          confetti({
+            particleCount: 60,
+            angle: 120,
+            spread: 55,
+            origin: { x: 1 },
+          });
+        } catch {}
+      }, 250);
     } catch {}
 
     onSaveChecklist(updatedChecklist);
