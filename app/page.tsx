@@ -908,6 +908,7 @@ export default function AviationGroundOpsPage() {
         onOpenDrillDown={() => setIsDrillDownOpen(true)}
         onOpenSearchChecklists={() => setIsChecklistSearchOpen(true)}
         onOpenNavigator={() => setIsNavigatorOpen(true)}
+        onOpenAdmin={() => setIsAdminPanelOpen(true)}
       />
 
       {/* Main Container */}

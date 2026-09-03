@@ -5,10 +5,12 @@ export const DEFAULT_USERS: UserAccount[] = [
     uNumber: 'admin',
     name: 'Chief Ops Administrator',
     role: 'ADMIN',
+    baseRole: 'ADMIN',
     passwordHash: 'Admin220!',
     mustChangePassword: false,
     department: 'Ground Operations Management',
     createdDate: '2026-01-01T00:00:00.000Z',
+    isAuthorized: true,
   },
   {
     uNumber: 'supervisor',

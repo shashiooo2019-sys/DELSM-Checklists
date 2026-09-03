@@ -22,7 +22,8 @@ import {
   TrendingUp,
   Search,
   Layers,
-  ListChecks
+  ListChecks,
+  Sliders
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -38,6 +39,7 @@ interface HeaderProps {
   onOpenDrillDown?: () => void;
   onOpenSearchChecklists?: () => void;
   onOpenNavigator?: () => void;
+  onOpenAdmin?: () => void;
 }
 
 export function Header({
@@ -53,6 +55,7 @@ export function Header({
   onOpenDrillDown,
   onOpenSearchChecklists,
   onOpenNavigator,
+  onOpenAdmin,
 }: HeaderProps) {
   const [utcTime, setUtcTime] = useState<string>('');
   const [localTime, setLocalTime] = useState<string>('');
@@ -349,6 +352,19 @@ export function Header({
                     >
                       <TrendingUp className="w-3.5 h-3.5" />
                       <span>Drill-Down Cockpit</span>
+                    </button>
+                  )}
+
+                  {/* Admin Management Panel Shortcut on top */}
+                  {currentUser.role === 'ADMIN' && onOpenAdmin && (
+                    <button
+                      id="btn-top-admin-dashboard"
+                      onClick={onOpenAdmin}
+                      className="btn-3d-purple px-3.5 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 cursor-pointer animate-in fade-in zoom-in-95"
+                      title="Open Admin Management (Templates, Checklists & Personnel Roster)"
+                    >
+                      <Sliders className="w-3.5 h-3.5 text-purple-200" />
+                      <span>Admin Management</span>
                     </button>
                   )}
 
