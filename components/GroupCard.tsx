@@ -57,23 +57,6 @@ export function GroupCard({
   const handleToggle = onToggleExpand || (() => setLocalIsExpanded((prev) => !prev));
   const [expandedSubGroups, setExpandedSubGroups] = useState<Record<string, boolean>>({});
   const [showReopenConfirm, setShowReopenConfirm] = useState<boolean>(false);
-  const [tilt, setTilt] = useState({ x: 0, y: 0 });
-  const [isHovered, setIsHovered] = useState(false);
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left - rect.width / 2;
-    const y = e.clientY - rect.top - rect.height / 2;
-    setTilt({
-      x: Number(((y / rect.height) * -6).toFixed(2)),
-      y: Number(((x / rect.width) * 6).toFixed(2)),
-    });
-  };
-
-  const handleMouseLeave = () => {
-    setTilt({ x: 0, y: 0 });
-    setIsHovered(false);
-  };
 
   const groupComplete = isGroupComplete(group);
   const isSupervisor = currentUser?.role === 'SUPERVISOR' || currentUser?.role === 'ADMIN';
@@ -131,21 +114,12 @@ export function GroupCard({
   return (
     <div 
       id={`group-card-${group.id}`}
-      onMouseMove={handleMouseMove}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={handleMouseLeave}
-      style={{
-        transform: `perspective(800px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg) translateY(${
-          isHovered ? '-6px' : '0px'
-        })`,
-        transition: isHovered ? 'transform 0.08s ease-out' : 'transform 0.3s ease-out, box-shadow 0.3s ease-out',
-      }}
-      className={`group relative rounded-2xl sm:rounded-3xl border-2 overflow-hidden transition-all duration-300 transform-gpu ${
+      className={`group relative rounded-2xl sm:rounded-3xl border-2 overflow-hidden transition-all duration-200 ${
         group.isVerified
-          ? 'bg-gradient-to-br from-slate-100 via-sky-50/40 to-slate-200/90 border-sky-300 shadow-[0_6px_0_0_rgba(186,230,253,0.95),0_10px_20px_-3px_rgba(14,165,233,0.12)] hover:shadow-[0_14px_0_0_rgba(56,189,248,0.7),0_20px_30px_-4px_rgba(14,165,233,0.22)]'
+          ? 'bg-gradient-to-br from-slate-100 via-sky-50/40 to-slate-200/90 border-sky-300 shadow-[0_4px_0_0_rgba(186,230,253,0.95),0_8px_16px_-3px_rgba(14,165,233,0.12)] hover:shadow-[0_6px_0_0_rgba(56,189,248,0.7),0_12px_20px_-4px_rgba(14,165,233,0.18)]'
           : groupComplete
-          ? 'bg-gradient-to-br from-slate-100 via-emerald-50/40 to-slate-200/90 border-emerald-300 shadow-[0_6px_0_0_rgba(167,243,208,0.95),0_10px_20px_-3px_rgba(16,185,129,0.12)] hover:shadow-[0_14px_0_0_rgba(52,211,153,0.7),0_20px_30px_-4px_rgba(16,185,129,0.22)]'
-          : 'bg-gradient-to-br from-slate-100 via-white to-slate-200/90 border-slate-300/90 hover:border-slate-400 shadow-[0_6px_0_0_rgba(203,213,225,0.95),0_10px_20px_-3px_rgba(15,23,42,0.12)] hover:shadow-[0_14px_0_0_rgba(148,163,184,0.95),0_20px_30px_-4px_rgba(15,23,42,0.18)]'
+          ? 'bg-gradient-to-br from-slate-100 via-emerald-50/40 to-slate-200/90 border-emerald-300 shadow-[0_4px_0_0_rgba(167,243,208,0.95),0_8px_16px_-3px_rgba(16,185,129,0.12)] hover:shadow-[0_6px_0_0_rgba(52,211,153,0.7),0_12px_20px_-4px_rgba(16,185,129,0.18)]'
+          : 'bg-gradient-to-br from-slate-100 via-white to-slate-200/90 border-slate-300/90 hover:border-slate-400 shadow-[0_4px_0_0_rgba(203,213,225,0.95),0_8px_16px_-3px_rgba(15,23,42,0.12)] hover:shadow-[0_6px_0_0_rgba(148,163,184,0.95),0_12px_20px_-4px_rgba(15,23,42,0.16)]'
       }`}
     >
       {/* Glossy Top Sheen Overlay */}

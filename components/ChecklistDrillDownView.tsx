@@ -142,6 +142,8 @@ export function ChecklistDrillDownView({
 }: ChecklistDrillDownViewProps) {
   const [activeGroupId, setActiveGroupId] = useState<string>('');
   const [showShiftClosePrompt, setShowShiftClosePrompt] = useState(false);
+  const [verifyingGroupId, setVerifyingGroupId] = useState<string | null>(null);
+  const [groupVerificationRemarks, setGroupVerificationRemarks] = useState<string>('');
   const [supervisorNameInput, setSupervisorNameInput] = useState(currentUser?.name || '');
   const [supervisorNotesInput, setSupervisorNotesInput] = useState('');
   const [hiddenChecklistGraphics, setHiddenChecklistGraphics] = useState<Record<string, boolean>>({});
@@ -904,7 +906,7 @@ export function ChecklistDrillDownView({
                     {/* Left segment: Donut Chart representation */}
                     <div 
                       id={`drilldown-group-graphic-${grp.id}`}
-                      className="shrink-0 cursor-pointer hover:scale-105 active:scale-95 transition-all relative group/graphic"
+                      className="shrink-0 cursor-pointer transition-all relative group/graphic"
                       title={hiddenChecklistGraphics[grp.id] ? "Click group graphic to show checklist progress charts" : "Click group graphic to hide checklist progress charts"}
                       onClick={(e) => {
                         e.stopPropagation();
@@ -962,7 +964,10 @@ export function ChecklistDrillDownView({
                         <button
                           id={`drilldown-verify-group-${grp.id}`}
                           disabled={!canVerify}
-                          onClick={() => onVerifyGroup(grp.id, 'Verified via supervisor drill-down cockpit.')}
+                          onClick={() => {
+                            setVerifyingGroupId(grp.id);
+                            setGroupVerificationRemarks('');
+                          }}
                           className={`px-2.5 py-1 text-[10px] font-bold rounded-lg border transition flex items-center gap-1 cursor-pointer ${
                             canVerify
                               ? 'bg-sky-50 hover:bg-sky-100 text-sky-800 border-sky-200 shadow-3xs'
@@ -1080,7 +1085,7 @@ export function ChecklistDrillDownView({
                             {!hiddenChecklistGraphics[activeGroup.id] ? (
                               <div 
                                 onClick={() => onOpenChecklist(activeGroup, sub, chk)}
-                                className="shrink-0 transition-all duration-200 animate-in zoom-in-95 cursor-pointer hover:scale-110 active:scale-95 relative group/chk-graphic rounded-full p-1 hover:bg-slate-100"
+                                className="shrink-0 transition-all duration-200 animate-in zoom-in-95 cursor-pointer relative group/chk-graphic rounded-full p-1 hover:bg-slate-100"
                                 title="Click to Review/Edit Checklist details"
                               >
                                 {renderChecklistDonutChart(chk)}
@@ -1091,7 +1096,7 @@ export function ChecklistDrillDownView({
                             ) : (
                               <div 
                                 onClick={() => onOpenChecklist(activeGroup, sub, chk)}
-                                className="shrink-0 w-16 h-16 rounded-full border border-dashed border-slate-300 flex items-center justify-center bg-slate-50 text-slate-400 cursor-pointer hover:bg-slate-100 hover:border-sky-400 hover:text-sky-600 transition-all active:scale-95 relative group/chk-graphic" 
+                                className="shrink-0 w-16 h-16 rounded-full border border-dashed border-slate-300 flex items-center justify-center bg-slate-50 text-slate-400 cursor-pointer hover:bg-slate-100 hover:border-sky-400 hover:text-sky-600 transition-all relative group/chk-graphic" 
                                 title="Progress chart is hidden - Click to Review/Edit Checklist details"
                               >
                                 <EyeOff className="w-4 h-4 text-slate-400 group-hover/chk-graphic:hidden" />
@@ -2058,7 +2063,7 @@ export function ChecklistDrillDownView({
                   {trendData.slice().reverse().map((day) => (
                     <div 
                       key={day.fullDate} 
-                      className={`p-4 rounded-2xl border bg-white shadow-3xs flex flex-col justify-between transition-all hover:scale-[1.01] ${
+                      className={`p-4 rounded-2xl border bg-white shadow-3xs flex flex-col justify-between transition-all ${
                         day.fullDate === dayData.date
                           ? 'ring-2 ring-indigo-500/25 border-indigo-400 bg-indigo-50/5'
                           : 'border-slate-200'
@@ -2201,6 +2206,94 @@ export function ChecklistDrillDownView({
           </div>
         </div>
       )}
+
+      {/* Free-Text Prompt Modal for Verifying & Closing Individual Operational Group */}
+      {verifyingGroupId && (() => {
+        const targetGroup = dayData.groups.find(g => g.id === verifyingGroupId);
+        if (!targetGroup) return null;
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+            <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden p-6 space-y-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-9 h-9 rounded-xl bg-sky-100 text-sky-700 flex items-center justify-center">
+                    <ShieldCheck className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <h3 className="text-base font-extrabold text-slate-900">
+                      Verify & Close Group
+                    </h3>
+                    <p className="text-xs text-slate-500 font-mono">
+                      {targetGroup.name} (ID: {targetGroup.id})
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setVerifyingGroupId(null)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="p-3 bg-sky-50/70 border border-sky-200 rounded-xl text-xs text-sky-950 space-y-1">
+                <div className="font-bold flex items-center gap-1.5">
+                  <span>Authorize Operational Stage</span>
+                </div>
+                <p className="text-[11px] text-sky-900/80 leading-relaxed">
+                  Please provide supervisor remarks and handover notes to authorize and close this operational section.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+                  Supervisor Handover & Verification Remarks (Free Text)
+                </label>
+                <textarea
+                  id="group-verification-remarks-input"
+                  autoFocus
+                  value={groupVerificationRemarks}
+                  onChange={e => setGroupVerificationRemarks(e.target.value)}
+                  placeholder="e.g. Ground handling completed smoothly on Stand 12. Turnaround baggage reconciled; GSE cleared without damage."
+                  rows={4}
+                  className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 transition shadow-inner resize-none"
+                />
+                <div className="flex justify-between text-[10px] text-slate-400 mt-1 font-mono">
+                  <span>Enter optional or detailed operational observations</span>
+                  <span>{groupVerificationRemarks.length} chars</span>
+                </div>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2.5">
+                <button
+                  id="btn-cancel-verify-group"
+                  type="button"
+                  onClick={() => setVerifyingGroupId(null)}
+                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  id="btn-confirm-verify-group-submit"
+                  type="button"
+                  onClick={() => {
+                    const finalNotes = groupVerificationRemarks.trim() || 'Verified and authorized by Duty Supervisor via operational cockpit.';
+                    onVerifyGroup(targetGroup.id, finalNotes);
+                    setVerifyingGroupId(null);
+                    setGroupVerificationRemarks('');
+                  }}
+                  className="px-5 py-2.5 bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-xs transition flex items-center gap-2 cursor-pointer"
+                >
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>Verify & Lock Group</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 }

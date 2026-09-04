@@ -12,6 +12,7 @@ import {
 import {
   DEFAULT_USERS,
   createInitialDayData,
+  sanitizeDayData,
   makeItem,
   FLIGHT_CODES,
   cleanSampleSubGroups,
@@ -24,6 +25,7 @@ import {
   updateUserPasswordInFirebase,
   resetUserPasswordInFirebase,
   saveDayDataToFirestore,
+  saveDayDataToFirestoreConfirmed,
   propagateAdminGroupChangesToActiveShifts,
   loadDayDataFromFirestore,
   ensureDateWindowInitialized,
@@ -555,17 +557,29 @@ export function getTodayDateString(): string {
 }
 
 export function loadDayData(dateStr: string): DayOperationalData {
-  // Always return the fresh initial DayData template as the shell.
-  // The React client's real-time listeners for Firestore will immediately hydradate
-  // the state with up-to-date document states directly from Firebase.
+  if (typeof window !== 'undefined') {
+    try {
+      const raw = localStorage.getItem(`aviation_day_data_${dateStr}`);
+      if (raw) {
+        const parsed = JSON.parse(raw) as DayOperationalData;
+        if (parsed && parsed.groups && parsed.groups.length > 0) {
+          return sanitizeDayData(parsed);
+        }
+      }
+    } catch {}
+  }
   return createInitialDayData(dateStr);
 }
 
 export function saveDayData(data: DayOperationalData): void {
   data.lastUpdated = new Date().toISOString();
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(`aviation_day_data_${data.date}`, safeJsonStringify(data));
+    } catch {}
+  }
   try {
     saveDayDataToFirestore(data);
-    propagateAdminGroupChangesToActiveShifts(data);
   } catch (err) {
     console.warn('saveDayData error:', err);
   }
@@ -766,6 +780,8 @@ export function getChecklistProgress(chk: Checklist): {
   incorrectlyExecuted: number;
   pending: number;
   percent: number;
+  mandatorySkipped: number;
+  optionalSkipped: number;
 } {
   const items = chk.items || [];
   const total = items.length;
@@ -775,9 +791,11 @@ export function getChecklistProgress(chk: Checklist): {
   const missed = items.filter((i) => i.status === 'missed').length;
   const incorrectlyExecuted = items.filter((i) => i.status === 'incorrectly_executed').length;
   const pending = items.filter((i) => i.status === 'not_done').length;
+  const mandatorySkipped = items.filter((i) => i.status === 'skipped' && i.isMandatory).length;
+  const optionalSkipped = items.filter((i) => i.status === 'skipped' && !i.isMandatory).length;
   const processed = done + skipped + missed + incorrectlyExecuted;
   const percent = total > 0 ? Math.round((processed / total) * 100) : 100;
-  return { done, total, skipped, pinned, missed, incorrectlyExecuted, pending, percent };
+  return { done, total, skipped, pinned, missed, incorrectlyExecuted, pending, percent, mandatorySkipped, optionalSkipped };
 }
 
 export function getChecklistStatusDisplay(chk: Checklist): {
@@ -1258,3 +1276,5 @@ export function exportNonComplianceReportToExcel(
 
   XLSX.writeFile(wb, `Aviation_NonCompliance_Report_${startDate}_to_${endDate}.xlsx`);
 }
+
+export { saveDayDataToFirestoreConfirmed };

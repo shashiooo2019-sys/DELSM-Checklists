@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Checklist, ChecklistItem, UserAccount } from '@/types/aviation';
+import { Checklist, ChecklistItem, ChecklistStatus, UserAccount } from '@/types/aviation';
 import { ConfirmModal, ConfirmModalState } from './ConfirmModal';
 import confetti from 'canvas-confetti';
 import { soundEffects } from '@/lib/soundEffects';
@@ -30,7 +30,10 @@ import {
   Layers,
   CheckCircle2,
   Volume2,
-  VolumeX
+  VolumeX,
+  Loader2,
+  Cloud,
+  CloudOff
 } from 'lucide-react';
 
 interface ChecklistCarouselModalProps {
@@ -40,7 +43,7 @@ interface ChecklistCarouselModalProps {
   subGroupName: string;
   currentUser: UserAccount | null;
   onClose: () => void;
-  onSaveChecklist: (updatedChecklist: Checklist) => void;
+  onSaveChecklist: (updatedChecklist: Checklist) => Promise<{ success: boolean; error?: string }> | void;
   isShiftClosed?: boolean;
 }
 
@@ -84,7 +87,7 @@ function ChecklistCarouselContent({
   subGroupName: string;
   currentUser: UserAccount | null;
   onClose: () => void;
-  onSaveChecklist: (updatedChecklist: Checklist) => void;
+  onSaveChecklist: (updatedChecklist: Checklist) => Promise<{ success: boolean; error?: string }> | void;
   isShiftClosed?: boolean;
 }) {
   const [items, setItems] = useState<ChecklistItem[]>(() => checklist.items.map((i) => ({ ...i })));
@@ -96,6 +99,8 @@ function ChecklistCarouselContent({
   const [skipAlert, setSkipAlert] = useState<string | null>(null);
   const [isSkipReasonModalOpen, setIsSkipReasonModalOpen] = useState<boolean>(false);
   const [skipReasonText, setSkipReasonText] = useState<string>('');
+  const [isSkippingMandatory, setIsSkippingMandatory] = useState<boolean>(false);
+  const [skipReasonError, setSkipReasonError] = useState<string | null>(null);
   
   // Non-compliance (Missed / Incorrectly Executed) remark sub-modal
   const [isNonComplianceModalOpen, setIsNonComplianceModalOpen] = useState<boolean>(false);
@@ -109,6 +114,11 @@ function ChecklistCarouselContent({
   const [isRemarksModalOpen, setIsRemarksModalOpen] = useState<boolean>(false);
   const [remarksText, setRemarksText] = useState<string>(() => checklist.remarks || '');
   const [remarksError, setRemarksError] = useState<string | null>(null);
+
+  // Firestore Cloud Sync Verification State before yay and celebration
+  const [isSubmittingToCloud, setIsSubmittingToCloud] = useState<boolean>(false);
+  const [cloudSyncError, setCloudSyncError] = useState<string | null>(null);
+  const [isCloudSyncSuccess, setIsCloudSyncSuccess] = useState<boolean>(false);
 
   // Full Screen Mode State (Default to Full Screen for focused execution)
   const [isFullScreen, setIsFullScreen] = useState<boolean>(true);
@@ -439,6 +449,29 @@ function ChecklistCarouselContent({
     }
   };
 
+  // Helper to persist checklist progress immediately on every item change
+  const persistChecklistProgress = (updatedItems: ChecklistItem[], forceCompleted?: boolean) => {
+    const isAllProcessed = updatedItems.length > 0 && updatedItems.every((i) => i.status !== 'not_done' && i.status !== 'pinned');
+    const isAnyActive = updatedItems.some((i) => i.status !== 'not_done');
+    const computedStatus: ChecklistStatus = forceCompleted
+      ? 'completed'
+      : checklist.status === 'completed'
+      ? 'completed'
+      : isAllProcessed
+      ? 'in_progress'
+      : isAnyActive
+      ? 'in_progress'
+      : 'pending';
+
+    const updatedChecklist: Checklist = {
+      ...checklist,
+      items: updatedItems,
+      status: computedStatus,
+      remarks: remarksText.trim() || checklist.remarks,
+    };
+    onSaveChecklist(updatedChecklist);
+  };
+
   const handleMarkDone = () => {
     if (!currentItem) return;
     
@@ -454,6 +487,7 @@ function ChecklistCarouselContent({
     };
     setItems(updated);
     setSkipAlert(null);
+    persistChecklistProgress(updated);
 
     // Auto-advance if not on last item
     if (currentIndex < totalItems - 1) {
@@ -487,6 +521,7 @@ function ChecklistCarouselContent({
     };
     setItems(updated);
     setSkipAlert(null);
+    persistChecklistProgress(updated);
 
     // Advance to next card to break sequence
     if (currentIndex < totalItems - 1) {
@@ -496,27 +531,30 @@ function ChecklistCarouselContent({
 
   const handleAttemptSkip = () => {
     if (!currentItem) return;
-    if (currentItem.isMandatory) {
-      setSkipAlert('MANDATORY SAFETY VIOLATION: This item is flagged as Mandatory and cannot be skipped under ground safety protocols. Complete item or consult your Duty Supervisor.');
-      return;
-    }
-
-    // If optional, open skip reason modal
+    setIsSkippingMandatory(!!currentItem.isMandatory);
     setSkipReasonText('');
+    setSkipReasonError(null);
+    setSkipAlert(null);
     setIsSkipReasonModalOpen(true);
   };
 
   const handleConfirmSkip = () => {
     if (!currentItem) return;
+    if (isSkippingMandatory && !skipReasonText.trim()) {
+      setSkipReasonError('Operational justification / reason is mandatory to authorize skipping this safety check.');
+      return;
+    }
+
     const updated = [...items];
     updated[currentIndex] = {
       ...currentItem,
       status: 'skipped',
-      skipReason: skipReasonText.trim() || 'Optional item skipped by operator',
+      skipReason: skipReasonText.trim() || (isSkippingMandatory ? 'Mandatory safety check bypassed by operator' : 'Optional check skipped by operator'),
       actionBy: currentUser ? `${currentUser.name} (${currentUser.uNumber})` : 'Airside Operator',
       actionAt: new Date().toISOString(),
     };
     setItems(updated);
+    persistChecklistProgress(updated);
     setIsSkipReasonModalOpen(false);
     setSkipAlert(null);
 
@@ -549,6 +587,7 @@ function ChecklistCarouselContent({
       actionAt: new Date().toISOString(),
     };
     setItems(updated);
+    persistChecklistProgress(updated);
     setIsNonComplianceModalOpen(false);
     setNonComplianceRemarkText('');
     setNonComplianceError(null);
@@ -635,6 +674,22 @@ function ChecklistCarouselContent({
   const missedCount = items.filter((i) => i.status === 'missed').length;
   const incorrectlyCount = items.filter((i) => i.status === 'incorrectly_executed').length;
   
+  const mandatorySkippedItems = items.filter((i) => i.status === 'skipped' && i.isMandatory);
+  const mandatorySkippedCount = mandatorySkippedItems.length;
+  const optionalSkippedItems = items.filter((i) => i.status === 'skipped' && !i.isMandatory);
+  const optionalSkippedCount = optionalSkippedItems.length;
+  const nonCompliantItems = items.filter((i) => i.status === 'missed' || i.status === 'incorrectly_executed');
+
+  // Donut chart arc calculations
+  const donutSize = 34;
+  const donutStrokeWidth = 3;
+  const donutRadius = (donutSize - donutStrokeWidth) / 2;
+  const donutCircumference = 2 * Math.PI * donutRadius;
+  const strokeDone = totalItems > 0 ? (doneCount / totalItems) * donutCircumference : 0;
+  const strokeExceptions = totalItems > 0 ? ((skippedCount + pinnedCount) / totalItems) * donutCircumference : 0;
+  const strokeIssues = totalItems > 0 ? ((missedCount + incorrectlyCount) / totalItems) * donutCircumference : 0;
+  const percentComplete = totalItems > 0 ? Math.round(((doneCount + skippedCount + missedCount + incorrectlyCount) / totalItems) * 100) : 0;
+
   // A checklist can be submitted when all items are processed (none are pinned or not_done)
   const canSubmit = pinnedCount === 0 && notDoneCount === 0;
 
@@ -644,7 +699,7 @@ function ChecklistCarouselContent({
     setIsRemarksModalOpen(true);
   };
 
-  const handleFinalSubmit = () => {
+  const handleFinalSubmit = async () => {
     if (!remarksText.trim()) {
       setRemarksError('Free-text remarks are mandatory prior to finalizing checklist submission (e.g., Gate/Stand condition, GSE notes, clearance remarks).');
       return;
@@ -659,38 +714,61 @@ function ChecklistCarouselContent({
       remarks: remarksText.trim(),
     };
 
-    // Play celebratory "Yay!" victory fanfare jingle
-    soundEffects.playYayJingle();
+    setIsSubmittingToCloud(true);
+    setCloudSyncError(null);
+    setRemarksError(null);
 
-    // Trigger celebration confetti / party poppers display
     try {
-      confetti({
-        particleCount: 100,
-        spread: 70,
-        origin: { y: 0.6 },
-      });
-      // Second staggered burst for realistic party poppers effect
-      setTimeout(() => {
-        try {
-          confetti({
-            particleCount: 60,
-            angle: 60,
-            spread: 55,
-            origin: { x: 0 },
-          });
-          confetti({
-            particleCount: 60,
-            angle: 120,
-            spread: 55,
-            origin: { x: 1 },
-          });
-        } catch {}
-      }, 250);
-    } catch {}
+      // 1. Confirm that all data is saved to Firestore and in sync with Cloud before celebrating
+      const res = await onSaveChecklist(updatedChecklist);
+      if (res && res.success === false) {
+        setIsSubmittingToCloud(false);
+        setCloudSyncError(res.error || 'Checklist data could not be saved to Firestore database. Data is not yet in sync with the cloud.');
+        return;
+      }
 
-    onSaveChecklist(updatedChecklist);
-    setIsRemarksModalOpen(false);
-    onClose();
+      // 2. Data is confirmed saved and in sync with Firestore Cloud!
+      setIsSubmittingToCloud(false);
+      setIsCloudSyncSuccess(true);
+
+      // 3. Play celebratory "Yay!" victory fanfare jingle
+      soundEffects.playYayJingle();
+
+      // 4. Trigger celebration confetti / party poppers display
+      try {
+        confetti({
+          particleCount: 120,
+          spread: 80,
+          origin: { y: 0.6 },
+        });
+        // Second staggered burst for realistic party poppers effect
+        setTimeout(() => {
+          try {
+            confetti({
+              particleCount: 65,
+              angle: 60,
+              spread: 55,
+              origin: { x: 0 },
+            });
+            confetti({
+              particleCount: 65,
+              angle: 120,
+              spread: 55,
+              origin: { x: 1 },
+            });
+          } catch {}
+        }, 250);
+      } catch {}
+
+      // 5. Allow operator to view confirmation and celebration before modal dismiss
+      setTimeout(() => {
+        setIsRemarksModalOpen(false);
+        onClose();
+      }, 2000);
+    } catch (err: any) {
+      setIsSubmittingToCloud(false);
+      setCloudSyncError(err instanceof Error ? err.message : 'Error communicating with Firestore cloud server.');
+    }
   };
 
   const handleSaveProgressDraft = () => {
@@ -1046,10 +1124,10 @@ function ChecklistCarouselContent({
                 id="btn-toggle-fullscreen"
                 type="button"
                 onClick={() => setIsFullScreen(true)}
-                className="px-2.5 sm:px-3 py-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-lg transition-all text-xs font-black flex items-center gap-1.5 shadow-sm hover:shadow-md border border-blue-400/40 cursor-pointer active:scale-95 group"
+                className="px-2.5 sm:px-3 py-1 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white rounded-lg transition-all text-xs font-black flex items-center gap-1.5 shadow-sm hover:shadow-md border border-blue-400/40 cursor-pointer group"
                 title="Expand to Full Screen Mode (All buttons hidden, gestures enabled, [F] shortcut)"
               >
-                <Maximize2 className="w-3.5 h-3.5 text-sky-200 group-hover:scale-110 transition-transform" />
+                <Maximize2 className="w-3.5 h-3.5 text-sky-200" />
                 <span className="text-xs tracking-tight font-extrabold">Full Screen</span>
                 <span className="hidden sm:inline text-[10px] font-mono px-1 py-0.2 rounded bg-blue-900/60 border border-blue-400/30 text-sky-200">
                   F
@@ -1123,8 +1201,8 @@ function ChecklistCarouselContent({
             </div>
           )}
 
-          {/* Streamlined Step Details & Progress Bar (Reduced Vertical Space) */}
-          <div className="px-3 sm:px-5 py-1 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs text-slate-600 shrink-0 gap-2">
+          {/* Streamlined Step Details & Donut Progress Arc */}
+          <div className="px-3 sm:px-5 py-1.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between text-xs text-slate-600 shrink-0 gap-2">
             <div className="flex items-center gap-2 font-mono">
               <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[11px] font-black border border-blue-200">
                 STEP {currentIndex + 1} OF {totalItems}
@@ -1137,39 +1215,93 @@ function ChecklistCarouselContent({
               )}
             </div>
 
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] text-slate-500 hidden sm:flex items-center gap-1">
-                <span>Done: <strong className="text-emerald-700 font-bold">{doneCount}</strong></span>
-                <span>·</span>
-                <span>Skip: <strong className="text-slate-700 font-semibold">{skippedCount}</strong></span>
-                {(missedCount > 0 || incorrectlyCount > 0) && (
-                  <>
-                    <span>·</span>
-                    <span className="text-rose-700 font-bold">Issues: {missedCount + incorrectlyCount}</span>
-                  </>
-                )}
-              </span>
-              <div className="w-20 sm:w-28 h-1.5 bg-slate-200 rounded-full overflow-hidden flex shadow-2xs">
-                <div 
-                  className="h-full bg-emerald-600 transition-all duration-300"
-                  style={{ width: `${Math.round((doneCount / totalItems) * 100)}%` }}
-                />
-                {(skippedCount + pinnedCount) > 0 && (
-                  <div 
-                    className="h-full bg-amber-500 transition-all duration-300"
-                    style={{ width: `${Math.round(((skippedCount + pinnedCount) / totalItems) * 100)}%` }}
+            {/* Dynamic Progress Arc Donut Chart */}
+            <div className="flex items-center gap-3">
+              <div 
+                id="modal-header-donut-progress"
+                className="relative flex items-center justify-center shrink-0" 
+                style={{ width: donutSize, height: donutSize }}
+                title={`Progress: ${percentComplete}% completed (${doneCount} done, ${skippedCount} skipped, ${missedCount + incorrectlyCount} non-compliant)`}
+              >
+                <svg width={donutSize} height={donutSize} className="transform -rotate-90">
+                  {/* Background Track */}
+                  <circle
+                    cx={donutSize / 2}
+                    cy={donutSize / 2}
+                    r={donutRadius}
+                    fill="none"
+                    stroke="#E2E8F0"
+                    strokeWidth={donutStrokeWidth}
                   />
-                )}
-                {(missedCount > 0 || incorrectlyCount > 0) && (
-                  <div 
-                    className="h-full bg-rose-600 transition-all duration-300"
-                    style={{ width: `${Math.round(((missedCount + incorrectlyCount) / totalItems) * 100)}%` }}
-                  />
-                )}
+                  {/* Compliant Done Arc (Emerald) */}
+                  {strokeDone > 0 && (
+                    <circle
+                      cx={donutSize / 2}
+                      cy={donutSize / 2}
+                      r={donutRadius}
+                      fill="none"
+                      stroke="#10B981"
+                      strokeWidth={donutStrokeWidth}
+                      strokeDasharray={`${strokeDone} ${donutCircumference}`}
+                      strokeDashoffset={0}
+                      strokeLinecap="round"
+                      className="transition-all duration-300 ease-out"
+                    />
+                  )}
+                  {/* Exception Skipped/Pinned Arc (Amber) */}
+                  {strokeExceptions > 0 && (
+                    <circle
+                      cx={donutSize / 2}
+                      cy={donutSize / 2}
+                      r={donutRadius}
+                      fill="none"
+                      stroke="#F59E0B"
+                      strokeWidth={donutStrokeWidth}
+                      strokeDasharray={`${strokeExceptions} ${donutCircumference}`}
+                      strokeDashoffset={-strokeDone}
+                      strokeLinecap="round"
+                      className="transition-all duration-300 ease-out"
+                    />
+                  )}
+                  {/* Non-compliance Issues Arc (Rose) */}
+                  {strokeIssues > 0 && (
+                    <circle
+                      cx={donutSize / 2}
+                      cy={donutSize / 2}
+                      r={donutRadius}
+                      fill="none"
+                      stroke="#EF4444"
+                      strokeWidth={donutStrokeWidth}
+                      strokeDasharray={`${strokeIssues} ${donutCircumference}`}
+                      strokeDashoffset={-(strokeDone + strokeExceptions)}
+                      strokeLinecap="round"
+                      className="transition-all duration-300 ease-out"
+                    />
+                  )}
+                </svg>
+                <span className="absolute text-[9px] font-mono font-black text-slate-800 leading-none">
+                  {percentComplete}%
+                </span>
               </div>
-              <span className="text-[10px] font-mono font-black text-slate-700">
-                {totalItems > 0 ? Math.round(((doneCount + skippedCount + pinnedCount) / totalItems) * 100) : 0}%
-              </span>
+
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[11px] text-slate-500 hidden sm:flex items-center gap-1">
+                  <span>Done: <strong className="text-emerald-700 font-bold">{doneCount}</strong></span>
+                  <span>·</span>
+                  <span>Skip: <strong className="text-slate-700 font-semibold">{skippedCount}</strong></span>
+                  {mandatorySkippedCount > 0 && (
+                    <span className="ml-1 px-1.5 py-0.2 rounded bg-amber-100 text-amber-900 font-bold text-[10px] border border-amber-300">
+                      ⚠️ {mandatorySkippedCount} Mand. Skip
+                    </span>
+                  )}
+                  {(missedCount > 0 || incorrectlyCount > 0) && (
+                    <>
+                      <span>·</span>
+                      <span className="text-rose-700 font-bold">Issues: {missedCount + incorrectlyCount}</span>
+                    </>
+                  )}
+                </span>
+              </div>
             </div>
           </div>
 
@@ -1704,30 +1836,77 @@ function ChecklistCarouselContent({
         </div>
       )}
 
-      {/* Optional Skip Reason Sub-Modal */}
+      {/* Skip Reason Sub-Modal (Mandatory & Optional) */}
       {isSkipReasonModalOpen && (
-        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+        <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
           <div className="w-full max-w-md bg-white border border-slate-200 rounded-2xl p-6 space-y-4 shadow-2xl">
             <div className="flex items-center gap-2 text-slate-900 font-bold">
-              <HelpCircle className="w-5 h-5 text-sky-600" />
-              <h3>Optional Item Skip Note</h3>
+              {isSkippingMandatory ? (
+                <>
+                  <div className="w-8 h-8 rounded-lg bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                    <ShieldAlert className="w-5 h-5 text-amber-700" />
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-amber-950">Mandatory Safety Check Skip</h3>
+                    <span className="text-[10px] font-mono text-amber-700 uppercase font-black tracking-wider">Supervisor Authorization Required</span>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <HelpCircle className="w-5 h-5 text-sky-600" />
+                  <h3 className="text-sm font-bold">Optional Item Skip Note</h3>
+                </>
+              )}
             </div>
-            <p className="text-xs text-slate-600">
-              Please specify the operational rationale for skipping this optional check (e.g. equipment not fitted, stand bypass):
-            </p>
-            <input
-              type="text"
-              placeholder="e.g. Not applicable to this flight configuration"
-              value={skipReasonText}
-              onChange={(e) => setSkipReasonText(e.target.value)}
-              className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:bg-white"
-              autoFocus
-            />
+
+            {isSkippingMandatory ? (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 leading-relaxed">
+                <strong className="font-bold">Airside Safety Rule:</strong> This item is designated as <span className="underline font-bold">MANDATORY</span>. To bypass, you must record an operational justification or supervisor authorization note:
+              </div>
+            ) : (
+              <p className="text-xs text-slate-600">
+                Please specify the operational rationale for skipping this optional check (e.g. equipment not fitted, stand bypass):
+              </p>
+            )}
+
+            {skipReasonError && (
+              <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-center gap-1.5 animate-in shake">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{skipReasonError}</span>
+              </div>
+            )}
+
+            <div>
+              <label className="block text-[11px] font-bold text-slate-700 uppercase tracking-wide mb-1">
+                {isSkippingMandatory ? 'Reason / Justification for Skipping (Mandatory)' : 'Skip Reason (Optional)'}
+              </label>
+              <textarea
+                rows={3}
+                placeholder={
+                  isSkippingMandatory
+                    ? 'e.g. Authorized by Duty Supervisor due to stand B14 bridge malfunction; manual visual inspection confirmed.'
+                    : 'e.g. Not applicable to this flight configuration'
+                }
+                value={skipReasonText}
+                onChange={(e) => {
+                  setSkipReasonText(e.target.value);
+                  if (skipReasonError) setSkipReasonError(null);
+                }}
+                className={`w-full p-3 bg-slate-50 border ${
+                  isSkippingMandatory && !skipReasonText.trim() ? 'border-amber-300' : 'border-slate-200'
+                } rounded-xl text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 focus:bg-white placeholder:text-slate-400 font-sans`}
+                autoFocus
+              />
+            </div>
+
             <div className="flex items-center justify-end gap-2 pt-2">
               <button
                 type="button"
-                onClick={() => setIsSkipReasonModalOpen(false)}
-                className="px-3 py-2 text-xs font-bold text-slate-500 hover:text-slate-800"
+                onClick={() => {
+                  setIsSkipReasonModalOpen(false);
+                  setSkipReasonError(null);
+                }}
+                className="px-3.5 py-2 text-xs font-bold text-slate-500 hover:text-slate-800"
               >
                 Cancel
               </button>
@@ -1735,9 +1914,14 @@ function ChecklistCarouselContent({
                 id="btn-confirm-skip"
                 type="button"
                 onClick={handleConfirmSkip}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs rounded-xl shadow-sm"
+                className={`px-5 py-2 text-white font-bold text-xs rounded-xl shadow-sm transition flex items-center gap-1.5 ${
+                  isSkippingMandatory
+                    ? 'bg-amber-600 hover:bg-amber-700'
+                    : 'bg-slate-800 hover:bg-slate-900'
+                }`}
               >
-                Confirm Skip
+                <Check className="w-3.5 h-3.5" />
+                <span>{isSkippingMandatory ? 'Authorize & Confirm Skip' : 'Confirm Skip'}</span>
               </button>
             </div>
           </div>
@@ -1749,20 +1933,106 @@ function ChecklistCarouselContent({
         <div className="fixed inset-0 z-[120] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
           <div 
             id="mandatory-remarks-modal-container"
-            className="w-full max-w-lg bg-white border border-slate-200 rounded-2xl p-6 space-y-5 shadow-2xl text-slate-900"
+            className="w-full max-w-lg bg-white border border-slate-200 rounded-2xl p-6 space-y-4 shadow-2xl text-slate-900 max-h-[92vh] overflow-y-auto"
           >
             <div className="flex items-center gap-3 pb-3 border-b border-slate-100">
               <div className="w-10 h-10 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-700 flex items-center justify-center shadow-2xs">
                 <MessageSquare className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-base font-bold text-slate-900">Final Checklist Remarks (Mandatory)</h3>
+                <h3 className="text-base font-bold text-slate-900">Checklist Summary & Remarks (Mandatory)</h3>
                 <p className="text-xs text-slate-500">
-                  {(missedCount > 0 || incorrectlyCount > 0) 
-                    ? `Summary: Completed with Missed/Incorrect execution (${missedCount} Missed, ${incorrectlyCount} Incorrectly Executed)` 
-                    : 'Record operational shift notes before official sign-off'}
+                  Review checklist items status summary and record operational remarks before sign-off
                 </p>
               </div>
+            </div>
+
+            {/* Checklist Execution Status Summary Breakdown */}
+            <div className="space-y-2.5">
+              {/* 1. Compliant Items summary */}
+              <div className="p-2.5 bg-emerald-50/70 border border-emerald-200 rounded-xl flex items-center justify-between text-xs text-emerald-900">
+                <span className="flex items-center gap-1.5 font-bold">
+                  <Check className="w-4 h-4 text-emerald-600 stroke-[2.5]" />
+                  Compliant Items Done:
+                </span>
+                <span className="font-mono font-black text-emerald-800 bg-white px-2 py-0.5 rounded-md border border-emerald-200">
+                  {doneCount} / {totalItems}
+                </span>
+              </div>
+
+              {/* 2. Mandatory Items Skipped Breakdown */}
+              {mandatorySkippedCount > 0 && (
+                <div className="p-3 bg-amber-50 border-2 border-amber-300 rounded-xl space-y-2 text-xs text-amber-950 shadow-2xs">
+                  <div className="flex items-center justify-between font-bold">
+                    <span className="flex items-center gap-1.5 text-amber-900">
+                      <ShieldAlert className="w-4 h-4 text-amber-600" />
+                      Mandatory Safety Items Skipped ({mandatorySkippedCount})
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-amber-200 text-amber-950 font-mono font-black">
+                      BYPASS LOGGED
+                    </span>
+                  </div>
+                  <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                    {mandatorySkippedItems.map((item, idx) => (
+                      <div key={item.id || idx} className="p-2 bg-white rounded-lg border border-amber-200 text-[11px] space-y-0.5">
+                        <div className="font-bold text-slate-900 line-clamp-2">
+                          #{item.sequenceOrder}. {item.text}
+                        </div>
+                        <div className="text-amber-800 font-medium">
+                          <span className="font-bold">Reason:</span> {item.skipReason || 'Operational justification logged by operator'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 3. Non-Compliant Items Breakdown (Missed or Incorrectly Executed) */}
+              {nonCompliantItems.length > 0 && (
+                <div className="p-3 bg-rose-50 border-2 border-rose-300 rounded-xl space-y-2 text-xs text-rose-950 shadow-2xs">
+                  <div className="flex items-center justify-between font-bold">
+                    <span className="flex items-center gap-1.5 text-rose-900">
+                      <AlertTriangle className="w-4 h-4 text-rose-600" />
+                      Non-Compliant Items ({nonCompliantItems.length})
+                    </span>
+                    <span className="px-2 py-0.5 rounded bg-rose-200 text-rose-950 font-mono font-black">
+                      NON-COMPLIANCE
+                    </span>
+                  </div>
+                  <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
+                    {nonCompliantItems.map((item, idx) => (
+                      <div key={item.id || idx} className="p-2 bg-white rounded-lg border border-rose-200 text-[11px] space-y-0.5">
+                        <div className="flex items-center justify-between gap-1">
+                          <span className="font-bold text-slate-900 line-clamp-1">
+                            #{item.sequenceOrder}. {item.text}
+                          </span>
+                          <span className={`px-1.5 py-0.2 rounded text-[9px] font-black uppercase tracking-wider shrink-0 ${
+                            item.status === 'missed' ? 'bg-rose-100 text-rose-800 border border-rose-300' : 'bg-amber-100 text-amber-800 border border-amber-300'
+                          }`}>
+                            {item.status === 'missed' ? 'Missed' : 'Incorrect'}
+                          </span>
+                        </div>
+                        <div className="text-rose-800 font-medium font-mono text-[10px]">
+                          <span className="font-bold">Remark:</span> {item.remark || 'Flagged during execution'}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* 4. Optional Skipped Items Summary */}
+              {optionalSkippedCount > 0 && (
+                <div className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs text-slate-700">
+                  <span className="flex items-center gap-1.5">
+                    <HelpCircle className="w-3.5 h-3.5 text-slate-500" />
+                    Optional Items Skipped:
+                  </span>
+                  <span className="font-mono font-bold text-slate-800 bg-white px-2 py-0.5 rounded border border-slate-200">
+                    {optionalSkippedCount}
+                  </span>
+                </div>
+              )}
             </div>
 
             {remarksError && (
@@ -1772,17 +2042,66 @@ function ChecklistCarouselContent({
               </div>
             )}
 
-            <div className="space-y-2">
+            {/* Cloud Sync Failure Prompt with Retry */}
+            {cloudSyncError && (
+              <div className="p-3.5 bg-rose-50 border-2 border-rose-300 text-rose-900 text-xs rounded-xl space-y-2 animate-in fade-in">
+                <div className="flex items-start gap-2.5">
+                  <CloudOff className="w-5 h-5 text-rose-600 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <div className="font-bold text-rose-950">Firestore Cloud Sync Failed</div>
+                    <p className="text-rose-800 text-[11px] leading-relaxed">
+                      {cloudSyncError}
+                    </p>
+                    <p className="text-rose-900 font-semibold text-[11px]">
+                      Data is not saved to the cloud yet. Please retry submission to ensure the Firestore database is fully updated and in sync before confirming completion.
+                    </p>
+                  </div>
+                </div>
+                <div className="pt-1 flex justify-end">
+                  <button
+                    id="btn-retry-cloud-sync"
+                    type="button"
+                    disabled={isSubmittingToCloud}
+                    onClick={handleFinalSubmit}
+                    className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
+                  >
+                    {isSubmittingToCloud ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
+                    <span>Retry Cloud Submission & Sync</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Cloud Sync in progress */}
+            {isSubmittingToCloud && (
+              <div className="p-3 bg-sky-50 border border-sky-200 text-sky-900 text-xs rounded-xl flex items-center gap-2.5 animate-pulse">
+                <Loader2 className="w-4 h-4 text-sky-600 animate-spin shrink-0" />
+                <span className="font-semibold">Saving & verifying synchronization with Firestore Cloud Database...</span>
+              </div>
+            )}
+
+            {/* Cloud Sync Success Banner */}
+            {isCloudSyncSuccess && (
+              <div className="p-3 bg-emerald-50 border-2 border-emerald-300 text-emerald-950 text-xs rounded-xl flex items-center gap-2.5 animate-in zoom-in-95">
+                <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                <div>
+                  <div className="font-bold">✓ Firestore Cloud Verified & Synced!</div>
+                  <p className="text-[11px] text-emerald-800">Checklist successfully saved and confirmed with Firestore cloud database.</p>
+                </div>
+              </div>
+            )}
+
+            <div className="space-y-2 pt-1">
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-700">
-                Ground Execution Notes & Aircraft Handover Remarks
+                Ground Execution Notes & Aircraft Handover Remarks (Mandatory)
               </label>
               <textarea
                 id="input-checklist-remarks"
-                rows={4}
+                rows={3}
                 placeholder="e.g. Stand B14. Chocks positioned, GPU connected, fuel hydrometer verified at 0.804 SG. Captain acknowledged and signed final electronic loadsheet with zero discrepancies."
                 value={remarksText}
                 onChange={(e) => setRemarksText(e.target.value)}
-                className="w-full p-3.5 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white placeholder:text-slate-400 leading-relaxed font-sans"
+                className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-900 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white placeholder:text-slate-400 leading-relaxed font-sans"
                 autoFocus
               />
               <p className="text-[11px] text-slate-500">
@@ -1793,8 +2112,9 @@ function ChecklistCarouselContent({
             <div className="flex items-center justify-end gap-3 pt-2">
               <button
                 type="button"
+                disabled={isSubmittingToCloud || isCloudSyncSuccess}
                 onClick={() => setIsRemarksModalOpen(false)}
-                className="px-4 py-2.5 text-xs font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition"
+                className="px-4 py-2.5 text-xs font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition disabled:opacity-50"
               >
                 Back to Cards
               </button>
@@ -1802,11 +2122,32 @@ function ChecklistCarouselContent({
               <button
                 id="btn-confirm-final-submit"
                 type="button"
+                disabled={isSubmittingToCloud || isCloudSyncSuccess}
                 onClick={handleFinalSubmit}
-                className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-sm transition flex items-center gap-2"
+                className={`px-6 py-2.5 font-bold text-xs uppercase tracking-wider rounded-xl shadow-sm transition flex items-center gap-2 ${
+                  isCloudSyncSuccess
+                    ? 'bg-emerald-700 text-white cursor-default'
+                    : isSubmittingToCloud
+                    ? 'bg-sky-600 text-white cursor-wait opacity-90'
+                    : 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer'
+                }`}
               >
-                <Check className="w-4 h-4" />
-                <span>Authorize & Sign Checklist</span>
+                {isSubmittingToCloud ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Verifying Cloud Sync...</span>
+                  </>
+                ) : isCloudSyncSuccess ? (
+                  <>
+                    <Check className="w-4 h-4" />
+                    <span>Cloud Synced & Completed!</span>
+                  </>
+                ) : (
+                  <>
+                    <Cloud className="w-4 h-4" />
+                    <span>Authorize & Sign Checklist</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

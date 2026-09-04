@@ -1148,18 +1148,22 @@ export function mergeMasterHierarchyWithExisting(
             isMandatory: item.isMandatory !== false,
           }));
 
+          const allItemsProcessed =
+            cleanedItems.length > 0 &&
+            cleanedItems.every((it) => it.status !== 'not_done' && it.status !== 'pinned');
           const isComplete =
             cleanedItems.length > 0 &&
             cleanedItems.filter((it) => it.isMandatory).every((it) => it.status === 'done' || it.status === 'skipped');
-          const hasStarted = cleanedItems.some((it) => it.status === 'done' || it.status === 'skipped');
+          const hasStarted = cleanedItems.some((it) => it.status !== 'not_done');
 
-          const newStatus = isComplete
-            ? 'completed'
-            : hasStarted
-            ? 'in_progress'
-            : existingChecklist.status === 'completed' || existingChecklist.status === 'in_progress'
-            ? existingChecklist.status
-            : 'pending';
+          const newStatus =
+            existingChecklist.status === 'completed'
+              ? 'completed'
+              : (isComplete || allItemsProcessed)
+              ? 'completed'
+              : (hasStarted || existingChecklist.status === 'in_progress')
+              ? 'in_progress'
+              : 'pending';
 
           return {
             ...existingChecklist,

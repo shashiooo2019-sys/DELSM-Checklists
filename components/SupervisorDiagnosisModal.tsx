@@ -8,6 +8,8 @@ import {
   ChevronDown, 
   Stethoscope, 
   ShieldCheck, 
+  ShieldAlert,
+  HelpCircle,
   Lock, 
   Unlock, 
   AlertTriangle, 
@@ -76,7 +78,9 @@ export function SupervisorDiagnosisModal({
     : dayData.groups.filter(g => !g.name.includes('Day Shift') && g.code !== 'DAY-OPS').every(g => isGroupComplete(g) || g.isVerified || g.isSkipped);
 
   // Gather diagnosis insights for currentGroup
-  const skippedItemsList: { subName: string; chkTitle: string; text: string; reason?: string; actionBy?: string }[] = [];
+  const nonCompliantItemsList: { subName: string; chkTitle: string; text: string; status: 'missed' | 'incorrectly_executed'; remark?: string; actionBy?: string }[] = [];
+  const mandatorySkippedList: { subName: string; chkTitle: string; text: string; reason?: string; actionBy?: string }[] = [];
+  const optionalSkippedList: { subName: string; chkTitle: string; text: string; reason?: string; actionBy?: string }[] = [];
   const remarksList: { subName: string; chkTitle: string; remarks: string; completedBy?: string; completedAt?: string }[] = [];
   const pendingItemsList: { subName: string; chkTitle: string; text: string; isMandatory: boolean }[] = [];
 
@@ -93,14 +97,33 @@ export function SupervisorDiagnosisModal({
           });
         }
         for (const item of chk.items) {
-          if (item.status === 'skipped') {
-            skippedItemsList.push({
+          if (item.status === 'missed' || item.status === 'incorrectly_executed') {
+            nonCompliantItemsList.push({
               subName: sub.name,
               chkTitle: chk.title,
               text: item.text,
-              reason: item.skipReason,
+              status: item.status,
+              remark: item.remark,
               actionBy: item.actionBy,
             });
+          } else if (item.status === 'skipped') {
+            if (item.isMandatory) {
+              mandatorySkippedList.push({
+                subName: sub.name,
+                chkTitle: chk.title,
+                text: item.text,
+                reason: item.skipReason,
+                actionBy: item.actionBy,
+              });
+            } else {
+              optionalSkippedList.push({
+                subName: sub.name,
+                chkTitle: chk.title,
+                text: item.text,
+                reason: item.skipReason,
+                actionBy: item.actionBy,
+              });
+            }
           } else if (item.status === 'not_done' || item.status === 'pinned') {
             pendingItemsList.push({
               subName: sub.name,
@@ -328,29 +351,99 @@ export function SupervisorDiagnosisModal({
                 )}
               </div>
 
-              {/* Section 2: Skipped Items Audit */}
+              {/* Section 2A: Non-Compliant Items Audit (Missed / Incorrectly Executed) */}
               <div className="space-y-3">
-                <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-amber-700" />
-                  <span>Optional Skipped Items Audit ({skippedItemsList.length})</span>
+                <h4 className="text-xs font-black uppercase tracking-wider text-rose-900 flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-600" />
+                  <span>Non-Compliant Items Audit ({nonCompliantItemsList.length})</span>
                 </h4>
 
-                {skippedItemsList.length === 0 ? (
-                  <div className="p-4 box-3d text-xs text-slate-700 flex items-center gap-2 font-bold">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    <span>Zero skipped items. All applicable checks were executed directly.</span>
+                {nonCompliantItemsList.length === 0 ? (
+                  <div className="p-3.5 box-3d text-xs text-emerald-900 bg-emerald-50/60 border-emerald-300 flex items-center gap-2 font-bold">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Zero non-compliance events recorded. All completed items adhered to airside operating standards.</span>
                   </div>
                 ) : (
                   <div className="space-y-2">
-                    {skippedItemsList.map((skip, idx) => (
-                      <div key={idx} className="p-3 bg-amber-50 border border-amber-300 rounded-xl text-xs space-y-1 shadow-2xs">
-                        <div className="flex items-center justify-between text-amber-950 font-black">
-                          <span>{skip.chkTitle}</span>
-                          <span className="text-[11px] text-slate-600 font-bold">{skip.actionBy}</span>
+                    {nonCompliantItemsList.map((item, idx) => (
+                      <div key={idx} className="p-3.5 bg-rose-50 border-2 border-rose-300 rounded-xl text-xs space-y-1.5 shadow-2xs">
+                        <div className="flex items-center justify-between text-rose-950 font-black">
+                          <span>{item.chkTitle} <span className="text-slate-500 font-normal">({item.subName})</span></span>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
+                            item.status === 'missed' ? 'bg-rose-200 text-rose-950 border border-rose-400' : 'bg-amber-200 text-amber-950 border border-amber-400'
+                          }`}>
+                            {item.status === 'missed' ? 'MISSED ❌' : 'INCORRECTLY EXECUTED ⚠️'}
+                          </span>
                         </div>
-                        <p className="text-slate-900 font-semibold">{skip.text}</p>
+                        <p className="text-slate-900 font-bold text-xs">{item.text}</p>
+                        {item.remark && (
+                          <div className="p-2 bg-white rounded-lg border border-rose-200 text-[11px] text-rose-950 font-mono">
+                            <span className="font-bold">Operator Remark:</span> {item.remark}
+                            {item.actionBy && <span className="ml-2 text-slate-500 font-sans">({item.actionBy})</span>}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Section 2B: Mandatory Items Skipped Audit */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-black uppercase tracking-wider text-amber-950 flex items-center gap-2">
+                  <ShieldAlert className="w-4 h-4 text-amber-600" />
+                  <span>Mandatory Items Skipped Audit ({mandatorySkippedList.length})</span>
+                </h4>
+
+                {mandatorySkippedList.length === 0 ? (
+                  <div className="p-3.5 box-3d text-xs text-emerald-900 bg-emerald-50/60 border-emerald-300 flex items-center gap-2 font-bold">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <span>Zero mandatory items bypassed. 100% of required ground safety checks were verified.</span>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {mandatorySkippedList.map((item, idx) => (
+                      <div key={idx} className="p-3.5 bg-amber-50 border-2 border-amber-400 rounded-xl text-xs space-y-1.5 shadow-2xs">
+                        <div className="flex items-center justify-between text-amber-950 font-black">
+                          <span>{item.chkTitle} <span className="text-slate-500 font-normal">({item.subName})</span></span>
+                          <span className="px-2 py-0.5 rounded bg-amber-200 text-amber-950 border border-amber-400 text-[10px] font-black uppercase tracking-wider">
+                            MANDATORY SAFETY BYPASS
+                          </span>
+                        </div>
+                        <p className="text-slate-900 font-bold text-xs">{item.text}</p>
+                        <div className="p-2 bg-white rounded-lg border border-amber-200 text-[11px] text-amber-950 font-medium">
+                          <span className="font-bold text-amber-900">Operational Reason / Justification:</span> {item.reason || 'Bypassed by operator'}
+                          {item.actionBy && <span className="ml-2 text-slate-500 font-sans">({item.actionBy})</span>}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Section 2C: Optional Skipped Items Audit */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-2">
+                  <HelpCircle className="w-4 h-4 text-slate-500" />
+                  <span>Optional Skipped Items Audit ({optionalSkippedList.length})</span>
+                </h4>
+
+                {optionalSkippedList.length === 0 ? (
+                  <div className="p-3.5 box-3d text-xs text-slate-700 flex items-center gap-2 font-bold">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span>Zero optional skipped items. All applicable optional checks were executed directly.</span>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {optionalSkippedList.map((skip, idx) => (
+                      <div key={idx} className="p-3 bg-slate-50 border border-slate-300 rounded-xl text-xs space-y-1 shadow-2xs">
+                        <div className="flex items-center justify-between text-slate-950 font-bold">
+                          <span>{skip.chkTitle}</span>
+                          <span className="text-[11px] text-slate-500 font-normal">{skip.actionBy}</span>
+                        </div>
+                        <p className="text-slate-800">{skip.text}</p>
                         {skip.reason && (
-                          <p className="text-amber-900 italic text-[11px] font-medium">Reason: {skip.reason}</p>
+                          <p className="text-slate-600 italic text-[11px]">Reason: {skip.reason}</p>
                         )}
                       </div>
                     ))}
@@ -443,13 +536,22 @@ export function SupervisorDiagnosisModal({
             ? (currentGroup ? [currentGroup] : groupsList)
             : (dayData.groups || []).filter(g => !g.name.includes('Day Shift') && g.code !== 'DAY-OPS' && !g.isVerified && !g.isSkipped);
 
-          const allExceptionsList: { groupName: string; subName: string; chkTitle: string; itemText: string; status: string; reason?: string }[] = [];
+          const allExceptionsList: { 
+            groupName: string; 
+            subName: string; 
+            chkTitle: string; 
+            itemText: string; 
+            status: string; 
+            reason?: string;
+            remark?: string;
+            isMandatory?: boolean;
+          }[] = [];
           
           for (const grp of targetGroupsList) {
             for (const sub of grp.subGroups || []) {
               for (const chk of sub.checklists || []) {
                 for (const item of chk.items || []) {
-                  if (item.status === 'skipped' || item.status === 'not_done' || item.status === 'pinned') {
+                  if (item.status === 'skipped' || item.status === 'not_done' || item.status === 'pinned' || item.status === 'missed' || item.status === 'incorrectly_executed') {
                     allExceptionsList.push({
                       groupName: grp.name,
                       subName: sub.name,
@@ -457,6 +559,8 @@ export function SupervisorDiagnosisModal({
                       itemText: item.text,
                       status: item.status,
                       reason: item.skipReason,
+                      remark: item.remark,
+                      isMandatory: item.isMandatory,
                     });
                   }
                 }
@@ -465,7 +569,9 @@ export function SupervisorDiagnosisModal({
           }
 
           const hasExceptions = allExceptionsList.length > 0;
-          const skippedCount = allExceptionsList.filter(e => e.status === 'skipped').length;
+          const mandatorySkippedCount = allExceptionsList.filter(e => e.status === 'skipped' && e.isMandatory).length;
+          const optionalSkippedCount = allExceptionsList.filter(e => e.status === 'skipped' && !e.isMandatory).length;
+          const nonCompliantCount = allExceptionsList.filter(e => e.status === 'missed' || e.status === 'incorrectly_executed').length;
           const notDoneCount = allExceptionsList.filter(e => e.status === 'not_done' || e.status === 'pinned').length;
           
           const isBlocked = (hasExceptions && !verifiedExceptions) || signoffUNumber.trim() === '' || signoffName.trim() === '';
@@ -525,28 +631,42 @@ export function SupervisorDiagnosisModal({
                 </div>
               </div>
 
-              {/* Step 2: Verify and Accept Skipped or Not Done Items (After Shift Closure Sign-off) */}
+              {/* Step 2: Verify and Accept Exceptions (Skipped, Non-Compliant, or Incomplete Items) */}
               <div className="p-4 sm:p-5 bg-amber-50/90 space-y-3">
                 <div className="flex items-start justify-between gap-3 flex-wrap">
                   <div className="flex items-center gap-2">
                     <AlertTriangle className="w-4 h-4 text-amber-700 shrink-0" />
                     <h5 className="text-xs font-black uppercase tracking-wider text-amber-950">
-                      Verify & Accept Exceptions (Skipped or Not Done Items)
+                      Verify & Accept Exceptions (Skipped, Non-Compliant, or Not Done)
                     </h5>
                   </div>
-                  <div className="flex items-center gap-2 text-xs">
-                    <span className="px-2 py-0.5 bg-amber-100 text-amber-950 border border-amber-300 rounded-md font-mono text-[11px] font-black shadow-2xs">
-                      {skippedCount} Skipped
-                    </span>
-                    <span className="px-2 py-0.5 bg-rose-100 text-rose-950 border border-rose-300 rounded-md font-mono text-[11px] font-black shadow-2xs">
-                      {notDoneCount} Not Done
-                    </span>
+                  <div className="flex items-center gap-1.5 text-xs flex-wrap">
+                    {mandatorySkippedCount > 0 && (
+                      <span className="px-2 py-0.5 bg-amber-200 text-amber-950 border border-amber-400 rounded-md font-mono text-[11px] font-black shadow-2xs">
+                        ⚠️ {mandatorySkippedCount} Mand. Skipped
+                      </span>
+                    )}
+                    {nonCompliantCount > 0 && (
+                      <span className="px-2 py-0.5 bg-rose-200 text-rose-950 border border-rose-400 rounded-md font-mono text-[11px] font-black shadow-2xs">
+                        ❌ {nonCompliantCount} Non-Compliant
+                      </span>
+                    )}
+                    {optionalSkippedCount > 0 && (
+                      <span className="px-2 py-0.5 bg-slate-200 text-slate-900 border border-slate-300 rounded-md font-mono text-[11px] font-bold shadow-2xs">
+                        {optionalSkippedCount} Opt. Skipped
+                      </span>
+                    )}
+                    {notDoneCount > 0 && (
+                      <span className="px-2 py-0.5 bg-rose-100 text-rose-950 border border-rose-300 rounded-md font-mono text-[11px] font-black shadow-2xs">
+                        {notDoneCount} Incomplete
+                      </span>
+                    )}
                   </div>
                 </div>
 
                 {hasExceptions ? (
                   <div className="space-y-2">
-                    <div className="max-h-32 overflow-y-auto border border-amber-300 rounded-xl p-2.5 bg-white space-y-1.5 divide-y divide-slate-100 shadow-[inset_0_1px_3px_rgba(0,0,0,0.06)]">
+                    <div className="max-h-44 overflow-y-auto border border-amber-300 rounded-xl p-2.5 bg-white space-y-1.5 divide-y divide-slate-100 shadow-[inset_0_1px_3px_rgba(0,0,0,0.06)]">
                       {allExceptionsList.map((exc, eIdx) => (
                         <div key={eIdx} className="pt-1.5 first:pt-0 flex items-start justify-between text-xs gap-2">
                           <div className="space-y-0.5">
@@ -554,15 +674,34 @@ export function SupervisorDiagnosisModal({
                               <strong className="text-slate-950 font-bold">[{exc.chkTitle}]</strong> {exc.itemText}
                             </span>
                             {exc.reason && (
-                              <p className="text-[11px] text-amber-900 italic font-semibold">Reason: {exc.reason}</p>
+                              <p className="text-[11px] text-amber-900 italic font-semibold">
+                                Reason: {exc.reason}
+                              </p>
+                            )}
+                            {exc.remark && (
+                              <p className="text-[11px] text-rose-900 font-mono">
+                                Remark: {exc.remark}
+                              </p>
                             )}
                           </div>
-                          <span className={`font-mono text-[10px] uppercase px-1.5 py-0.5 rounded-sm font-black shrink-0 ${
-                            exc.status === 'skipped'
-                              ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                          <span className={`font-mono text-[9px] uppercase px-1.5 py-0.5 rounded-sm font-black shrink-0 ${
+                            exc.status === 'skipped' && exc.isMandatory
+                              ? 'bg-amber-200 text-amber-950 border border-amber-400'
+                              : exc.status === 'skipped'
+                              ? 'bg-slate-100 text-slate-800 border border-slate-300'
+                              : exc.status === 'missed' || exc.status === 'incorrectly_executed'
+                              ? 'bg-rose-200 text-rose-950 border border-rose-400'
                               : 'bg-rose-100 text-rose-900 border border-rose-300'
                           }`}>
-                            {exc.status === 'skipped' ? 'SKIPPED' : 'NOT DONE'}
+                            {exc.status === 'skipped' && exc.isMandatory
+                              ? 'MAND. SKIP ⚠️'
+                              : exc.status === 'skipped'
+                              ? 'SKIPPED'
+                              : exc.status === 'missed'
+                              ? 'MISSED ❌'
+                              : exc.status === 'incorrectly_executed'
+                              ? 'INCORRECT ⚠️'
+                              : 'NOT DONE'}
                           </span>
                         </div>
                       ))}
@@ -578,14 +717,14 @@ export function SupervisorDiagnosisModal({
                           onChange={(e) => setVerifiedExceptions(e.target.checked)}
                           className="w-4 h-4 rounded border-amber-400 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
                         />
-                        <span>Verify and accept skipped or not done items</span>
+                        <span>Verify and accept skipped, non-compliant, or incomplete items</span>
                       </label>
                     </div>
                   </div>
                 ) : (
                   <div className="p-3 bg-emerald-100/80 border border-emerald-300 rounded-xl text-xs text-emerald-950 flex items-center gap-2 font-bold shadow-2xs">
                     <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
-                    <span>All checklist items executed and complete. Zero skipped or not done exceptions found.</span>
+                    <span>All checklist items executed and compliant. Zero skipped or non-compliant exceptions recorded.</span>
                   </div>
                 )}
 

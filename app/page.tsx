@@ -20,6 +20,7 @@ import {
   getTodayDateString, 
   loadDayData, 
   saveDayData, 
+  saveDayDataToFirestoreConfirmed,
   addAuditLog, 
   exportShiftToExcel,
   isGroupComplete,
@@ -91,24 +92,6 @@ function Silver3DButton({
   ariaLabel?: string;
   type?: 'button' | 'submit' | 'reset';
 }) {
-  const [tilt, setTilt] = useState({ x: 0, y: 0 });
-  const [isHovered, setIsHovered] = useState(false);
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLButtonElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left - rect.width / 2;
-    const y = e.clientY - rect.top - rect.height / 2;
-    setTilt({
-      x: Number(((y / rect.height) * -8).toFixed(2)),
-      y: Number(((x / rect.width) * 8).toFixed(2)),
-    });
-  };
-
-  const handleMouseLeave = () => {
-    setTilt({ x: 0, y: 0 });
-    setIsHovered(false);
-  };
-
   return (
     <button
       id={id}
@@ -116,16 +99,7 @@ function Silver3DButton({
       onClick={onClick}
       title={title}
       aria-label={ariaLabel}
-      onMouseMove={handleMouseMove}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={handleMouseLeave}
-      style={{
-        transform: `perspective(600px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg) translateY(${
-          isHovered ? '-4px' : '0px'
-        })`,
-        transition: isHovered ? 'transform 0.05s ease-out' : 'transform 0.25s ease-out, box-shadow 0.25s ease-out',
-      }}
-      className={`relative rounded-xl border-2 font-bold uppercase tracking-wider transition-all duration-200 transform-gpu cursor-pointer shrink-0 ${
+      className={`relative rounded-xl border-2 font-bold uppercase tracking-wider transition-all duration-200 cursor-pointer shrink-0 ${
         active
           ? activeBgClass || 'bg-gradient-to-br from-slate-800 via-slate-900 to-slate-950 text-white border-slate-700 shadow-[0_5px_0_0_rgba(51,65,85,0.95),0_8px_16px_-2px_rgba(15,23,42,0.25)] hover:shadow-[0_8px_0_0_rgba(51,65,85,0.95),0_12px_20px_-3px_rgba(15,23,42,0.3)]'
           : 'bg-gradient-to-br from-slate-100 via-white to-slate-200/90 text-slate-700 border-slate-300/90 hover:border-slate-400 shadow-[0_4px_0_0_rgba(203,213,225,0.95),0_6px_12px_-2px_rgba(15,23,42,0.12)] hover:shadow-[0_8px_0_0_rgba(148,163,184,0.95),0_12px_20px_-3px_rgba(15,23,42,0.18)]'
@@ -151,36 +125,9 @@ function Silver3DInput({
   onChange: (e: React.ChangeEvent<HTMLInputElement>) => void;
   className?: string;
 }) {
-  const [tilt, setTilt] = useState({ x: 0, y: 0 });
-  const [isHovered, setIsHovered] = useState(false);
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left - rect.width / 2;
-    const y = e.clientY - rect.top - rect.height / 2;
-    setTilt({
-      x: Number(((y / rect.height) * -6).toFixed(2)),
-      y: Number(((x / rect.width) * 6).toFixed(2)),
-    });
-  };
-
-  const handleMouseLeave = () => {
-    setTilt({ x: 0, y: 0 });
-    setIsHovered(false);
-  };
-
   return (
     <div
-      onMouseMove={handleMouseMove}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={handleMouseLeave}
-      style={{
-        transform: `perspective(600px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg) translateY(${
-          isHovered ? '-3px' : '0px'
-        })`,
-        transition: isHovered ? 'transform 0.05s ease-out' : 'transform 0.25s ease-out, box-shadow 0.25s ease-out',
-      }}
-      className={`relative rounded-xl border-2 border-slate-300/90 hover:border-slate-400 bg-gradient-to-br from-slate-100 via-white to-slate-200/90 shadow-[0_4px_0_0_rgba(203,213,225,0.95),0_6px_12px_-2px_rgba(15,23,42,0.12)] hover:shadow-[0_7px_0_0_rgba(148,163,184,0.95),0_10px_18px_-3px_rgba(15,23,42,0.18)] transition-all duration-200 transform-gpu overflow-hidden ${className}`}
+      className={`relative rounded-xl border-2 border-slate-300/90 hover:border-slate-400 bg-gradient-to-br from-slate-100 via-white to-slate-200/90 shadow-[0_3px_0_0_rgba(203,213,225,0.95),0_4px_8px_-2px_rgba(15,23,42,0.12)] hover:shadow-[0_4px_0_0_rgba(148,163,184,0.95),0_6px_12px_-2px_rgba(15,23,42,0.15)] transition-all duration-200 overflow-hidden ${className}`}
     >
       <div className="absolute inset-0 rounded-xl bg-gradient-to-t from-transparent via-white/20 to-white/60 pointer-events-none z-0" />
       <div className="relative z-10 flex items-center px-3 py-1.5">
@@ -382,54 +329,101 @@ export default function AviationGroundOpsPage() {
     if (updated) setActiveSession(updated);
   };
 
-  // Checklist Save Handler
-  const handleSaveChecklist = (updatedChecklist: Checklist) => {
-    if (!activeChecklistModal.group || !activeChecklistModal.subGroup) return;
+  // Checklist Save Handler with Strict Firestore Cloud Sync Verification
+  const handleSaveChecklist = async (
+    updatedChecklist: Checklist
+  ): Promise<{ success: boolean; error?: string }> => {
+    let matched = false;
+    const targetGroupId = activeChecklistModal.group?.id;
+    const targetGroupCode = activeChecklistModal.group?.code?.toUpperCase();
+    const targetGroupName = activeChecklistModal.group?.name?.trim().toLowerCase();
+    const targetSubGroupId = activeChecklistModal.subGroup?.id;
+    const targetSubGroupName = activeChecklistModal.subGroup?.name?.trim().toLowerCase();
+    const chkId = updatedChecklist.id;
+    const chkTitle = updatedChecklist.title?.trim().toLowerCase();
 
-    const targetGroupId = activeChecklistModal.group.id;
-    const targetSubGroupId = activeChecklistModal.subGroup.id;
+    // Pass 1: Try targeting using group/subgroup hints if available
+    let updatedGroups = dayData.groups.map((grp) => {
+      const isTargetGroup =
+        (targetGroupId && grp.id === targetGroupId) ||
+        (targetGroupCode && grp.code && grp.code.toUpperCase() === targetGroupCode) ||
+        (targetGroupName && grp.name.trim().toLowerCase() === targetGroupName);
 
-    const updatedGroups = dayData.groups.map((grp) => {
-      if (grp.id === targetGroupId) {
-        return {
-          ...grp,
-          subGroups: grp.subGroups.map((sub) => {
-            if (sub.id === targetSubGroupId) {
-              return {
-                ...sub,
-                checklists: sub.checklists.map((chk) => {
-                  if (chk.id === updatedChecklist.id) {
-                    return updatedChecklist;
-                  }
-                  return chk;
-                }),
-              };
-            }
-            return sub;
-          }),
-        };
-      }
-      return grp;
+      return {
+        ...grp,
+        subGroups: grp.subGroups.map((sub) => {
+          const isTargetSub =
+            isTargetGroup &&
+            ((targetSubGroupId && sub.id === targetSubGroupId) ||
+              (targetSubGroupName && sub.name.trim().toLowerCase() === targetSubGroupName));
+
+          return {
+            ...sub,
+            checklists: sub.checklists.map((chk) => {
+              if (
+                (isTargetSub && (chk.id === chkId || chk.title.trim().toLowerCase() === chkTitle)) ||
+                chk.id === chkId
+              ) {
+                matched = true;
+                return updatedChecklist;
+              }
+              return chk;
+            }),
+          };
+        }),
+      };
     });
+
+    // Pass 2 fallback: If not matched in target sub, look across ALL groups and subgroups
+    if (!matched) {
+      updatedGroups = dayData.groups.map((grp) => ({
+        ...grp,
+        subGroups: grp.subGroups.map((sub) => ({
+          ...sub,
+          checklists: sub.checklists.map((chk) => {
+            if (chk.id === chkId || (chkTitle && chk.title.trim().toLowerCase() === chkTitle)) {
+              matched = true;
+              return updatedChecklist;
+            }
+            return chk;
+          }),
+        })),
+      }));
+    }
 
     const newDayData: DayOperationalData = {
       ...dayData,
       groups: updatedGroups,
+      lastUpdated: new Date().toISOString(),
     };
 
+    // If submitting a completed checklist, confirm Firestore write & server sync first
+    if (updatedChecklist.status === 'completed') {
+      const syncResult = await saveDayDataToFirestoreConfirmed(newDayData, currentUser);
+      if (!syncResult.success) {
+        return {
+          success: false,
+          error: syncResult.error || 'Failed to confirm data save in Firestore cloud database.',
+        };
+      }
+    }
+
+    // Persist locally and update active state
     saveDayData(newDayData);
     setDayData(newDayData);
 
-    if (currentUser) {
+    if (currentUser && updatedChecklist.status === 'completed') {
       addAuditLog(
         currentUser.uNumber,
         currentUser.name,
         currentUser.role,
         'CHECKLIST_SUBMIT',
-        `Executed checklist "${updatedChecklist.title}" in ${activeChecklistModal.group.name}. Status: ${updatedChecklist.status.toUpperCase()}`,
+        `Executed checklist "${updatedChecklist.title}" in ${activeChecklistModal.group?.name || 'Operations'}. Status: ${updatedChecklist.status.toUpperCase()}`,
         selectedDate
       );
     }
+
+    return { success: true };
   };
 
   // Single-Click Checklist Reset Handler

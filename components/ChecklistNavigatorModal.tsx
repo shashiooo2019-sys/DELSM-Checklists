@@ -375,7 +375,7 @@ export function ChecklistNavigatorModal({
                       id={`btn-navigator-group-${group.id}`}
                       type="button"
                       onClick={() => setSelectedGroupId(group.id)}
-                      className={`group relative text-left bg-gradient-to-b from-slate-800/90 to-slate-900/90 border-2 rounded-2xl p-5 sm:p-6 transition-all duration-200 hover:-translate-y-1 hover:shadow-xl cursor-pointer flex flex-col justify-between space-y-4 select-none ${
+                      className={`group relative text-left bg-gradient-to-b from-slate-800/90 to-slate-900/90 border-2 rounded-2xl p-5 sm:p-6 transition-all duration-200 hover:shadow-xl cursor-pointer flex flex-col justify-between space-y-4 select-none ${
                         group.isVerified
                           ? 'border-sky-500/80 hover:border-sky-400 ring-1 ring-sky-500/30'
                           : stats.isFullyDone
@@ -564,7 +564,7 @@ export function ChecklistNavigatorModal({
                           onSelectChecklist(activeGroup, subGroup, checklist);
                         }
                       }}
-                      className={`group relative text-left bg-gradient-to-b from-slate-800 to-slate-900 border-2 rounded-2xl p-5 transition-all duration-200 hover:-translate-y-1 hover:shadow-2xl cursor-pointer flex flex-col justify-between space-y-4 select-none ${
+                      className={`group relative text-left bg-gradient-to-b from-slate-800 to-slate-900 border-2 rounded-2xl p-5 transition-all duration-200 hover:shadow-2xl cursor-pointer flex flex-col justify-between space-y-4 select-none ${
                         isCompleted
                           ? 'border-emerald-500/80 hover:border-emerald-400 ring-1 ring-emerald-500/30'
                           : nonCompliant > 0
@@ -574,37 +574,107 @@ export function ChecklistNavigatorModal({
                           : 'border-slate-700 hover:border-blue-500 hover:ring-2 hover:ring-blue-500/30'
                       }`}
                     >
-                      {/* Top Badges */}
-                      <div className="flex items-start justify-between gap-2 flex-wrap">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span className="px-2 py-0.5 rounded-md bg-blue-950 text-blue-300 border border-blue-800 text-[10px] font-mono font-bold">
-                            {subGroup.name}
-                          </span>
-                          {checklist.version && (
-                            <span className="px-1.5 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-800 text-[10px] font-mono font-bold">
-                              {checklist.version}
+                      {/* Top Badges & Progress Arc */}
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="flex items-start gap-3">
+                          {/* Mini Progress Arc */}
+                          {(() => {
+                            const arcSize = 36;
+                            const strokeW = 3.5;
+                            const rad = (arcSize - strokeW) / 2;
+                            const circ = 2 * Math.PI * rad;
+                            const strokeDone = totalTasks > 0 ? (doneTasks / totalTasks) * circ : 0;
+                            const strokeExceptions = totalTasks > 0 ? ((skippedTasks + pinnedTasks) / totalTasks) * circ : 0;
+                            const strokeIssues = totalTasks > 0 ? (nonCompliant / totalTasks) * circ : 0;
+
+                            return (
+                              <div className="relative flex items-center justify-center shrink-0" style={{ width: arcSize, height: arcSize }}>
+                                <svg width={arcSize} height={arcSize} className="transform -rotate-90">
+                                  <circle
+                                    cx={arcSize / 2}
+                                    cy={arcSize / 2}
+                                    r={rad}
+                                    fill="none"
+                                    stroke="#334155"
+                                    strokeWidth={strokeW}
+                                  />
+                                  {strokeDone > 0 && (
+                                    <circle
+                                      cx={arcSize / 2}
+                                      cy={arcSize / 2}
+                                      r={rad}
+                                      fill="none"
+                                      stroke="#10B981"
+                                      strokeWidth={strokeW}
+                                      strokeDasharray={`${strokeDone} ${circ}`}
+                                      strokeDashoffset={0}
+                                      strokeLinecap="round"
+                                    />
+                                  )}
+                                  {strokeExceptions > 0 && (
+                                    <circle
+                                      cx={arcSize / 2}
+                                      cy={arcSize / 2}
+                                      r={rad}
+                                      fill="none"
+                                      stroke="#F59E0B"
+                                      strokeWidth={strokeW}
+                                      strokeDasharray={`${strokeExceptions} ${circ}`}
+                                      strokeDashoffset={-strokeDone}
+                                      strokeLinecap="round"
+                                    />
+                                  )}
+                                  {strokeIssues > 0 && (
+                                    <circle
+                                      cx={arcSize / 2}
+                                      cy={arcSize / 2}
+                                      r={rad}
+                                      fill="none"
+                                      stroke="#EF4444"
+                                      strokeWidth={strokeW}
+                                      strokeDasharray={`${strokeIssues} ${circ}`}
+                                      strokeDashoffset={-(strokeDone + strokeExceptions)}
+                                      strokeLinecap="round"
+                                    />
+                                  )}
+                                </svg>
+                                <span className="absolute text-[9px] font-black text-white font-mono">
+                                  {pct}%
+                                </span>
+                              </div>
+                            );
+                          })()}
+
+                          <div className="flex flex-col gap-1">
+                            <span className="px-2 py-0.5 rounded-md bg-blue-950 text-blue-300 border border-blue-800 text-[10px] font-mono font-bold w-fit">
+                              {subGroup.name}
                             </span>
-                          )}
+                            {checklist.version && (
+                              <span className="px-1.5 py-0.5 rounded bg-purple-950 text-purple-300 border border-purple-800 text-[9px] font-mono font-bold w-fit">
+                                {checklist.version}
+                              </span>
+                            )}
+                          </div>
                         </div>
 
                         {/* Status Tag */}
                         {isCompleted ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-600 text-[10px] font-black uppercase">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-emerald-950 text-emerald-300 border border-emerald-600 text-[10px] font-black uppercase shrink-0">
                             <Check className="w-3 h-3 text-emerald-400 stroke-[3]" />
                             Done ({doneTasks}/{totalTasks})
                           </span>
                         ) : nonCompliant > 0 ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-950 text-rose-300 border border-rose-600 text-[10px] font-black uppercase">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-950 text-rose-300 border border-rose-600 text-[10px] font-black uppercase shrink-0">
                             <AlertTriangle className="w-3 h-3 text-rose-400" />
                             Issues ({nonCompliant})
                           </span>
                         ) : pct > 0 ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-950 text-amber-300 border border-amber-600 text-[10px] font-black uppercase">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-950 text-amber-300 border border-amber-600 text-[10px] font-black uppercase shrink-0">
                             <Clock className="w-3 h-3 text-amber-400" />
                             In Progress ({doneTasks}/{totalTasks})
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700 text-[10px] font-bold uppercase">
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700 text-[10px] font-bold uppercase shrink-0">
                             Not Started
                           </span>
                         )}

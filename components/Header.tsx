@@ -234,7 +234,7 @@ export function Header({
         <div className="flex items-center justify-between py-3 flex-wrap gap-4">
           {/* Logo & Title */}
           <div className="flex items-center gap-3.5">
-            <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-violet-600 flex items-center justify-center shadow-[0_4px_12px_rgba(37,99,235,0.4),inset_0_1px_0_rgba(255,255,255,0.4)] border border-blue-500 text-white transform hover:scale-105 transition-transform duration-300">
+            <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-violet-600 flex items-center justify-center shadow-[0_4px_12px_rgba(37,99,235,0.4),inset_0_1px_0_rgba(255,255,255,0.4)] border border-blue-500 text-white">
               <Plane className="w-5.5 h-5.5 transform -rotate-45" />
             </div>
             <div>

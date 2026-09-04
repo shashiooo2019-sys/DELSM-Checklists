@@ -154,7 +154,7 @@ function calculateFuzzyMatch(
   };
 }
 
-// 3D Tile Button Component with Tilt, Lift, and Details on Hover
+// 3D Tile Button Component
 function Checklist3DTile({
   entry,
   searchTerm,
@@ -164,24 +164,6 @@ function Checklist3DTile({
   searchTerm: string;
   onClick: () => void;
 }) {
-  const [tilt, setTilt] = useState({ x: 0, y: 0 });
-  const [isHovered, setIsHovered] = useState(false);
-
-  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    const rect = e.currentTarget.getBoundingClientRect();
-    const x = e.clientX - rect.left - rect.width / 2;
-    const y = e.clientY - rect.top - rect.height / 2;
-    setTilt({
-      x: Number(((y / rect.height) * -8).toFixed(2)),
-      y: Number(((x / rect.width) * 8).toFixed(2)),
-    });
-  };
-
-  const handleMouseLeave = () => {
-    setTilt({ x: 0, y: 0 });
-    setIsHovered(false);
-  };
-
   const isCompleted = isChecklistComplete(entry.checklist);
   const totalItems = entry.checklist.items.length;
   const mandatoryItems = entry.checklist.items.filter((i) => i.isMandatory).length;
@@ -189,22 +171,13 @@ function Checklist3DTile({
 
   return (
     <div
-      onMouseMove={handleMouseMove}
-      onMouseEnter={() => setIsHovered(true)}
-      onMouseLeave={handleMouseLeave}
       onClick={onClick}
-      style={{
-        transform: `perspective(800px) rotateX(${tilt.x}deg) rotateY(${tilt.y}deg) translateY(${
-          isHovered ? '-6px' : '0px'
-        })`,
-        transition: isHovered ? 'transform 0.08s ease-out' : 'transform 0.3s ease-out, box-shadow 0.3s ease-out',
-      }}
-      className={`group relative rounded-2xl p-4 sm:p-5 cursor-pointer select-none transition-all duration-200 transform-gpu flex flex-col justify-between ${
+      className={`group relative rounded-2xl p-4 sm:p-5 cursor-pointer select-none transition-all duration-200 flex flex-col justify-between ${
         entry.isFlightRelated
-          ? 'bg-gradient-to-br from-white via-blue-50/40 to-blue-100/30 border-2 border-blue-200 hover:border-blue-500 shadow-[0_6px_0_0_rgba(191,219,254,0.9),0_10px_20px_-3px_rgba(37,99,235,0.12)] hover:shadow-[0_16px_32px_-4px_rgba(37,99,235,0.25),0_10px_0_0_rgba(59,130,246,0.6)]'
+          ? 'bg-gradient-to-br from-white via-blue-50/40 to-blue-100/30 border-2 border-blue-200 hover:border-blue-500 shadow-[0_4px_0_0_rgba(191,219,254,0.9),0_6px_14px_-3px_rgba(37,99,235,0.12)] hover:shadow-[0_8px_16px_-4px_rgba(37,99,235,0.2),0_4px_0_0_rgba(59,130,246,0.6)]'
           : isDayShift
-          ? 'bg-gradient-to-br from-white via-amber-50/30 to-amber-100/30 border-2 border-amber-300 hover:border-amber-500 shadow-[0_6px_0_0_rgba(253,230,138,0.95),0_10px_20px_-3px_rgba(217,119,6,0.12)] hover:shadow-[0_16px_32px_-4px_rgba(245,158,11,0.25),0_10px_0_0_rgba(217,119,6,0.6)]'
-          : 'bg-gradient-to-br from-white via-slate-50 to-indigo-50/30 border-2 border-slate-300 hover:border-indigo-500 shadow-[0_6px_0_0_rgba(203,213,225,0.95),0_10px_20px_-3px_rgba(15,23,42,0.12)] hover:shadow-[0_16px_32px_-4px_rgba(79,70,229,0.22),0_10px_0_0_rgba(99,102,241,0.6)]'
+          ? 'bg-gradient-to-br from-white via-amber-50/30 to-amber-100/30 border-2 border-amber-300 hover:border-amber-500 shadow-[0_4px_0_0_rgba(253,230,138,0.95),0_6px_14px_-3px_rgba(217,119,6,0.12)] hover:shadow-[0_8px_16px_-4px_rgba(245,158,11,0.2),0_4px_0_0_rgba(217,119,6,0.6)]'
+          : 'bg-gradient-to-br from-white via-slate-50 to-indigo-50/30 border-2 border-slate-300 hover:border-indigo-500 shadow-[0_4px_0_0_rgba(203,213,225,0.95),0_6px_14px_-3px_rgba(15,23,42,0.12)] hover:shadow-[0_8px_16px_-4px_rgba(79,70,229,0.18),0_4px_0_0_rgba(99,102,241,0.6)]'
       }`}
     >
       {/* 3D Sheen Highlight Overlay */}
@@ -303,38 +276,6 @@ function Checklist3DTile({
           </button>
         )}
       </div>
-
-      {/* Details Preview Card on Hover */}
-      {isHovered && (
-        <div className="mt-3 p-3 bg-white/95 rounded-xl border border-blue-300 shadow-md space-y-2 animate-in fade-in zoom-in-95 text-xs text-slate-800">
-          <div className="flex items-center justify-between text-[11px] font-bold text-slate-600 border-b border-slate-200 pb-1">
-            <span>HOVER TASK PREVIEW ({totalItems} items)</span>
-            <span className="text-blue-700 font-mono">v{entry.checklist.version || '1.0'}</span>
-          </div>
-          <div className="space-y-1.5 max-h-[140px] overflow-y-auto pr-1">
-            {entry.checklist.items.slice(0, 4).map((item, iIdx) => (
-              <div key={`hover-item-${iIdx}`} className="flex items-start gap-1.5 text-[11px] leading-tight">
-                <span className="font-mono text-[10px] font-bold text-blue-700 bg-blue-50 px-1 rounded shrink-0">
-                  #{item.sequenceOrder}
-                </span>
-                <span className="line-clamp-1 font-medium text-slate-700">
-                  {item.text}
-                </span>
-                {item.isMandatory && (
-                  <span className="text-[9px] font-bold text-rose-600 bg-rose-50 px-1 rounded border border-rose-200 shrink-0 ml-auto">
-                    REQ
-                  </span>
-                )}
-              </div>
-            ))}
-            {totalItems > 4 && (
-              <p className="text-[10px] text-slate-400 text-center font-bold pt-0.5">
-                + {totalItems - 4} more items in this checklist
-              </p>
-            )}
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -2,6 +2,7 @@ import {
   collection,
   doc,
   getDoc,
+  getDocFromServer,
   getDocs,
   setDoc,
   updateDoc,
@@ -244,6 +245,10 @@ export function firestoreUserToAccount(data: FirestoreUserData, uid?: string): U
 
 // Ensure default users exist in Firestore and upgrade all user accounts to SUPERVISOR role
 export async function seedDefaultUsersIfMissing(): Promise<void> {
+  if (typeof window !== 'undefined' && sessionStorage.getItem('aviation_users_seeded_v1')) {
+    return;
+  }
+
   try {
     // 1. Purge legacy demo users if present in Firestore & enforce admin role
     try {
@@ -254,11 +259,13 @@ export async function seedDefaultUsersIfMissing(): Promise<void> {
           const { deleteDoc } = await import('firebase/firestore');
           await deleteDoc(d.ref);
         } else if (uNum === 'admin') {
-          // Explicitly grant full admin rights in Firestore
-          await updateDoc(d.ref, {
-            role: 'ADMIN',
-            department: 'Ground Operations Management',
-          });
+          // Explicitly grant full admin rights in Firestore if role differs
+          if (d.data()?.role !== 'ADMIN') {
+            await updateDoc(d.ref, {
+              role: 'ADMIN',
+              department: 'Ground Operations Management',
+            });
+          }
         } else if (d.data()?.role === 'USER') {
           // Upgrade existing Firestore document from USER to SUPERVISOR
           await updateDoc(d.ref, { role: 'SUPERVISOR' });
@@ -289,33 +296,22 @@ export async function seedDefaultUsersIfMissing(): Promise<void> {
         });
       } else {
         const existingDoc = snap.docs[0];
-        const existingRole = existingDoc.data()?.role;
-        const targetRole = isDefAdmin ? 'ADMIN' : (existingRole === 'ADMIN' ? 'ADMIN' : def.role);
-        await updateDoc(existingDoc.ref, {
-          password_hash: def.passwordHash,
-          is_first_login: def.mustChangePassword,
-          role: targetRole,
-          department: def.department || (isDefAdmin ? 'Ground Operations Management' : 'Ground Operations'),
-        });
+        const existingData = existingDoc.data();
+        const targetRole = isDefAdmin ? 'ADMIN' : (existingData?.role === 'ADMIN' ? 'ADMIN' : def.role);
+        if (existingData?.role !== targetRole || existingData?.password_hash !== def.passwordHash) {
+          await updateDoc(existingDoc.ref, {
+            password_hash: def.passwordHash,
+            is_first_login: def.mustChangePassword,
+            role: targetRole,
+            department: def.department || (isDefAdmin ? 'Ground Operations Management' : 'Ground Operations'),
+          });
+        }
       }
     }
 
-    // Explicitly guarantee doc u_admin has ADMIN role
-    try {
-      await setDoc(
-        doc(db, 'users', 'u_admin'),
-        {
-          u_number: 'admin',
-          email: 'admin@delgroundops.aero',
-          name: 'Chief Ops Administrator',
-          role: 'ADMIN',
-          is_first_login: false,
-          department: 'Ground Operations Management',
-          password_hash: 'Admin220!',
-        },
-        { merge: true }
-      );
-    } catch {}
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('aviation_users_seeded_v1', 'true');
+    }
   } catch (err) {
     console.warn('seedDefaultUsersIfMissing notice:', err);
   }
@@ -719,6 +715,10 @@ export function subscribeToUsersFromFirestore(callback: (users: UserAccount[]) =
 // ----------------- TEMPLATES ENGINE -----------------
 
 export async function seedTemplatesIfMissing(): Promise<void> {
+  if (typeof window !== 'undefined' && sessionStorage.getItem('aviation_templates_seeded_v1')) {
+    return;
+  }
+
   try {
     const opGroupRef = doc(db, 'templates_op_groups', 'manifest');
     const manifestSnap = await getDoc(opGroupRef);
@@ -729,6 +729,10 @@ export async function seedTemplatesIfMissing(): Promise<void> {
         total_groups: defaultGroups.length,
         groups: defaultGroups.map((g) => ({ id: g.id, name: g.name, code: g.code, isMandatory: g.isMandatory })),
       });
+    }
+
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem('aviation_templates_seeded_v1', 'true');
     }
   } catch (err) {
     console.warn('seedTemplatesIfMissing notice:', err);
@@ -821,22 +825,31 @@ export function syncGroupsStructure(
           };
         });
 
+        const allItemsProcessed =
+          updatedItems.length > 0 &&
+          updatedItems.every((i) => i.status !== 'not_done' && i.status !== 'pinned');
         const isComplete =
           updatedItems.length > 0 &&
           updatedItems.filter((i) => i.isMandatory).every((i) => i.status === 'done' || i.status === 'skipped');
-        const hasStarted = updatedItems.some((i) => i.status === 'done' || i.status === 'skipped');
-        const newStatus = isComplete
-          ? 'completed'
-          : hasStarted
-          ? 'in_progress'
-          : existingChk.status === 'completed' || existingChk.status === 'in_progress'
-          ? existingChk.status
-          : 'pending';
+        const hasStarted = updatedItems.some((i) => i.status !== 'not_done');
+        const newStatus =
+          existingChk.status === 'completed'
+            ? 'completed'
+            : (isComplete || allItemsProcessed)
+            ? 'completed'
+            : (hasStarted || existingChk.status === 'in_progress')
+            ? 'in_progress'
+            : 'pending';
 
         return {
           ...masterChk,
           status: newStatus,
           items: updatedItems,
+          completedBy: existingChk.completedBy,
+          completedAt: existingChk.completedAt,
+          remarks: existingChk.remarks,
+          isNotApplicable: existingChk.isNotApplicable,
+          isVerifiedClosed: existingChk.isVerifiedClosed,
         };
       });
 
@@ -874,6 +887,9 @@ export async function propagateAdminGroupChangesToActiveShifts(
       windowDates.unshift(todayStr);
     }
 
+    const batch = writeBatch(db);
+    let batchCount = 0;
+
     for (const dStr of windowDates) {
       if (dStr === masterDayData.date) continue;
 
@@ -899,8 +915,32 @@ export async function propagateAdminGroupChangesToActiveShifts(
           lastUpdated: new Date().toISOString(),
         });
 
-        await saveDayDataToFirestore(updatedShift);
+        const shiftStatus = updatedShift.isShiftClosed
+          ? 'CLOSED'
+          : updatedShift.groups.every((g) => g.isVerified)
+          ? 'VERIFIED'
+          : 'IN_PROGRESS';
+
+        batch.set(
+          shiftRef,
+          {
+            date: dStr,
+            status: shiftStatus,
+            verified_by: updatedShift.groups.find((g) => g.verifiedBy)?.verifiedBy || '',
+            closed_by: updatedShift.closedBy || '',
+            closed_at: updatedShift.closedAt || null,
+            shift_notes: updatedShift.shiftNotes || '',
+            last_updated: serverTimestamp(),
+            raw_data: safeJsonStringify(updatedShift),
+          },
+          { merge: true }
+        );
+        batchCount++;
       }
+    }
+
+    if (batchCount > 0) {
+      await batch.commit();
     }
   } catch (err) {
     console.warn('propagateAdminGroupChangesToActiveShifts error:', err);
@@ -919,14 +959,116 @@ export interface DailyShiftDoc {
   shift_notes?: string;
 }
 
-// Save Full Day Operational Data to Firestore
-export async function saveDayDataToFirestore(
+// Global Debounce & Write Queue Map for Daily Shift Writes
+const pendingDayWrites = new Map<
+  string,
+  {
+    timeoutId: any;
+    data: DayOperationalData;
+    inFlight: boolean;
+    pendingNext?: DayOperationalData;
+  }
+>();
+
+async function executeFirestoreShiftWrite(dayData: DayOperationalData): Promise<{ success: boolean; error?: string }> {
+  const sanitized = sanitizeDayData(dayData);
+  const dateStr = sanitized.date;
+  const shiftRef = doc(db, 'daily_shifts', dateStr);
+
+  const shiftStatus = sanitized.isShiftClosed
+    ? 'CLOSED'
+    : sanitized.groups.every((g) => g.isVerified)
+    ? 'VERIFIED'
+    : 'IN_PROGRESS';
+
+  const payload = {
+    date: dateStr,
+    status: shiftStatus,
+    verified_by: sanitized.groups.find((g) => g.verifiedBy)?.verifiedBy || '',
+    closed_by: sanitized.closedBy || '',
+    closed_at: sanitized.closedAt || null,
+    shift_notes: sanitized.shiftNotes || '',
+    last_updated: serverTimestamp(),
+    raw_data: safeJsonStringify(sanitized),
+  };
+
+  try {
+    await setDoc(shiftRef, payload, { merge: true });
+    return { success: true };
+  } catch (err: any) {
+    console.warn(`Firestore shift write error for ${dateStr}:`, err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Error writing to Firestore',
+    };
+  }
+}
+
+// Debounced Shift Data Writer (Throttles rapid user clicks, item status toggles, remarks)
+export function saveDayDataToFirestoreDebounced(
+  dayData: DayOperationalData,
+  delayMs: number = 800
+): Promise<{ success: boolean }> {
+  const dateStr = dayData.date;
+  const entry = pendingDayWrites.get(dateStr);
+
+  if (entry) {
+    if (entry.timeoutId) {
+      clearTimeout(entry.timeoutId);
+    }
+    if (entry.inFlight) {
+      entry.pendingNext = dayData;
+      return Promise.resolve({ success: true });
+    }
+  }
+
+  return new Promise((resolve) => {
+    const timeoutId = setTimeout(async () => {
+      const current = pendingDayWrites.get(dateStr) || { timeoutId: null, data: dayData, inFlight: false };
+      current.inFlight = true;
+      pendingDayWrites.set(dateStr, current);
+
+      await executeFirestoreShiftWrite(dayData);
+
+      const afterWrite = pendingDayWrites.get(dateStr);
+      if (afterWrite) {
+        afterWrite.inFlight = false;
+        if (afterWrite.pendingNext) {
+          const nextData = afterWrite.pendingNext;
+          afterWrite.pendingNext = undefined;
+          setTimeout(() => {
+            saveDayDataToFirestoreDebounced(nextData, 400);
+          }, 200);
+        } else {
+          pendingDayWrites.delete(dateStr);
+        }
+      }
+      resolve({ success: true });
+    }, delayMs);
+
+    pendingDayWrites.set(dateStr, {
+      timeoutId,
+      data: dayData,
+      inFlight: false,
+    });
+  });
+}
+
+// Save Full Day Operational Data to Firestore with strict Cloud Sync Verification
+export async function saveDayDataToFirestoreConfirmed(
   dayData: DayOperationalData,
   actorUser?: UserAccount | null
-): Promise<void> {
+): Promise<{ success: boolean; error?: string }> {
   try {
+    const dateStr = dayData.date;
+    // Clear any pending debounce timer
+    const existing = pendingDayWrites.get(dateStr);
+    if (existing && existing.timeoutId) {
+      clearTimeout(existing.timeoutId);
+      pendingDayWrites.delete(dateStr);
+    }
+
     const sanitized = sanitizeDayData(dayData);
-    const dateStr = sanitized.date;
     const shiftRef = doc(db, 'daily_shifts', dateStr);
 
     const shiftStatus = sanitized.isShiftClosed
@@ -935,22 +1077,71 @@ export async function saveDayDataToFirestore(
       ? 'VERIFIED'
       : 'IN_PROGRESS';
 
-    await setDoc(
-      shiftRef,
-      {
-        date: dateStr,
-        status: shiftStatus,
-        verified_by: sanitized.groups.find((g) => g.verifiedBy)?.verifiedBy || '',
-        closed_by: sanitized.closedBy || '',
-        closed_at: sanitized.closedAt || null,
-        shift_notes: sanitized.shiftNotes || '',
-        last_updated: serverTimestamp(),
-        raw_data: safeJsonStringify(sanitized),
-      },
-      { merge: true }
-    );
-  } catch (err) {
+    const payload = {
+      date: dateStr,
+      status: shiftStatus,
+      verified_by: sanitized.groups.find((g) => g.verifiedBy)?.verifiedBy || '',
+      closed_by: sanitized.closedBy || '',
+      closed_at: sanitized.closedAt || null,
+      shift_notes: sanitized.shiftNotes || '',
+      last_updated: serverTimestamp(),
+      raw_data: safeJsonStringify(sanitized),
+    };
+
+    // 1. Write the document to Firestore
+    await setDoc(shiftRef, payload, { merge: true });
+
+    // 2. Verify cloud synchronization directly with Firestore server
+    // Guarantees data is committed to the cloud database before completing
+    try {
+      const confirmationSnap = await Promise.race([
+        getDocFromServer(shiftRef),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Cloud sync confirmation timed out. Please check your network connection.')), 6000)
+        ),
+      ]);
+
+      if (!confirmationSnap || !confirmationSnap.exists()) {
+        return {
+          success: false,
+          error: 'Document write could not be confirmed on Firestore cloud server.',
+        };
+      }
+    } catch (serverErr: any) {
+      console.warn('Direct server sync read warning (falling back to write confirmation):', serverErr);
+      // If getDocFromServer threw an offline error, return failure so user can retry
+      if (serverErr?.message?.includes('offline') || serverErr?.code === 'unavailable') {
+        return {
+          success: false,
+          error: 'Firestore client is currently offline. Cloud sync could not be verified.',
+        };
+      }
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    console.error('saveDayDataToFirestoreConfirmed error:', err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Failed to save operational data to Firestore.',
+    };
+  }
+}
+
+// Save Full Day Operational Data to Firestore (Uses debounced queue to prevent write stream exhaustion)
+export async function saveDayDataToFirestore(
+  dayData: DayOperationalData,
+  actorUser?: UserAccount | null
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    saveDayDataToFirestoreDebounced(dayData, 600);
+    return { success: true };
+  } catch (err: any) {
     console.warn('saveDayDataToFirestore error:', err);
+    return {
+      success: false,
+      error: err instanceof Error ? err.message : 'Error writing to Firestore',
+    };
   }
 }
 
@@ -963,7 +1154,7 @@ export async function loadDayDataFromFirestore(dateStr: string): Promise<DayOper
 
     if (!shiftSnap.exists()) {
       const initialDay = createInitialDayData(dateStr);
-      await saveDayDataToFirestore(initialDay);
+      saveDayDataToFirestoreDebounced(initialDay, 1000);
       return initialDay;
     }
 
@@ -994,8 +1185,8 @@ export async function loadDayDataFromFirestore(dateStr: string): Promise<DayOper
     const { merged, changed } = mergeMasterHierarchyWithExisting(parsedData, dateStr);
 
     if (changed || !shiftData.raw_data) {
-      // Background update without blocking the user
-      saveDayDataToFirestore(merged);
+      // Debounced background update without blocking user or exhausting write stream
+      saveDayDataToFirestoreDebounced(merged, 1200);
     }
 
     return merged;
@@ -1016,11 +1207,17 @@ export async function ensureDateWindowInitialized(
   daysCount: number = 10,
   startDateStr?: string
 ): Promise<{ initializedDates: string[]; success: boolean }> {
+  const sessionKey = `aviation_window_initialized_${startDateStr || 'today'}`;
+  if (typeof window !== 'undefined' && sessionStorage.getItem(sessionKey)) {
+    return { initializedDates: [], success: true };
+  }
+
   const dates = getUpcomingDateStrings(startDateStr, daysCount);
   const initializedDates: string[] = [];
 
   try {
-    const promises = dates.map(async (dStr) => {
+    // Process sequentially with gentle spacing to avoid concurrent stream congestion
+    for (const dStr of dates) {
       try {
         const day = await loadDayDataFromFirestore(dStr);
         if (day && day.groups && day.groups.length > 0) {
@@ -1029,9 +1226,12 @@ export async function ensureDateWindowInitialized(
       } catch (e) {
         console.warn(`Failed auto-initializing window for date ${dStr}:`, e);
       }
-    });
+      await new Promise((r) => setTimeout(r, 200));
+    }
 
-    await Promise.allSettled(promises);
+    if (typeof window !== 'undefined') {
+      sessionStorage.setItem(sessionKey, 'true');
+    }
     return { initializedDates, success: true };
   } catch (err) {
     console.warn('ensureDateWindowInitialized encountered an error:', err);
