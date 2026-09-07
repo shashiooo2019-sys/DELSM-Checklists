@@ -13,6 +13,7 @@ import {
   Stethoscope, 
   Sliders, 
   Lock, 
+  Unlock,
   AlertCircle,
   Activity,
   Layers,
@@ -192,15 +193,43 @@ export function ShiftOverviewBanner({
               )}
 
               {isSupervisor && (
-                <button
-                  id="btn-open-diagnosis"
-                  onClick={() => onOpenDiagnosis()}
-                  className="btn-3d-amber flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer"
-                  title="Close Shift"
-                >
-                  <Stethoscope className="w-4 h-4 text-amber-100" />
-                  <span>Close Shift</span>
-                </button>
+                dayData.isShiftClosed ? (
+                  <button
+                    id="btn-open-diagnosis"
+                    onClick={() => {
+                      if (onReopenShift) {
+                        if (!showReopenConfirm) {
+                          setShowReopenConfirm(true);
+                          setTimeout(() => setShowReopenConfirm(false), 5000);
+                        } else {
+                          onReopenShift();
+                          setShowReopenConfirm(false);
+                        }
+                      } else {
+                        onOpenDiagnosis();
+                      }
+                    }}
+                    className={`flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+                      showReopenConfirm
+                        ? 'btn-3d-amber bg-amber-500 hover:bg-amber-600 text-slate-950 animate-pulse font-extrabold'
+                        : 'btn-3d-rose text-white'
+                    }`}
+                    title={showReopenConfirm ? "Click to confirm shift reopening" : "ReOpen Shift"}
+                  >
+                    <Unlock className="w-4 h-4 text-rose-100" />
+                    <span>{showReopenConfirm ? 'Confirm Reopen' : 'ReOpen Shift'}</span>
+                  </button>
+                ) : (
+                  <button
+                    id="btn-open-diagnosis"
+                    onClick={() => onOpenDiagnosis()}
+                    className="btn-3d-amber flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold transition cursor-pointer"
+                    title="Close Shift"
+                  >
+                    <Stethoscope className="w-4 h-4 text-amber-100" />
+                    <span>Close Shift</span>
+                  </button>
+                )
               )}
 
               <button

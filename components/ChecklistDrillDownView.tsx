@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { DayOperationalData, OperationalGroup, SubOperationalGroup, Checklist, UserAccount } from '@/types/aviation';
 import { isGroupComplete, getDayOverallProgress, fetchShiftsForDateRange } from '@/lib/storage';
+import { getTodayDateString } from '@/lib/initialData';
 import { 
   X, 
   ShieldCheck, 
@@ -34,7 +35,8 @@ import {
   Sparkles,
   Activity,
   Layers,
-  Info
+  Info,
+  Briefcase
 } from 'lucide-react';
 import {
   AreaChart,
@@ -146,6 +148,11 @@ export function ChecklistDrillDownView({
   const [groupVerificationRemarks, setGroupVerificationRemarks] = useState<string>('');
   const [supervisorNameInput, setSupervisorNameInput] = useState(currentUser?.name || '');
   const [supervisorNotesInput, setSupervisorNotesInput] = useState('');
+  const [drilldownArrivalsBags, setDrilldownArrivalsBags] = useState('');
+  const [drilldownLhgOfficeBags, setDrilldownLhgOfficeBags] = useState('');
+  const [drilldownLevel4Bags, setDrilldownLevel4Bags] = useState('');
+  const [drilldownBmaBags, setDrilldownBmaBags] = useState('');
+  const [confirmFutureDateDrilldown, setConfirmFutureDateDrilldown] = useState<boolean>(false);
   const [hiddenChecklistGraphics, setHiddenChecklistGraphics] = useState<Record<string, boolean>>({});
   const [isGroupListCollapsed, setIsGroupListCollapsed] = useState<boolean>(false);
 
@@ -738,9 +745,15 @@ export function ChecklistDrillDownView({
   };
 
   const handleFinalCloseShift = () => {
-    if (!supervisorNameInput.trim()) return;
-    const notes = supervisorNotesInput.trim() || 'Verified and closed via interactive drill-down cockpit.';
+    if (!supervisorNameInput.trim() || !supervisorNotesInput.trim() || !drilldownArrivalsBags.trim() || !drilldownLhgOfficeBags.trim() || !drilldownLevel4Bags.trim()) return;
+    const bagSummary = `Baggage Left Behind: Arrivals: ${drilldownArrivalsBags.trim()} | LHG Office: ${drilldownLhgOfficeBags.trim()} | Level 4: ${drilldownLevel4Bags.trim()}`;
+    const notes = `Remarks: ${supervisorNotesInput.trim()}\n${bagSummary}`;
     onCloseShift(notes, supervisorNameInput.trim());
+    setSupervisorNotesInput('');
+    setDrilldownArrivalsBags('');
+    setDrilldownLhgOfficeBags('');
+    setDrilldownLevel4Bags('');
+    setDrilldownBmaBags('');
     setShowShiftClosePrompt(false);
   };
 
@@ -770,11 +783,24 @@ export function ChecklistDrillDownView({
         <div className="flex items-center gap-2">
           {/* Shift Closure Status & Quick Actions */}
           {dayData.isShiftClosed ? (
-            <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl">
-              <Lock className="w-4 h-4 text-emerald-600" />
-              <span className="text-xs font-bold text-emerald-800">
-                Shift Closed & Verified by {dayData.closedBy || 'Supervisor'}
-              </span>
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl">
+                <Lock className="w-4 h-4 text-emerald-600" />
+                <span className="text-xs font-bold text-emerald-800">
+                  Shift Closed & Verified by {dayData.closedBy || 'Supervisor'}
+                </span>
+              </div>
+              {onReopenShift && (currentUser?.role === 'SUPERVISOR' || currentUser?.role === 'ADMIN') && (
+                <button
+                  id="drilldown-btn-reopen-shift"
+                  onClick={onReopenShift}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition shadow-2xs cursor-pointer"
+                  title="ReOpen Shift"
+                >
+                  <Unlock className="w-4 h-4 text-rose-600" />
+                  <span>ReOpen Shift</span>
+                </button>
+              )}
             </div>
           ) : (
             <button
@@ -793,7 +819,7 @@ export function ChecklistDrillDownView({
               title={allGroupsResolved ? "Verify and close the full shift" : "All Operational Groups must be complete, verified, or skipped before closing"}
             >
               <Lock className="w-4 h-4" />
-              <span>Verify & Close Shift</span>
+              <span>Close Shift</span>
             </button>
           )}
 
@@ -2128,103 +2154,219 @@ export function ChecklistDrillDownView({
       )}
 
       {/* Verification & Close Shift Prompt Overlay */}
-      {showShiftClosePrompt && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto animate-in fade-in">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl p-6 w-full max-w-md space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="p-1.5 bg-amber-50 text-amber-700 rounded-lg">
-                  <Lock className="w-5 h-5" />
+      {showShiftClosePrompt && (() => {
+        const todayStr = getTodayDateString();
+        const isFutureDate = dayData.date > todayStr;
+        const isPastDate = dayData.date < todayStr;
+        const isToday = dayData.date === todayStr;
+
+        const isBagsValid = drilldownArrivalsBags.trim() !== '' && 
+          drilldownLhgOfficeBags.trim() !== '' && 
+          drilldownLevel4Bags.trim() !== '';
+        const isCloseBlocked = !supervisorNameInput.trim() || !supervisorNotesInput.trim() || !isBagsValid || (isFutureDate && !confirmFutureDateDrilldown);
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-xs p-3 animate-in fade-in">
+            <div className="bg-white rounded-2xl border border-slate-300 shadow-2xl w-full max-w-lg overflow-hidden text-slate-900 animate-in zoom-in-95 flex flex-col">
+              <div className="px-4 py-3 bg-amber-500 text-slate-950 flex items-center justify-between border-b border-amber-600">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-amber-600/30 flex items-center justify-center">
+                    <ShieldCheck className="w-4 h-4 text-slate-950" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs sm:text-sm font-black uppercase tracking-wider text-slate-950">
+                      Night Shift Closure Authorization
+                    </h3>
+                    <p className="text-[10px] font-semibold text-slate-900/80">
+                      Shift Date: {dayData.date} · Sign-off & Lock
+                    </p>
+                  </div>
                 </div>
-                <h3 className="text-base font-black text-slate-900">
-                  Verify & Close Operational Shift
-                </h3>
+                <button
+                  id="close-shift-prompt"
+                  onClick={() => setShowShiftClosePrompt(false)}
+                  className="p-1 text-slate-950 hover:bg-amber-600/30 rounded-lg transition cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              <button
-                id="close-shift-prompt"
-                onClick={() => setShowShiftClosePrompt(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
 
-            <p className="text-xs text-slate-500 leading-relaxed">
-              You are about to sign off, verify, and lock all operational logs for date <strong className="font-semibold text-slate-700">{dayData.date}</strong>. This will finalize the report and automatically increment history version stamps.
-            </p>
+              <div className="p-4 space-y-2.5 text-slate-900">
+                {/* Shift Date Verification Warning / Notice */}
+                <div className={`p-2.5 rounded-xl border text-xs flex items-start gap-2 ${
+                  isFutureDate 
+                    ? 'bg-rose-50 border-rose-200 text-rose-900' 
+                    : isToday 
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-900' 
+                    : 'bg-amber-50 border-amber-200 text-amber-900'
+                }`}>
+                  <Calendar className="w-4 h-4 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <div className="font-bold flex items-center gap-1.5">
+                      <span>Shift Date: <span className="underline font-mono">{dayData.date}</span></span>
+                      {isToday && <span className="px-1.5 py-0.2 bg-emerald-200 text-emerald-800 rounded font-black text-[9px]">TODAY</span>}
+                      {isFutureDate && <span className="px-1.5 py-0.2 bg-rose-200 text-rose-800 rounded font-black text-[9px]">FUTURE DATE</span>}
+                      {isPastDate && <span className="px-1.5 py-0.2 bg-amber-200 text-amber-800 rounded font-black text-[9px]">PAST DATE</span>}
+                    </div>
+                    {isFutureDate && (
+                      <p className="text-[10px] leading-tight text-rose-700">
+                        Warning: This shift date is in the future. Verify and acknowledge below to proceed.
+                      </p>
+                    )}
+                  </div>
+                </div>
 
-            <div className="space-y-3">
-              <div>
-                <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">
-                  Username / Signature Identifier <span className="text-rose-500">*</span>
-                </label>
-                <div className="relative">
-                  <User className="absolute left-3 top-2.5 w-4 h-4 text-slate-400" />
-                  <input
-                    id="shift-close-supervisor-name"
-                    type="text"
-                    required
-                    value={supervisorNameInput}
-                    onChange={e => setSupervisorNameInput(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500 text-slate-800"
-                    placeholder="Enter your username or signature name (e.g. U123456 or Duty Supervisor)"
+                {/* Future Date Confirmation Checkbox */}
+                {isFutureDate && (
+                  <label className="flex items-center gap-2 p-2 bg-rose-50 border border-rose-200 rounded-lg text-xs font-bold text-rose-900 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      id="drilldown-confirm-future-date"
+                      checked={confirmFutureDateDrilldown}
+                      onChange={e => setConfirmFutureDateDrilldown(e.target.checked)}
+                      className="w-4 h-4 text-rose-600 rounded border-slate-300 focus:ring-rose-500"
+                    />
+                    <span>I verify and confirm I am closing a future shift ({dayData.date})</span>
+                  </label>
+                )}
+
+                {/* Supervisor Name */}
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-slate-700 mb-0.5">
+                    Username / Signature Identifier <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <User className="absolute left-2.5 top-2 w-3.5 h-3.5 text-slate-400" />
+                    <input
+                      id="shift-close-supervisor-name"
+                      type="text"
+                      required
+                      value={supervisorNameInput}
+                      onChange={e => setSupervisorNameInput(e.target.value)}
+                      className="w-full pl-8 pr-2.5 py-1.5 border border-slate-300 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500 text-slate-900 bg-slate-50"
+                      placeholder="e.g. U123456 or Duty Supervisor"
+                    />
+                  </div>
+                </div>
+
+                {/* Free Text Remarks (Mandatory, starts blank) */}
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-slate-700 mb-0.5">
+                    Remarks & Handover Notes <span className="text-rose-500">*</span>
+                  </label>
+                  <textarea
+                    id="shift-close-supervisor-notes"
+                    value={supervisorNotesInput}
+                    onChange={e => setSupervisorNotesInput(e.target.value)}
+                    className="w-full p-2 border border-slate-300 rounded-lg text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500 text-slate-900 bg-slate-50 resize-none min-h-[48px]"
+                    placeholder="Enter mandatory operational remarks, handover notes, or delay observations..."
                   />
                 </div>
+
+                {/* Mandatory Baggage Left Behind Section */}
+                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 space-y-1.5">
+                  <div className="flex items-center gap-1.5 text-[11px] font-black text-slate-800">
+                    <Briefcase className="w-3.5 h-3.5 text-sky-600" />
+                    <span>Bags Left Behind <span className="text-rose-500">*</span></span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="block text-[9px] font-black uppercase text-slate-600 mb-0.5">
+                        Arrivals <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        id="drilldown-bags-arrivals"
+                        type="text"
+                        placeholder="e.g. 0"
+                        value={drilldownArrivalsBags}
+                        onChange={(e) => setDrilldownArrivalsBags(e.target.value)}
+                        className="w-full bg-white border border-slate-300 rounded-md px-2 py-1 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500 transition"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[9px] font-black uppercase text-slate-600 mb-0.5">
+                        LHG Office <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        id="drilldown-bags-lhg-office"
+                        type="text"
+                        placeholder="e.g. 0"
+                        value={drilldownLhgOfficeBags}
+                        onChange={(e) => setDrilldownLhgOfficeBags(e.target.value)}
+                        className="w-full bg-white border border-slate-300 rounded-md px-2 py-1 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500 transition"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[9px] font-black uppercase text-slate-600 mb-0.5">
+                        Level 4 <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        id="drilldown-bags-level4"
+                        type="text"
+                        placeholder="e.g. 0"
+                        value={drilldownLevel4Bags}
+                        onChange={(e) => setDrilldownLevel4Bags(e.target.value)}
+                        className="w-full bg-white border border-slate-300 rounded-md px-2 py-1 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500 transition"
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              <div>
-                <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">
-                  Free Text Remarks & Handover Notes
-                </label>
-                <textarea
-                  id="shift-close-supervisor-notes"
-                  value={supervisorNotesInput}
-                  onChange={e => setSupervisorNotesInput(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-amber-500 text-slate-800 h-24 resize-none"
-                  placeholder="Enter free text remarks, log handovers, operational observations, or delay explanations..."
-                />
+              <div className="px-4 py-3 bg-slate-100 border-t border-slate-200 flex items-center justify-end gap-2 shrink-0">
+                <button
+                  id="btn-cancel-drilldown-close"
+                  type="button"
+                  onClick={() => setShowShiftClosePrompt(false)}
+                  className="px-3.5 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  id="btn-confirm-drilldown-close"
+                  type="button"
+                  disabled={isCloseBlocked}
+                  onClick={handleFinalCloseShift}
+                  className={`px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition flex items-center gap-1.5 cursor-pointer shadow-xs ${
+                    isCloseBlocked
+                      ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                      : 'btn-3d-emerald'
+                  }`}
+                >
+                  <Lock className="w-3.5 h-3.5" />
+                  <span>Confirm & Lock Shift</span>
+                </button>
               </div>
-            </div>
-
-            <div className="pt-2 flex gap-2">
-              <button
-                id="btn-confirm-drilldown-close"
-                disabled={!supervisorNameInput.trim()}
-                onClick={handleFinalCloseShift}
-                className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-200 disabled:text-slate-400 text-white rounded-xl text-xs font-bold transition shadow-xs cursor-pointer"
-              >
-                Sign-off & Verify Shift
-              </button>
-              <button
-                id="btn-cancel-drilldown-close"
-                onClick={() => setShowShiftClosePrompt(false)}
-                className="px-4 py-2.5 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition cursor-pointer"
-              >
-                Cancel
-              </button>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Free-Text Prompt Modal for Verifying & Closing Individual Operational Group */}
       {verifyingGroupId && (() => {
         const targetGroup = dayData.groups.find(g => g.id === verifyingGroupId);
         if (!targetGroup) return null;
+        const isDayShiftGroup = targetGroup.name.includes('Day Shift') || targetGroup.code === 'DAY-OPS';
+
+        const isGroupBagsValid = isDayShiftGroup
+          ? drilldownArrivalsBags.trim() !== '' && drilldownLhgOfficeBags.trim() !== '' && drilldownLevel4Bags.trim() !== '' && drilldownBmaBags.trim() !== ''
+          : true;
+
+        const isGroupBlocked = (isDayShiftGroup && (!groupVerificationRemarks.trim() || !isGroupBagsValid));
 
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
-            <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden p-6 space-y-4">
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-9 h-9 rounded-xl bg-sky-100 text-sky-700 flex items-center justify-center">
-                    <ShieldCheck className="w-5 h-5" />
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-3 bg-slate-900/70 backdrop-blur-xs animate-in fade-in">
+            <div className="w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-300 overflow-hidden text-slate-900 flex flex-col animate-in zoom-in-95">
+              <div className="px-4 py-3 bg-sky-600 text-white flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-white/20 text-white flex items-center justify-center">
+                    <ShieldCheck className="w-4 h-4" />
                   </div>
                   <div>
-                    <h3 className="text-base font-extrabold text-slate-900">
-                      Verify & Close Group
+                    <h3 className="text-xs sm:text-sm font-black uppercase tracking-wider text-white">
+                      {isDayShiftGroup ? 'Day Shift Verify & Close Authorization' : 'Verify & Close Group'}
                     </h3>
-                    <p className="text-xs text-slate-500 font-mono">
+                    <p className="text-[10px] font-mono text-white/80">
                       {targetGroup.name} (ID: {targetGroup.id})
                     </p>
                   </div>
@@ -2232,62 +2374,127 @@ export function ChecklistDrillDownView({
                 <button
                   type="button"
                   onClick={() => setVerifyingGroupId(null)}
-                  className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+                  className="p-1 rounded-lg text-white/80 hover:text-white hover:bg-white/20 transition cursor-pointer"
                 >
-                  <X className="w-5 h-5" />
+                  <X className="w-4 h-4" />
                 </button>
               </div>
 
-              <div className="p-3 bg-sky-50/70 border border-sky-200 rounded-xl text-xs text-sky-950 space-y-1">
-                <div className="font-bold flex items-center gap-1.5">
-                  <span>Authorize Operational Stage</span>
+              <div className="p-4 space-y-2.5">
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-slate-700 mb-0.5">
+                    Supervisor Handover Remarks <span className="text-rose-500">*</span>
+                  </label>
+                  <textarea
+                    id="group-verification-remarks-input"
+                    autoFocus
+                    value={groupVerificationRemarks}
+                    onChange={e => setGroupVerificationRemarks(e.target.value)}
+                    placeholder={isDayShiftGroup ? "Enter mandatory Day Shift operational remarks & handover notes..." : "Enter supervisor remarks and handover notes..."}
+                    rows={2}
+                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-semibold text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-500 transition resize-none min-h-[48px]"
+                  />
                 </div>
-                <p className="text-[11px] text-sky-900/80 leading-relaxed">
-                  Please provide supervisor remarks and handover notes to authorize and close this operational section.
-                </p>
+
+                {isDayShiftGroup && (
+                  <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 space-y-1.5">
+                    <div className="flex items-center gap-1.5 text-[11px] font-black text-slate-800">
+                      <Briefcase className="w-3.5 h-3.5 text-sky-600" />
+                      <span>Bags Left Behind (Day Shift) <span className="text-rose-500">*</span></span>
+                    </div>
+                    <div className="grid grid-cols-4 gap-1.5">
+                      <div>
+                        <label className="block text-[9px] font-black uppercase text-slate-600 mb-0.5">
+                          Arrivals <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          id="group-bags-arrivals"
+                          type="text"
+                          placeholder="e.g. 0"
+                          value={drilldownArrivalsBags}
+                          onChange={(e) => setDrilldownArrivalsBags(e.target.value)}
+                          className="w-full bg-white border border-slate-300 rounded-md px-2 py-1 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500 transition"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[9px] font-black uppercase text-slate-600 mb-0.5">
+                          LHG Office <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          id="group-bags-lhg-office"
+                          type="text"
+                          placeholder="e.g. 0"
+                          value={drilldownLhgOfficeBags}
+                          onChange={(e) => setDrilldownLhgOfficeBags(e.target.value)}
+                          className="w-full bg-white border border-slate-300 rounded-md px-2 py-1 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500 transition"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[9px] font-black uppercase text-slate-600 mb-0.5">
+                          Level 4 <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          id="group-bags-level4"
+                          type="text"
+                          placeholder="e.g. 0"
+                          value={drilldownLevel4Bags}
+                          onChange={(e) => setDrilldownLevel4Bags(e.target.value)}
+                          className="w-full bg-white border border-slate-300 rounded-md px-2 py-1 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500 transition"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[9px] font-black uppercase text-slate-600 mb-0.5">
+                          BMA <span className="text-rose-500">*</span>
+                        </label>
+                        <input
+                          id="group-bags-bma"
+                          type="text"
+                          placeholder="e.g. 0"
+                          value={drilldownBmaBags}
+                          onChange={(e) => setDrilldownBmaBags(e.target.value)}
+                          className="w-full bg-white border border-slate-300 rounded-md px-2 py-1 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500 transition"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
-                  Supervisor Handover & Verification Remarks (Free Text)
-                </label>
-                <textarea
-                  id="group-verification-remarks-input"
-                  autoFocus
-                  value={groupVerificationRemarks}
-                  onChange={e => setGroupVerificationRemarks(e.target.value)}
-                  placeholder="e.g. Ground handling completed smoothly on Stand 12. Turnaround baggage reconciled; GSE cleared without damage."
-                  rows={4}
-                  className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-900 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 transition shadow-inner resize-none"
-                />
-                <div className="flex justify-between text-[10px] text-slate-400 mt-1 font-mono">
-                  <span>Enter optional or detailed operational observations</span>
-                  <span>{groupVerificationRemarks.length} chars</span>
-                </div>
-              </div>
-
-              <div className="pt-2 flex items-center justify-end gap-2.5">
+              <div className="px-4 py-3 bg-slate-100 border-t border-slate-200 flex items-center justify-end gap-2 shrink-0">
                 <button
                   id="btn-cancel-verify-group"
                   type="button"
                   onClick={() => setVerifyingGroupId(null)}
-                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+                  className="px-3.5 py-1.5 text-xs font-bold text-slate-600 hover:text-slate-900 hover:bg-slate-200 rounded-lg transition cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   id="btn-confirm-verify-group-submit"
                   type="button"
+                  disabled={isGroupBlocked}
                   onClick={() => {
-                    const finalNotes = groupVerificationRemarks.trim() || 'Verified and authorized by Duty Supervisor via operational cockpit.';
+                    let finalNotes = groupVerificationRemarks.trim() || 'Verified and authorized by Duty Supervisor.';
+                    if (isDayShiftGroup) {
+                      const bagSummary = `Baggage Left Behind: Arrivals: ${drilldownArrivalsBags.trim()} | LHG Office: ${drilldownLhgOfficeBags.trim()} | Level 4: ${drilldownLevel4Bags.trim()} | BMA: ${drilldownBmaBags.trim()}`;
+                      finalNotes = `Remarks: ${groupVerificationRemarks.trim()}\n${bagSummary}`;
+                    }
                     onVerifyGroup(targetGroup.id, finalNotes);
                     setVerifyingGroupId(null);
                     setGroupVerificationRemarks('');
+                    setDrilldownArrivalsBags('');
+                    setDrilldownLhgOfficeBags('');
+                    setDrilldownLevel4Bags('');
+                    setDrilldownBmaBags('');
                   }}
-                  className="px-5 py-2.5 bg-sky-600 hover:bg-sky-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl shadow-xs transition flex items-center gap-2 cursor-pointer"
+                  className={`px-4 py-1.5 font-bold text-xs uppercase tracking-wider rounded-lg shadow-xs transition flex items-center gap-1.5 cursor-pointer ${
+                    isGroupBlocked
+                      ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                      : 'bg-sky-600 hover:bg-sky-700 text-white'
+                  }`}
                 >
-                  <ShieldCheck className="w-4 h-4" />
-                  <span>Verify & Lock Group</span>
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  <span>{isDayShiftGroup ? 'Verify & Lock Day Shift' : 'Verify & Lock Group'}</span>
                 </button>
               </div>
             </div>

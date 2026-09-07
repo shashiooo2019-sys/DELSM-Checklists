@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { DayOperationalData, OperationalGroup, UserAccount } from '@/types/aviation';
 import { isGroupComplete, getDayOverallProgress } from '@/lib/storage';
+import { getTodayDateString } from '@/lib/initialData';
 import { 
   X,
   ChevronDown, 
@@ -16,10 +17,12 @@ import {
   CheckCircle2, 
   User, 
   Clock, 
+  Calendar,
   Check, 
   MessageSquare,
   Sparkles,
-  Plane
+  Plane,
+  Briefcase
 } from 'lucide-react';
 
 interface SupervisorDiagnosisModalProps {
@@ -63,10 +66,18 @@ export function SupervisorDiagnosisModal({
   // Sign-off details - Pre-fill with active logged in user credentials if available
   const [signoffUNumber, setSignoffUNumber] = useState<string>(() => currentUser?.uNumber || '');
   const [signoffName, setSignoffName] = useState<string>(() => currentUser?.name || '');
-  const [shiftClosureRemarks, setShiftClosureRemarks] = useState<string>(() => 
-    currentUser?.uNumber ? `Shift operational handover verified and signed off by ${currentUser.name} (${currentUser.uNumber}).` : ''
-  );
+  // Remarks strictly initialized blank per user requirement
+  const [shiftClosureRemarks, setShiftClosureRemarks] = useState<string>('');
+  
+  // Mandatory Baggage Left Behind fields
+  const [arrivalsBags, setArrivalsBags] = useState<string>('');
+  const [lhgOfficeBags, setLhgOfficeBags] = useState<string>('');
+  const [level4Bags, setLevel4Bags] = useState<string>('');
+  const [bmaBags, setBmaBags] = useState<string>('');
+
+  const [confirmFutureDate, setConfirmFutureDate] = useState<boolean>(false);
   const [showShiftClosePromptModal, setShowShiftClosePromptModal] = useState<boolean>(false);
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
 
   if (!isOpen) return null;
 
@@ -149,17 +160,26 @@ export function SupervisorDiagnosisModal({
   };
 
   const handleShiftCloseAction = () => {
+    const bagSummary = dayShiftOnly
+      ? `Baggage Left Behind: Arrivals: ${arrivalsBags.trim()} | LHG Office: ${lhgOfficeBags.trim()} | Level 4: ${level4Bags.trim()} | BMA: ${bmaBags.trim()}`
+      : `Baggage Left Behind: Arrivals: ${arrivalsBags.trim()} | LHG Office: ${lhgOfficeBags.trim()} | Level 4: ${level4Bags.trim()}`;
+
     if (dayShiftOnly && currentGroup) {
-      const finalNotes = `Day Shift Sign-off by: ${signoffName.trim()} (U-Number: ${signoffUNumber.trim()})\nRemarks: ${shiftClosureRemarks.trim() || 'Day Shift verified and closed independently.'}`;
+      const finalNotes = `Day Shift Sign-off by: ${signoffName.trim()} (U-Number: ${signoffUNumber.trim()})\nRemarks: ${shiftClosureRemarks.trim()}\n${bagSummary}`;
       onVerifyGroup(currentGroup.id, finalNotes);
     } else {
-      const finalNotes = `Sign-off by: ${signoffName.trim()} (U-Number: ${signoffUNumber.trim()})\nRemarks: ${shiftClosureRemarks.trim() || 'Full shift verified and closed by Duty Supervisor.'}`;
+      const finalNotes = `Sign-off by: ${signoffName.trim()} (U-Number: ${signoffUNumber.trim()})\nRemarks: ${shiftClosureRemarks.trim()}\n${bagSummary}`;
       onCloseShift(finalNotes, signoffName.trim());
     }
     setSupervisorNotes('');
     setSignoffUNumber('');
     setSignoffName('');
     setShiftClosureRemarks('');
+    setArrivalsBags('');
+    setLhgOfficeBags('');
+    setLevel4Bags('');
+    setBmaBags('');
+    setShowShiftClosePromptModal(false);
     onClose();
   };
 
@@ -574,19 +594,106 @@ export function SupervisorDiagnosisModal({
           const nonCompliantCount = allExceptionsList.filter(e => e.status === 'missed' || e.status === 'incorrectly_executed').length;
           const notDoneCount = allExceptionsList.filter(e => e.status === 'not_done' || e.status === 'pinned').length;
           
-          const isBlocked = (hasExceptions && !verifiedExceptions) || signoffUNumber.trim() === '' || signoffName.trim() === '';
+          const todayDateStr = getTodayDateString();
+          const isFutureDate = dayData.date > todayDateStr;
+          const isTodayDate = dayData.date === todayDateStr;
+          const isPastDate = dayData.date < todayDateStr;
+
+          const isExceptionsSatisfied = !hasExceptions || verifiedExceptions;
+
+          const isBaggageValid = dayShiftOnly
+            ? arrivalsBags.trim() !== '' && lhgOfficeBags.trim() !== '' && level4Bags.trim() !== '' && bmaBags.trim() !== ''
+            : arrivalsBags.trim() !== '' && lhgOfficeBags.trim() !== '' && level4Bags.trim() !== '';
+
+          const isSignoffValid = signoffUNumber.trim() !== '' && signoffName.trim() !== '';
+          const isRemarksValid = shiftClosureRemarks.trim() !== '';
+          const isFutureDateValid = !isFutureDate || confirmFutureDate;
+
+          const isAllDetailsFilled = isSignoffValid && isRemarksValid && isBaggageValid && isFutureDateValid;
+          const isBlocked = !isExceptionsSatisfied;
+
+          const handleShiftVerifyAndCloseClick = () => {
+            if (isBlocked) return;
+
+            if (isAllDetailsFilled) {
+              handleShiftCloseAction();
+            } else {
+              const errors: string[] = [];
+              if (!isSignoffValid) errors.push('Supervisor Username/Name required');
+              if (!isRemarksValid) errors.push('Operational Remarks required');
+              if (!isBaggageValid) errors.push('All Baggage Left Behind counts required');
+              if (!isFutureDateValid) errors.push('Future date confirmation check required');
+              setValidationErrors(errors);
+              setShowShiftClosePromptModal(true);
+            }
+          };
 
           return (
             <div className="bg-slate-100 border-t border-slate-300 divide-y divide-slate-300">
-              {/* Step 1: Shift Closure Sign-off Details */}
+              {/* Step 1: Shift Closure Sign-off Details & Date Verification */}
               <div className="p-4 sm:p-5 space-y-3 bg-white">
-                <div className="flex items-center justify-between">
+                <div className="flex items-center justify-between flex-wrap gap-2">
                   <h4 className="text-xs font-black uppercase tracking-wider text-slate-900 flex items-center gap-2">
                     <ShieldCheck className="w-4 h-4 text-emerald-700" />
                     <span>{dayShiftOnly ? 'Day Shift Closure Sign-off' : 'Shift Closure Sign-off'}</span>
                   </h4>
                   <span className="text-[11px] text-slate-500 font-mono font-bold">Supervisor Authorization Required</span>
                 </div>
+
+                {/* Shift Operating Date Verification Banner */}
+                <div className={`p-3 rounded-xl border flex items-center justify-between gap-3 flex-wrap shadow-2xs ${
+                  isFutureDate 
+                    ? 'bg-amber-50/90 border-amber-300 text-amber-950'
+                    : isTodayDate 
+                    ? 'bg-emerald-50/90 border-emerald-300 text-emerald-950'
+                    : 'bg-slate-50 border-slate-300 text-slate-900'
+                }`}>
+                  <div className="flex items-center gap-2.5">
+                    <Calendar className={`w-4 h-4 shrink-0 ${isFutureDate ? 'text-amber-600' : isTodayDate ? 'text-emerald-600' : 'text-slate-600'}`} />
+                    <div>
+                      <div className="text-[11px] font-black uppercase tracking-wider flex items-center gap-1.5">
+                        <span>Target Shift Date:</span>
+                        <span className="font-mono text-xs px-1.5 py-0.5 rounded bg-white/80 border border-slate-300 font-bold">{dayData.date}</span>
+                      </div>
+                      <p className="text-[10px] font-semibold opacity-85 mt-0.5">
+                        {isTodayDate 
+                          ? `Current Active Shift (${todayDateStr}) · Ready for official closure` 
+                          : isFutureDate 
+                          ? `⚠️ Caution: Shift date ${dayData.date} is in the future (Today is ${todayDateStr})` 
+                          : `Archived Historical Shift (${dayData.date})`}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className={`text-[10px] font-mono font-black px-2.5 py-1 rounded-lg border uppercase shadow-2xs ${
+                      isFutureDate
+                        ? 'bg-amber-200 text-amber-950 border-amber-400'
+                        : isTodayDate
+                        ? 'bg-emerald-200 text-emerald-950 border-emerald-400'
+                        : 'bg-slate-200 text-slate-800 border-slate-300'
+                    }`}>
+                      {isTodayDate ? '✅ Today (Active)' : isFutureDate ? '⚠️ Future Shift' : '📅 Past Shift'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Future Date Confirmation Checkbox (if closing a future shift) */}
+                {isFutureDate && (
+                  <div className="p-2.5 bg-rose-50 border border-rose-300 rounded-xl space-y-1">
+                    <label className="flex items-start gap-2 text-[11px] font-black text-rose-950 cursor-pointer">
+                      <input
+                        id="chk-confirm-future-date-step1"
+                        type="checkbox"
+                        checked={confirmFutureDate}
+                        onChange={(e) => setConfirmFutureDate(e.target.checked)}
+                        className="w-4 h-4 mt-0.5 rounded border-rose-400 text-rose-600 focus:ring-rose-500 cursor-pointer"
+                      />
+                      <span>
+                        I verify and acknowledge that I am explicitly closing a <span className="underline decoration-rose-600">FUTURE</span> shift date ({dayData.date}). (Check to activate closure)
+                      </span>
+                    </label>
+                  </div>
+                )}
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
@@ -617,16 +724,122 @@ export function SupervisorDiagnosisModal({
                   </div>
                   <div className="sm:col-span-2">
                     <label className="block text-[11px] font-black text-slate-700 mb-1">
-                      Free Text Remarks & Handover Notes
+                      Free Text Remarks & Handover Notes <span className="text-rose-500">*</span>
                     </label>
                     <textarea
                       id="input-signoff-remarks"
                       rows={2}
-                      placeholder="Enter free text remarks, operational delays, handover notes, or observations..."
+                      placeholder="Enter mandatory free text remarks, operational observations, or handover notes..."
                       value={shiftClosureRemarks}
                       onChange={(e) => setShiftClosureRemarks(e.target.value)}
-                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-[inset_0_1px_2px_rgba(0,0,0,0.06)] transition resize-y min-h-[50px]"
+                      className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-[inset_0_1px_2px_rgba(0,0,0,0.06)] transition resize-y min-h-[45px]"
                     />
+                  </div>
+
+                  {/* Baggage Left Behind (Mandatory Fields) */}
+                  <div className="sm:col-span-2 bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
+                    <div className="flex items-center gap-1.5 text-xs font-black text-slate-800">
+                      <Briefcase className="w-3.5 h-3.5 text-sky-600" />
+                      <span>Baggage Left Behind Status (Mandatory Free Text / Counts) <span className="text-rose-500">*</span></span>
+                    </div>
+                    {dayShiftOnly ? (
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-600 mb-0.5 uppercase">
+                            Arrivals <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            id="input-bags-arrivals"
+                            type="text"
+                            placeholder="e.g. 0 bags"
+                            value={arrivalsBags}
+                            onChange={(e) => setArrivalsBags(e.target.value)}
+                            className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500 transition"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-600 mb-0.5 uppercase">
+                            LHG Office <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            id="input-bags-lhg-office"
+                            type="text"
+                            placeholder="e.g. 0 bags"
+                            value={lhgOfficeBags}
+                            onChange={(e) => setLhgOfficeBags(e.target.value)}
+                            className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500 transition"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-600 mb-0.5 uppercase">
+                            Level 4 <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            id="input-bags-level4"
+                            type="text"
+                            placeholder="e.g. 0 bags"
+                            value={level4Bags}
+                            onChange={(e) => setLevel4Bags(e.target.value)}
+                            className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500 transition"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-600 mb-0.5 uppercase">
+                            BMA <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            id="input-bags-bma"
+                            type="text"
+                            placeholder="e.g. 0 bags"
+                            value={bmaBags}
+                            onChange={(e) => setBmaBags(e.target.value)}
+                            className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500 transition"
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-600 mb-0.5 uppercase">
+                            Arrivals <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            id="input-bags-arrivals-night"
+                            type="text"
+                            placeholder="e.g. 0 bags"
+                            value={arrivalsBags}
+                            onChange={(e) => setArrivalsBags(e.target.value)}
+                            className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500 transition"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-600 mb-0.5 uppercase">
+                            LHG Office <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            id="input-bags-lhg-office-night"
+                            type="text"
+                            placeholder="e.g. 0 bags"
+                            value={lhgOfficeBags}
+                            onChange={(e) => setLhgOfficeBags(e.target.value)}
+                            className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500 transition"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[10px] font-bold text-slate-600 mb-0.5 uppercase">
+                            Level 4 <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            id="input-bags-level4-night"
+                            type="text"
+                            placeholder="e.g. 0 bags"
+                            value={level4Bags}
+                            onChange={(e) => setLevel4Bags(e.target.value)}
+                            className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500 transition"
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -722,31 +935,54 @@ export function SupervisorDiagnosisModal({
                     </div>
                   </div>
                 ) : (
-                  <div className="p-3 bg-emerald-100/80 border border-emerald-300 rounded-xl text-xs text-emerald-950 flex items-center gap-2 font-bold shadow-2xs">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
-                    <span>All checklist items executed and compliant. Zero skipped or non-compliant exceptions recorded.</span>
+                  <div className="p-3.5 bg-emerald-100/90 border border-emerald-300 rounded-xl text-xs text-emerald-950 flex items-center justify-between gap-3 font-bold shadow-2xs flex-wrap">
+                    <div className="flex items-center gap-2.5">
+                      <CheckCircle2 className="w-5 h-5 text-emerald-700 shrink-0" />
+                      <div>
+                        <div className="font-black text-emerald-950">100% Compliant Execution</div>
+                        <div className="text-[11px] text-emerald-900 font-semibold">
+                          All checklist items executed and compliant. Zero skipped or non-compliant exceptions recorded.
+                        </div>
+                      </div>
+                    </div>
+                    <span className="px-2.5 py-1 bg-emerald-200 text-emerald-950 border border-emerald-400 rounded-lg text-[10px] font-mono font-black uppercase tracking-wider shadow-2xs">
+                      Zero Exceptions · Activated
+                    </span>
                   </div>
                 )}
 
                 {/* Step 3: Button for Shift Verify and Close (directly following checkbox) */}
                 <div className="pt-2 flex items-center justify-between flex-wrap gap-3">
-                  <span className="text-[11px] text-slate-600 font-semibold">
-                    {isBlocked 
-                      ? hasExceptions && !verifiedExceptions 
-                        ? 'Check the box above to accept skipped / not done items.'
-                        : 'Please enter Username and Name above.'
-                      : 'All requirements satisfied. Ready to finalize.'}
-                  </span>
+                  <div className="space-y-0.5">
+                    <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      {isBlocked ? (
+                        <>
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-600" />
+                          <span className="text-amber-900 font-black">Exception Verification Required: Check the box above to accept exceptions.</span>
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          <span className="text-emerald-900 font-black">
+                            {hasExceptions ? 'Exceptions Verified & Accepted' : 'Zero Exceptions Recorded'} · Ready to Verify Date & Close Shift
+                          </span>
+                        </>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-500 font-medium">
+                      Operating Shift Date: <strong className="font-mono text-slate-800">{dayData.date}</strong> {isFutureDate ? '(⚠️ Future Date Check will be required)' : isTodayDate ? '(Today - Current Shift)' : '(Past Date)'}
+                    </p>
+                  </div>
 
                   <button
                     id="btn-shift-verify-and-close"
                     type="button"
                     disabled={isBlocked}
-                    onClick={() => setShowShiftClosePromptModal(true)}
-                    className={`px-6 py-3 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition cursor-pointer ${
+                    onClick={handleShiftVerifyAndCloseClick}
+                    className={`px-6 py-3 rounded-xl text-xs font-black uppercase tracking-wider flex items-center gap-2 transition cursor-pointer shadow-xs ${
                       isBlocked
                         ? 'btn-3d-white text-slate-400 opacity-60 cursor-not-allowed'
-                        : 'btn-3d-emerald'
+                        : 'btn-3d-emerald text-white animate-subtle-pulse'
                     }`}
                   >
                     <Lock className="w-4 h-4" />
@@ -805,121 +1041,385 @@ export function SupervisorDiagnosisModal({
             )}
           </div>
         )}
-        {/* Prompt Modal for Username & Free Text on Shift Verify and Close */}
-        {showShiftClosePromptModal && (
-          <div className="fixed inset-0 z-60 flex items-center justify-center p-3 bg-slate-900/80 backdrop-blur-xs animate-in fade-in">
-            <div 
-              id="modal-shift-close-prompt"
-              className="bg-white rounded-2xl border border-slate-300 shadow-[0_25px_60px_-10px_rgba(0,0,0,0.5)] max-w-lg w-full overflow-hidden text-slate-900 animate-in zoom-in-95"
-            >
-              <div className="p-4 sm:p-5 bg-amber-500 text-slate-950 flex items-center justify-between border-b border-amber-600">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-lg bg-amber-600/30 flex items-center justify-center">
-                    <ShieldCheck className="w-5 h-5 text-slate-950" />
+
+        {/* Pop-up Dialogue Box for Shift Verify and Close (No scroll popup with Date Verification) */}
+        {showShiftClosePromptModal && (() => {
+          const todayDateStr = getTodayDateString();
+          const isFutureDate = dayData.date > todayDateStr;
+          const isTodayDate = dayData.date === todayDateStr;
+          
+          const isBaggageValidPrompt = dayShiftOnly
+            ? arrivalsBags.trim() !== '' && lhgOfficeBags.trim() !== '' && level4Bags.trim() !== '' && bmaBags.trim() !== ''
+            : arrivalsBags.trim() !== '' && lhgOfficeBags.trim() !== '' && level4Bags.trim() !== '';
+
+          const isSignoffValidPrompt = signoffUNumber.trim() !== '' && signoffName.trim() !== '';
+          const isRemarksValidPrompt = shiftClosureRemarks.trim() !== '';
+          const isFutureDateValidPrompt = !isFutureDate || confirmFutureDate;
+
+          const isPromptBlocked = !isSignoffValidPrompt || 
+            !isRemarksValidPrompt || 
+            !isBaggageValidPrompt ||
+            !isFutureDateValidPrompt;
+
+          const handlePromptConfirm = () => {
+            if (isPromptBlocked) {
+              const errors: string[] = [];
+              if (!isSignoffValidPrompt) errors.push('Supervisor Username and Full Name');
+              if (!isRemarksValidPrompt) errors.push('Remarks & Handover Notes');
+              if (!isBaggageValidPrompt) errors.push(dayShiftOnly ? 'All 4 Baggage Counts (Arrivals, LHG, Level 4, BMA)' : 'All 3 Baggage Counts (Arrivals, LHG, Level 4)');
+              if (!isFutureDateValidPrompt) errors.push('Future Shift Date confirmation checkbox');
+              setValidationErrors(errors);
+              return;
+            }
+            handleShiftCloseAction();
+          };
+
+          return (
+            <div className="fixed inset-0 z-60 flex items-center justify-center p-3 bg-slate-900/80 backdrop-blur-xs animate-in fade-in">
+              <div 
+                id="modal-shift-close-prompt"
+                className="bg-white rounded-2xl border border-slate-300 shadow-[0_25px_60px_-10px_rgba(0,0,0,0.5)] max-w-lg w-full overflow-hidden text-slate-900 animate-in zoom-in-95 flex flex-col"
+              >
+                {/* Pop-up Header */}
+                <div className="px-4 py-3 bg-amber-500 text-slate-950 flex items-center justify-between border-b border-amber-600">
+                  <div className="flex items-center gap-2">
+                    <div className="w-7 h-7 rounded-lg bg-amber-600/30 flex items-center justify-center">
+                      <ShieldCheck className="w-4 h-4 text-slate-950" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs sm:text-sm font-black uppercase tracking-wider text-slate-950">
+                        {dayShiftOnly ? 'Day Shift Closure Authorization' : 'Night Shift Closure Authorization'}
+                      </h3>
+                      <p className="text-[10px] font-semibold text-slate-900/80">
+                        Shift Date: {dayData.date} · {isTodayDate ? "Today's Active Shift" : isFutureDate ? "⚠️ Future Shift Date" : "Past Shift Date"}
+                      </p>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="text-sm font-black uppercase tracking-wider text-slate-950">
-                      {dayShiftOnly ? 'Day Shift Verify & Close Authorization' : 'Shift Verify & Close Authorization'}
-                    </h3>
-                    <p className="text-[11px] font-semibold text-slate-900/80">
-                      Shift Date: {dayData.date}
-                    </p>
-                  </div>
+                  <button
+                    id="btn-close-shift-prompt-x"
+                    type="button"
+                    onClick={() => {
+                      setShowShiftClosePromptModal(false);
+                      setValidationErrors([]);
+                    }}
+                    className="p-1 rounded-lg hover:bg-amber-600/30 text-slate-950 transition cursor-pointer"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
                 </div>
-                <button
-                  id="btn-close-shift-prompt-x"
-                  type="button"
-                  onClick={() => setShowShiftClosePromptModal(false)}
-                  className="p-1 rounded-lg hover:bg-amber-600/30 text-slate-950 transition cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
 
-              <div className="p-5 space-y-4">
-                <p className="text-xs text-slate-600 leading-relaxed font-medium">
-                  Please prompt and verify your username and enter any free text handover remarks to authorize and permanently lock the operational shift record.
-                </p>
+                {/* Pop-up Content (Compact, no-scroll layout) */}
+                <div className="p-4 space-y-2.5 text-slate-900">
+                  {/* Shift Date Verification Alert */}
+                  <div className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 text-xs ${
+                    isFutureDate
+                      ? 'bg-amber-100 border-amber-400 text-amber-950'
+                      : isTodayDate
+                      ? 'bg-emerald-50 border-emerald-300 text-emerald-950'
+                      : 'bg-slate-100 border-slate-300 text-slate-900'
+                  }`}>
+                    <div className="flex items-center gap-2">
+                      <Calendar className={`w-4 h-4 shrink-0 ${isFutureDate ? 'text-amber-700' : isTodayDate ? 'text-emerald-700' : 'text-slate-700'}`} />
+                      <div>
+                        <div className="font-bold flex items-center gap-1">
+                          <span>Target Date: <strong className="font-mono">{dayData.date}</strong></span>
+                        </div>
+                        <div className="text-[10px] opacity-80">
+                          {isTodayDate 
+                            ? `Date verified: Matches today's operational date (${todayDateStr}).` 
+                            : isFutureDate 
+                            ? `Caution: Target date ${dayData.date} is in the future relative to today (${todayDateStr}).` 
+                            : `Historical/Past Shift date (${dayData.date}).`}
+                        </div>
+                      </div>
+                    </div>
+                    <span className={`text-[10px] font-mono font-black uppercase px-2 py-0.5 rounded border ${
+                      isFutureDate ? 'bg-amber-200 border-amber-500 text-amber-950' : isTodayDate ? 'bg-emerald-200 border-emerald-500 text-emerald-950' : 'bg-slate-200 border-slate-400 text-slate-800'
+                    }`}>
+                      {isTodayDate ? 'VERIFIED TODAY' : isFutureDate ? 'FUTURE DATE ⚠️' : 'PAST DATE'}
+                    </span>
+                  </div>
 
-                <div className="space-y-3">
-                  <div>
-                    <label className="block text-xs font-black text-slate-800 mb-1">
-                      Username / U-Number <span className="text-rose-500">*</span>
-                    </label>
-                    <div className="relative">
-                      <User className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+                  {/* Future Date Confirmation Checkbox (if closing a future shift) */}
+                  {isFutureDate && (
+                    <div className={`p-2.5 rounded-xl space-y-1 border ${!confirmFutureDate && validationErrors.length > 0 ? 'bg-rose-100 border-rose-400 animate-pulse' : 'bg-rose-50 border-rose-300'}`}>
+                      <label className="flex items-start gap-2 text-[11px] font-black text-rose-950 cursor-pointer">
+                        <input
+                          id="chk-confirm-future-date"
+                          type="checkbox"
+                          checked={confirmFutureDate}
+                          onChange={(e) => {
+                            setConfirmFutureDate(e.target.checked);
+                            setValidationErrors([]);
+                          }}
+                          className="w-4 h-4 mt-0.5 rounded border-rose-400 text-rose-600 focus:ring-rose-500 cursor-pointer"
+                        />
+                        <span>
+                          I verify and acknowledge that I am explicitly closing a <span className="underline decoration-rose-600">FUTURE</span> shift date ({dayData.date}). (Check to activate closure)
+                        </span>
+                      </label>
+                    </div>
+                  )}
+
+                  {/* Supervisor Signature Row */}
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="block text-[10px] font-black uppercase text-slate-700 mb-0.5">
+                        Username / U-Number <span className="text-rose-500">*</span>
+                      </label>
+                      <div className="relative">
+                        <User className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
+                        <input
+                          id="prompt-shift-close-unumber"
+                          type="text"
+                          required
+                          placeholder="e.g. U123456"
+                          value={signoffUNumber}
+                          onChange={(e) => {
+                            setSignoffUNumber(e.target.value);
+                            setValidationErrors([]);
+                          }}
+                          className={`w-full pl-8 pr-2.5 py-1.5 bg-slate-50 border rounded-lg text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:bg-white transition ${
+                            !signoffUNumber.trim() && validationErrors.length > 0 ? 'border-rose-400 ring-1 ring-rose-300' : 'border-slate-300'
+                          }`}
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-black uppercase text-slate-700 mb-0.5">
+                        Full Name <span className="text-rose-500">*</span>
+                      </label>
                       <input
-                        id="prompt-shift-close-unumber"
+                        id="prompt-shift-close-name"
                         type="text"
                         required
-                        placeholder="e.g. U123456"
-                        value={signoffUNumber}
-                        onChange={(e) => setSignoffUNumber(e.target.value)}
-                        className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:bg-white transition"
+                        placeholder="e.g. Duty Supervisor"
+                        value={signoffName}
+                        onChange={(e) => {
+                          setSignoffName(e.target.value);
+                          setValidationErrors([]);
+                        }}
+                        className={`w-full px-2.5 py-1.5 bg-slate-50 border rounded-lg text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:bg-white transition ${
+                          !signoffName.trim() && validationErrors.length > 0 ? 'border-rose-400 ring-1 ring-rose-300' : 'border-slate-300'
+                        }`}
                       />
                     </div>
                   </div>
 
+                  {/* Free Text Remarks (Mandatory, starts blank) */}
                   <div>
-                    <label className="block text-xs font-black text-slate-800 mb-1">
-                      Full Name / Role <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      id="prompt-shift-close-name"
-                      type="text"
-                      required
-                      placeholder="e.g. Duty Supervisor"
-                      value={signoffName}
-                      onChange={(e) => setSignoffName(e.target.value)}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:bg-white transition"
+                    <div className="flex items-center justify-between mb-0.5">
+                      <label className="block text-[10px] font-black uppercase text-slate-700">
+                        Remarks & Handover Notes <span className="text-rose-500">*</span>
+                      </label>
+                      {!shiftClosureRemarks.trim() && (
+                        <span className="text-[9px] font-bold text-amber-600">Mandatory (starts blank)</span>
+                      )}
+                    </div>
+                    <textarea
+                      id="prompt-shift-close-remarks"
+                      rows={2}
+                      placeholder="Enter mandatory operational remarks, handover notes, or delay observations..."
+                      value={shiftClosureRemarks}
+                      onChange={(e) => {
+                        setShiftClosureRemarks(e.target.value);
+                        setValidationErrors([]);
+                      }}
+                      className={`w-full p-2 bg-slate-50 border rounded-lg text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:bg-white transition resize-none min-h-[48px] ${
+                        !shiftClosureRemarks.trim() && validationErrors.length > 0 ? 'border-rose-400 ring-1 ring-rose-300' : 'border-slate-300'
+                      }`}
                     />
                   </div>
 
-                  <div>
-                    <label className="block text-xs font-black text-slate-800 mb-1">
-                      Free Text Remarks & Handover Notes
-                    </label>
-                    <div className="relative">
-                      <textarea
-                        id="prompt-shift-close-remarks"
-                        rows={3}
-                        placeholder="Enter free text notes, operational observations, log handovers, or delay explanations..."
-                        value={shiftClosureRemarks}
-                        onChange={(e) => setShiftClosureRemarks(e.target.value)}
-                        className="w-full p-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:bg-white transition resize-none"
-                      />
+                  {/* Mandatory Baggage Left Behind Section */}
+                  <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-[11px] font-black text-slate-800">
+                        <Briefcase className="w-3.5 h-3.5 text-sky-600" />
+                        <span>Bags Left Behind <span className="text-rose-500">*</span></span>
+                      </div>
+                      <span className="text-[9px] text-slate-500 font-bold">All fields required (enter 0 if nil)</span>
                     </div>
+
+                    {dayShiftOnly ? (
+                      <div className="grid grid-cols-4 gap-1.5">
+                        <div>
+                          <label className="block text-[9px] font-black uppercase text-slate-600 mb-0.5">
+                            Arrivals <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            id="prompt-bags-arrivals-day"
+                            type="text"
+                            placeholder="e.g. 0"
+                            value={arrivalsBags}
+                            onChange={(e) => {
+                              setArrivalsBags(e.target.value);
+                              setValidationErrors([]);
+                            }}
+                            className={`w-full bg-white border rounded-md px-2 py-1 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500 transition ${
+                              !arrivalsBags.trim() && validationErrors.length > 0 ? 'border-rose-400 ring-1 ring-rose-300' : 'border-slate-300'
+                            }`}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] font-black uppercase text-slate-600 mb-0.5">
+                            LHG Office <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            id="prompt-bags-lhg-office-day"
+                            type="text"
+                            placeholder="e.g. 0"
+                            value={lhgOfficeBags}
+                            onChange={(e) => {
+                              setLhgOfficeBags(e.target.value);
+                              setValidationErrors([]);
+                            }}
+                            className={`w-full bg-white border rounded-md px-2 py-1 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500 transition ${
+                              !lhgOfficeBags.trim() && validationErrors.length > 0 ? 'border-rose-400 ring-1 ring-rose-300' : 'border-slate-300'
+                            }`}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] font-black uppercase text-slate-600 mb-0.5">
+                            Level 4 <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            id="prompt-bags-level4-day"
+                            type="text"
+                            placeholder="e.g. 0"
+                            value={level4Bags}
+                            onChange={(e) => {
+                              setLevel4Bags(e.target.value);
+                              setValidationErrors([]);
+                            }}
+                            className={`w-full bg-white border rounded-md px-2 py-1 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500 transition ${
+                              !level4Bags.trim() && validationErrors.length > 0 ? 'border-rose-400 ring-1 ring-rose-300' : 'border-slate-300'
+                            }`}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] font-black uppercase text-slate-600 mb-0.5">
+                            BMA <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            id="prompt-bags-bma-day"
+                            type="text"
+                            placeholder="e.g. 0"
+                            value={bmaBags}
+                            onChange={(e) => {
+                              setBmaBags(e.target.value);
+                              setValidationErrors([]);
+                            }}
+                            className={`w-full bg-white border rounded-md px-2 py-1 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500 transition ${
+                              !bmaBags.trim() && validationErrors.length > 0 ? 'border-rose-400 ring-1 ring-rose-300' : 'border-slate-300'
+                            }`}
+                          />
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="grid grid-cols-3 gap-2">
+                        <div>
+                          <label className="block text-[9px] font-black uppercase text-slate-600 mb-0.5">
+                            Arrivals <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            id="prompt-bags-arrivals-night"
+                            type="text"
+                            placeholder="e.g. 0"
+                            value={arrivalsBags}
+                            onChange={(e) => {
+                              setArrivalsBags(e.target.value);
+                              setValidationErrors([]);
+                            }}
+                            className={`w-full bg-white border rounded-md px-2 py-1 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500 transition ${
+                              !arrivalsBags.trim() && validationErrors.length > 0 ? 'border-rose-400 ring-1 ring-rose-300' : 'border-slate-300'
+                            }`}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] font-black uppercase text-slate-600 mb-0.5">
+                            LHG Office <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            id="prompt-bags-lhg-office-night"
+                            type="text"
+                            placeholder="e.g. 0"
+                            value={lhgOfficeBags}
+                            onChange={(e) => {
+                              setLhgOfficeBags(e.target.value);
+                              setValidationErrors([]);
+                            }}
+                            className={`w-full bg-white border rounded-md px-2 py-1 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500 transition ${
+                              !lhgOfficeBags.trim() && validationErrors.length > 0 ? 'border-rose-400 ring-1 ring-rose-300' : 'border-slate-300'
+                            }`}
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] font-black uppercase text-slate-600 mb-0.5">
+                            Level 4 <span className="text-rose-500">*</span>
+                          </label>
+                          <input
+                            id="prompt-bags-level4-night"
+                            type="text"
+                            placeholder="e.g. 0"
+                            value={level4Bags}
+                            onChange={(e) => {
+                              setLevel4Bags(e.target.value);
+                              setValidationErrors([]);
+                            }}
+                            className={`w-full bg-white border rounded-md px-2 py-1 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-sky-500 transition ${
+                              !level4Bags.trim() && validationErrors.length > 0 ? 'border-rose-400 ring-1 ring-rose-300' : 'border-slate-300'
+                            }`}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
+
+                  {/* Validation Error Banner */}
+                  {validationErrors.length > 0 && (
+                    <div className="p-2.5 bg-rose-50 border border-rose-300 rounded-xl text-rose-950 text-xs font-semibold flex items-start gap-2 animate-in fade-in">
+                      <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                      <div>
+                        <div className="font-black text-rose-900">Please complete the required fields:</div>
+                        <ul className="list-disc list-inside text-[11px] text-rose-800 mt-0.5 space-y-0.5">
+                          {validationErrors.map((err, idx) => (
+                            <li key={idx}>{err}</li>
+                          ))}
+                        </ul>
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                {/* Pop-up Footer Actions */}
+                <div className="px-4 py-3 bg-slate-100 border-t border-slate-200 flex items-center justify-end gap-2 shrink-0">
+                  <button
+                    id="btn-cancel-prompt-shift-close"
+                    type="button"
+                    onClick={() => {
+                      setShowShiftClosePromptModal(false);
+                      setValidationErrors([]);
+                    }}
+                    className="px-3.5 py-1.5 text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    id="btn-confirm-prompt-shift-close"
+                    type="button"
+                    onClick={handlePromptConfirm}
+                    className="px-4 py-1.5 text-xs font-black uppercase tracking-wider rounded-lg transition flex items-center gap-1.5 cursor-pointer shadow-xs btn-3d-emerald text-white"
+                  >
+                    <Lock className="w-3.5 h-3.5" />
+                    <span>Confirm & Lock Shift</span>
+                  </button>
                 </div>
               </div>
-
-              <div className="p-4 bg-slate-100 border-t border-slate-200 flex items-center justify-end gap-2.5">
-                <button
-                  id="btn-cancel-prompt-shift-close"
-                  type="button"
-                  onClick={() => setShowShiftClosePromptModal(false)}
-                  className="px-4 py-2 text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-xl transition cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  id="btn-confirm-prompt-shift-close"
-                  type="button"
-                  disabled={!signoffUNumber.trim() || !signoffName.trim()}
-                  onClick={handleShiftCloseAction}
-                  className={`px-5 py-2 text-xs font-black uppercase tracking-wider rounded-xl transition flex items-center gap-1.5 cursor-pointer shadow-xs ${
-                    !signoffUNumber.trim() || !signoffName.trim()
-                      ? 'bg-slate-300 text-slate-500 cursor-not-allowed'
-                      : 'btn-3d-emerald'
-                  }`}
-                >
-                  <Lock className="w-3.5 h-3.5" />
-                  <span>Confirm Shift Verify & Close</span>
-                </button>
-              </div>
             </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
     </div>
   );
