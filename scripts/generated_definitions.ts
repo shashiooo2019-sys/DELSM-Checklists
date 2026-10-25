@@ -87,7 +87,7 @@ export const MASTER_FLIGHT_CHECKLISTS: { title: string; category?: string; items
       { id: "item-imp-lx147-1787428707282-12", seq: 12, text: "Monitor handling of:HON/FCL passengers,WCHR passengers, Pregnant passengers,Cast passengers, MAAS passengers\r\nEnsure special passenger requirements are identified early.", mand: true },
       { id: "item-imp-lx147-1787428707282-13", seq: 13, text: "Ensure strict SOP compliance with no unauthorized deviations.\r\nMonitor completion of operational checklists.", mand: true },
       { id: "item-imp-lx147-1787428707282-14", seq: 14, text: "Ensure the Gate Controller is released at A-40 with one designated \r\nstaff member. The Ramp Floater must be released by A-20. \r\nEnsure check-in counters are closed at D-90, and the flight is \r\nclosed in the system within the required timeline.", mand: true },
-      { id: "item-imp-lx147-1787428707282-15", seq: 15, text: "For LX flights (e.g., LX147 / LX2647), ensure flight-specific closing \r\nannouncements are made 20-30 minutes before counter closure. \r\nDisplay appropriate signage to inform passengers.", mand: true },
+      { id: "item-imp-lx147-1787428707282-15", seq: 15, text: "For LX flights (e.g., LX147), ensure flight-specific closing \r\nannouncements are made 20-30 minutes before counter closure. \r\nDisplay appropriate signage to inform passengers.", mand: true },
     ],
   },
   {

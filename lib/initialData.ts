@@ -505,7 +505,7 @@ export const DEFAULT_USERS: UserAccount[] = [
   }
 ];
 
-export const FLIGHT_CODES = ['LX147', 'LX2647', 'LH763', 'LH761'] as const;
+export const FLIGHT_CODES = ['LX147', 'LH763', 'LH761'] as const;
 
 // Helper to create checklist items with isMandatory=true by default
 export function makeItem(id: string, seq: number, text: string, isMandatory: boolean = true): ChecklistItem {
@@ -597,54 +597,7 @@ export const MASTER_FLIGHT_CHECKLISTS: { idSuffix: string; title: string; catego
       { id: 'lead-12', seq: 12, text: 'Monitor handling of: HON/FCL passengers, WCHR passengers, Pregnant passengers, Cast passengers, MAAS passengers. Ensure special passenger requirements are identified early.', mand: true },
       { id: 'lead-13', seq: 13, text: 'Ensure strict SOP compliance with no unauthorized deviations. Monitor completion of operational checklists.', mand: true },
       { id: 'lead-14', seq: 14, text: 'Ensure the Gate Controller is released at A-40 with one designated staff member. The Ramp Floater must be released by A-20. Ensure check-in counters are closed at D-90, and the flight is closed in the system within the required timeline.', mand: true },
-      { id: 'lead-15', seq: 15, text: 'For LX flights (e.g., LX147 / LX2647), ensure flight-specific closing announcements are made 20-30 minutes before counter closure. Display appropriate signage to inform passengers.', mand: true },
-    ],
-  },
-  {
-    idSuffix: 'crew-clearance',
-    title: 'Departure Crew Clearance checklist',
-    items: [
-      { id: 'crew-0', seq: 1, text: 'GD for Crew – 7 copies/ +01 which needs to provided at Gate 08 before 22:00Hrs', mand: true },
-      { id: 'crew-1', seq: 1, text: 'Collect arrival CLP AND CBD copy from LHG OFFICE', mand: true },
-      { id: 'crew-2', seq: 1, text: 'Get Blank Telex papers beforehand', mand: true },
-      { id: 'crew-3', seq: 1, text: 'Collect RR List from Early Counter Agent and secure it with yourself.', mand: true },
-      { id: 'crew-4', seq: 2, text: 'CREW CLEARANCE', mand: true },
-      { id: 'crew-5', seq: 2, text: 'Coordinate with hyatt or Pernam in case of crew coach or cab delays.', mand: true },
-      { id: 'crew-6', seq: 2, text: 'Ensure that when crew arrives, meet with purser/MC and take the CLP and CBD and also check it is filled and stamped', mand: true },
-      { id: 'crew-7', seq: 2, text: 'Make sure when crew reached T3, they cleared the immigration and security with in 20 minutes.', mand: true },
-      { id: 'crew-8', seq: 2, text: 'When crew crossed the security, immidiately inform Gate controller (GC).', mand: true },
-      { id: 'crew-9', seq: 3, text: 'D-90 — SYSTEM & DOCUMENT PREPARATION', mand: true },
-      { id: 'crew-10', seq: 3, text: 'Print standby list, acceptance list with passport along with GD\'s and DT slips', mand: true },
-      { id: 'crew-11', seq: 4, text: 'D-80 - SYSTEM & DOCUMENT PREPARATION REACH THE IMMIGRATION COUNTERS FOR FLIGHT CLEARANCE', mand: true },
-      { id: 'crew-12', seq: 4, text: 'Calculate the total acceptance, including passenger count, crew count and DT, where applicable.', mand: true },
-      { id: 'crew-13', seq: 4, text: 'Deduct the applicable DT from the total acceptance', mand: true },
-      { id: 'crew-14', seq: 4, text: 'Inform your final count to the immigration officer, If count is not match with immigration then start tally', mand: true },
-      { id: 'crew-15', seq: 5, text: 'D-60 - FLIGHT COMMIT', mand: true },
-      { id: 'crew-16', seq: 5, text: 'Check with the Gate Controller or verify in the system regarding the flight commit.', mand: true },
-      { id: 'crew-17', seq: 5, text: 'Print all the documents for i.e. Acceptance List with Passport No., no show list, web checkin list. And also print acceptance list without passport for customs', mand: true },
-      { id: 'crew-18', seq: 5, text: 'Present the required documents to Immigration.', mand: true },
-      { id: 'crew-19', seq: 5, text: 'Cross-check final count', mand: true },
-      { id: 'crew-20', seq: 5, text: 'Obtain Immigration clearance/stamp/signature', mand: true },
-      { id: 'crew-21', seq: 6, text: 'D-40 MINUTES — CUSTOMS CLEARANCE', mand: true },
-      { id: 'crew-22', seq: 6, text: 'Proceed to Customs after Immigration clearance', mand: true },
-      { id: 'crew-23', seq: 6, text: 'Submit RR papers, No-Show List, Acceptance List & Cargo Manifest', mand: true },
-      { id: 'crew-24', seq: 6, text: 'Obtain Customs clearance', mand: true },
-      { id: 'crew-25', seq: 6, text: 'Verify required stamps/signatures', mand: true },
-      { id: 'crew-26', seq: 6, text: 'Inform Gate Controller about clearance', mand: true },
-      { id: 'crew-27', seq: 6, text: 'Check and record EGM number', mand: true },
-      { id: 'crew-28', seq: 6, text: 'Deposit stamped GD and Customs documents', mand: true },
-    ],
-  },
-  {
-    idSuffix: 'immig-clearance',
-    title: 'Departure Immig Clearance checklist',
-    items: [
-      { id: 'immig-0', seq: 1, text: 'Collect the RR list from the early counters agents and Crew GD\'S from Pre-Flight agents.', mand: true },
-      { id: 'immig-1', seq: 2, text: 'D-90 : Get the system and make it ready for Printing the documents for flight clearance(chklist to be followed for same).', mand: true },
-      { id: 'immig-2', seq: 3, text: 'D-60 : check with Gate Controller or in system about the flight commit(you can chk the noshow list in the system if has the red cross all together it means the flight is closed and also if we have any SBY Passengers in overbooking situations then you can also chk if SBY passengers are accepted in system). If Count not tallied inform the Lead or Gate controller and start the tally.', mand: true },
-      { id: 'immig-3', seq: 4, text: 'D-50 : Reach the Immigrations counters for the clearance and check for the count match calculating the total acceptance, crew and DT(you need to minus the DT from the total count of acceptance and crew).', mand: true },
-      { id: 'immig-4', seq: 5, text: 'D-40 : After taking Clearance from immigration take the stamp and reach the customs and take the clearance of RR and no show from them and get the stamp and signatures from customs accordingly.', mand: true },
-      { id: 'immig-5', seq: 6, text: 'D-30 : Inform the gate about the clearance and take the EGM number from system(deposit the stamped GD along with all the papers you took to customs for clearance).', mand: true },
+      { id: 'lead-15', seq: 15, text: 'For LX flights (e.g., LX147), ensure flight-specific closing announcements are made 20-30 minutes before counter closure. Display appropriate signage to inform passengers.', mand: true },
     ],
   },
 ];
@@ -783,6 +736,53 @@ export const MASTER_NON_FLIGHT_DEFINITIONS = [
           { id: 'dep-trf-17', seq: 18, text: 'Arrange additional support/PA staff where required.', mand: true },
           { id: 'dep-trf-18', seq: 19, text: 'Confirm passenger and baggage have completed the transfer successfully.', mand: true },
           { id: 'dep-trf-19', seq: 20, text: 'Ensure all DT information/slips are handed over and any pending issue is communicated.', mand: true },
+        ],
+      },
+      {
+        idSuffix: 'dep-crew-clearance',
+        title: 'Departure Crew Clearance checklist',
+        items: [
+          { id: 'crew-0', seq: 1, text: 'GD for Crew – 7 copies/ +01 which needs to provided at Gate 08 before 22:00Hrs', mand: true },
+          { id: 'crew-1', seq: 1, text: 'Collect arrival CLP AND CBD copy from LHG OFFICE', mand: true },
+          { id: 'crew-2', seq: 1, text: 'Get Blank Telex papers beforehand', mand: true },
+          { id: 'crew-3', seq: 1, text: 'Collect RR List from Early Counter Agent and secure it with yourself.', mand: true },
+          { id: 'crew-4', seq: 2, text: 'CREW CLEARANCE', mand: true },
+          { id: 'crew-5', seq: 2, text: 'Coordinate with hyatt or Pernam in case of crew coach or cab delays.', mand: true },
+          { id: 'crew-6', seq: 2, text: 'Ensure that when crew arrives, meet with purser/MC and take the CLP and CBD and also check it is filled and stamped', mand: true },
+          { id: 'crew-7', seq: 2, text: 'Make sure when crew reached T3, they cleared the immigration and security with in 20 minutes.', mand: true },
+          { id: 'crew-8', seq: 2, text: 'When crew crossed the security, immidiately inform Gate controller (GC).', mand: true },
+          { id: 'crew-9', seq: 3, text: 'D-90 — SYSTEM & DOCUMENT PREPARATION', mand: true },
+          { id: 'crew-10', seq: 3, text: 'Print standby list, acceptance list with passport along with GD\'s and DT slips', mand: true },
+          { id: 'crew-11', seq: 4, text: 'D-80 - SYSTEM & DOCUMENT PREPARATION REACH THE IMMIGRATION COUNTERS FOR FLIGHT CLEARANCE', mand: true },
+          { id: 'crew-12', seq: 4, text: 'Calculate the total acceptance, including passenger count, crew count and DT, where applicable.', mand: true },
+          { id: 'crew-13', seq: 4, text: 'Deduct the applicable DT from the total acceptance', mand: true },
+          { id: 'crew-14', seq: 4, text: 'Inform your final count to the immigration officer, If count is not match with immigration then start tally', mand: true },
+          { id: 'crew-15', seq: 5, text: 'D-60 - FLIGHT COMMIT', mand: true },
+          { id: 'crew-16', seq: 5, text: 'Check with the Gate Controller or verify in the system regarding the flight commit.', mand: true },
+          { id: 'crew-17', seq: 5, text: 'Print all the documents for i.e. Acceptance List with Passport No., no show list, web checkin list. And also print acceptance list without passport for customs', mand: true },
+          { id: 'crew-18', seq: 5, text: 'Present the required documents to Immigration.', mand: true },
+          { id: 'crew-19', seq: 5, text: 'Cross-check final count', mand: true },
+          { id: 'crew-20', seq: 5, text: 'Obtain Immigration clearance/stamp/signature', mand: true },
+          { id: 'crew-21', seq: 6, text: 'D-40 MINUTES — CUSTOMS CLEARANCE', mand: true },
+          { id: 'crew-22', seq: 6, text: 'Proceed to Customs after Immigration clearance', mand: true },
+          { id: 'crew-23', seq: 6, text: 'Submit RR papers, No-Show List, Acceptance List & Cargo Manifest', mand: true },
+          { id: 'crew-24', seq: 6, text: 'Obtain Customs clearance', mand: true },
+          { id: 'crew-25', seq: 6, text: 'Verify required stamps/signatures', mand: true },
+          { id: 'crew-26', seq: 6, text: 'Inform Gate Controller about clearance', mand: true },
+          { id: 'crew-27', seq: 6, text: 'Check and record EGM number', mand: true },
+          { id: 'crew-28', seq: 6, text: 'Deposit stamped GD and Customs documents', mand: true },
+        ],
+      },
+      {
+        idSuffix: 'dep-immig-clearance',
+        title: 'Departure Immig Clearance checklist',
+        items: [
+          { id: 'immig-0', seq: 1, text: 'Collect the RR list from the early counters agents and Crew GD\'S from Pre-Flight agents.', mand: true },
+          { id: 'immig-1', seq: 2, text: 'D-90 : Get the system and make it ready for Printing the documents for flight clearance(chklist to be followed for same).', mand: true },
+          { id: 'immig-2', seq: 3, text: 'D-60 : check with Gate Controller or in system about the flight commit(you can chk the noshow list in the system if has the red cross all together it means the flight is closed and also if we have any SBY Passengers in overbooking situations then you can also chk if SBY passengers are accepted in system). If Count not tallied inform the Lead or Gate controller and start the tally.', mand: true },
+          { id: 'immig-3', seq: 4, text: 'D-50 : Reach the Immigrations counters for the clearance and check for the count match calculating the total acceptance, crew and DT(you need to minus the DT from the total count of acceptance and crew).', mand: true },
+          { id: 'immig-4', seq: 5, text: 'D-40 : After taking Clearance from immigration take the stamp and reach the customs and take the clearance of RR and no show from them and get the stamp and signatures from customs accordingly.', mand: true },
+          { id: 'immig-5', seq: 6, text: 'D-30 : Inform the gate about the clearance and take the EGM number from system(deposit the stamped GD along with all the papers you took to customs for clearance).', mand: true },
         ],
       },
     ],
@@ -981,30 +981,71 @@ const SAMPLE_SUBGROUP_NAMES = new Set([
   'perimeter & ramp badge control',
 ]);
 
-// Helper to strip any legacy sample sub-groups from day data
+// Helper to strip any legacy sample sub-groups, remove discontinued flight LX2647, and restrict flight checklists to the 3 master checklists (Gate, Ramp Floater, Lead Agent)
 export function cleanSampleSubGroups(groups: OperationalGroup[]): OperationalGroup[] {
   if (!groups || !Array.isArray(groups)) return [];
-  return groups.map((g) => ({
-    ...g,
-    subGroups: (g.subGroups || []).filter((sub) => {
-      const nameLower = sub.name.trim().toLowerCase();
-      if (SAMPLE_SUBGROUP_NAMES.has(nameLower)) return false;
-      if (
-        sub.id.includes('-sub-pre-arrival') ||
-        sub.id.includes('-sub-turnaround-cargo') ||
-        sub.id.includes('-sub-cabin-catering') ||
-        sub.id.includes('-sub-pre-departure') ||
-        sub.id === 'arr-sub-baggage-hall' ||
-        sub.id === 'arr-sub-customs-transit' ||
-        sub.id === 'dep-sub-gate-ops' ||
-        sub.id === 'sbd-sub-kiosk-maintenance' ||
-        sub.id === 'sec-sub-perimeter'
-      ) {
+  return groups
+    .filter((g) => {
+      // Remove LX2647 flight group completely
+      const codeUpper = (g.code || '').trim().toUpperCase();
+      const idLower = (g.id || '').trim().toLowerCase();
+      const nameUpper = (g.name || '').trim().toUpperCase();
+      if (codeUpper === 'LX2647' || idLower === 'grp-lx2647' || nameUpper.includes('LX2647')) {
         return false;
       }
       return true;
-    }),
-  }));
+    })
+    .map((g) => {
+      const isFlight =
+        g.isFlightGroup ||
+        FLIGHT_CODES.some((fc) => fc.toUpperCase() === (g.code || '').toUpperCase());
+
+      return {
+        ...g,
+        subGroups: (g.subGroups || [])
+          .filter((sub) => {
+            const nameLower = sub.name.trim().toLowerCase();
+            if (SAMPLE_SUBGROUP_NAMES.has(nameLower)) return false;
+            if (
+              sub.id.includes('-sub-pre-arrival') ||
+              sub.id.includes('-sub-turnaround-cargo') ||
+              sub.id.includes('-sub-cabin-catering') ||
+              sub.id.includes('-sub-pre-departure') ||
+              sub.id === 'arr-sub-baggage-hall' ||
+              sub.id === 'arr-sub-customs-transit' ||
+              sub.id === 'dep-sub-gate-ops' ||
+              sub.id === 'sbd-sub-kiosk-maintenance' ||
+              sub.id === 'sec-sub-perimeter'
+            ) {
+              return false;
+            }
+            return true;
+          })
+          .map((sub) => {
+            if (isFlight) {
+              // Ensure flight groups contain strictly the 3 flight checklists: Gate, Ramp Floater, and Lead Agent
+              const filteredChecklists = (sub.checklists || []).filter((chk) => {
+                const titleLower = chk.title.trim().toLowerCase();
+                const idLower = chk.id.trim().toLowerCase();
+                if (
+                  titleLower.includes('crew clearance') ||
+                  idLower.includes('crew-clearance') ||
+                  titleLower.includes('immig clearance') ||
+                  idLower.includes('immig-clearance')
+                ) {
+                  return false;
+                }
+                return true;
+              });
+              return {
+                ...sub,
+                checklists: filteredChecklists,
+              };
+            }
+            return sub;
+          }),
+      };
+    });
 }
 
 // Generate complete default groups for a target date
@@ -1113,9 +1154,20 @@ export function mergeMasterHierarchyWithExisting(
     };
   }
 
-  // Clean out legacy sample subgroups first
+  // Clean out legacy sample subgroups, discontinued flight LX2647, and extra flight checklists
   const cleanedExistingGroups = cleanSampleSubGroups(existing.groups);
-  if (cleanedExistingGroups.length !== existing.groups.length) {
+  const totalExistingChecklists = existing.groups.reduce(
+    (acc, g) => acc + (g.subGroups || []).reduce((sAcc, s) => sAcc + (s.checklists || []).length, 0),
+    0
+  );
+  const totalCleanedChecklists = cleanedExistingGroups.reduce(
+    (acc, g) => acc + (g.subGroups || []).reduce((sAcc, s) => sAcc + (s.checklists || []).length, 0),
+    0
+  );
+  if (
+    cleanedExistingGroups.length !== existing.groups.length ||
+    totalExistingChecklists !== totalCleanedChecklists
+  ) {
     changed = true;
   }
 

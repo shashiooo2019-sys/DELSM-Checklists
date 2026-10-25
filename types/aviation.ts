@@ -70,7 +70,7 @@ export interface OperationalGroup {
   id: string;
   name: string; // e.g. "LX147", "Arrivals"
   code: string;
-  isFlightGroup: boolean; // True for LX147, LX2647, LH763, LH761
+  isFlightGroup: boolean; // True for LX147, LH763, LH761
   isMandatory: boolean;
   subGroups: SubOperationalGroup[];
   isVerified: boolean; // Verified by Supervisor

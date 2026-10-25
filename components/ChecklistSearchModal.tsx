@@ -433,7 +433,7 @@ export function ChecklistSearchModal({
 
   const getFlightRoute = (code: string) => {
     const clean = code.toUpperCase();
-    if (clean.includes('147') || clean.includes('2647')) return 'DEL ➔ ZRH (Zurich)';
+    if (clean.includes('147')) return 'DEL ➔ ZRH (Zurich)';
     if (clean.includes('763')) return 'DEL ➔ MUC (Munich)';
     if (clean.includes('761')) return 'DEL ➔ FRA (Frankfurt)';
     return 'DEL Station Flight';

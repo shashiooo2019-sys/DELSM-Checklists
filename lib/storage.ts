@@ -563,7 +563,13 @@ export function loadDayData(dateStr: string): DayOperationalData {
       if (raw) {
         const parsed = JSON.parse(raw) as DayOperationalData;
         if (parsed && parsed.groups && parsed.groups.length > 0) {
-          return sanitizeDayData(parsed);
+          const { merged, changed } = mergeMasterHierarchyWithExisting(parsed, dateStr);
+          if (changed) {
+            try {
+              localStorage.setItem(`aviation_day_data_${dateStr}`, safeJsonStringify(merged));
+            } catch {}
+          }
+          return merged;
         }
       }
     } catch {}
