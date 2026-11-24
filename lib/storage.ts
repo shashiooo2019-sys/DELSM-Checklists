@@ -1,4 +1,3 @@
-import * as XLSX from 'xlsx';
 import {
   UserAccount,
   UserRole,
@@ -856,14 +855,15 @@ export function isSubGroupComplete(sub: SubOperationalGroup, groupName?: string)
 }
 
 export function isGroupComplete(grp: OperationalGroup): boolean {
+  if (grp.isSkipped) return true;
   if (!grp.subGroups || grp.subGroups.length === 0) return true;
   return grp.subGroups.every((sub) => isSubGroupComplete(sub, grp.name));
 }
 
 export function isDayShiftFullyCompleteAndVerified(dayData: DayOperationalData): boolean {
   if (!dayData.groups || dayData.groups.length === 0) return false;
-  // All groups must be both complete AND verified by supervisor
-  return dayData.groups.every((grp) => isGroupComplete(grp) && grp.isVerified);
+  // All groups must be skipped (non-operational) OR both complete and verified by supervisor
+  return dayData.groups.every((grp) => grp.isSkipped || (isGroupComplete(grp) && grp.isVerified));
 }
 
 export function getDayOverallProgress(dayData: DayOperationalData): {
@@ -892,7 +892,10 @@ export function getDayOverallProgress(dayData: DayOperationalData): {
 
   for (const grp of groups) {
     if (isGroupComplete(grp)) completedGroups++;
-    if (grp.isVerified) verifiedGroups++;
+    if (grp.isVerified || grp.isSkipped) verifiedGroups++;
+
+    // Exclude unexecuted items of flights/groups marked as Skipped (Flight Not Operational) from overall item totals
+    if (grp.isSkipped) continue;
 
     for (const sub of grp.subGroups || []) {
       for (const chk of sub.checklists || []) {
@@ -935,15 +938,15 @@ export function getDayOverallProgress(dayData: DayOperationalData): {
 // ----------------- SHEETJS EXCEL ENGINES -----------------
 
 // Parse user Excel file
-export function parseUsersExcel(
+export async function parseUsersExcel(
   fileData: ArrayBuffer
 ): Promise<{ added: number; skipped: number; errors: string[]; parsedUsers: UserAccount[] }> {
-  return new Promise((resolve) => {
-    try {
-      const workbook = XLSX.read(fileData, { type: 'array' });
-      const sheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[sheetName];
-      const rawData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+  try {
+    const XLSX = await import('xlsx');
+    const workbook = XLSX.read(fileData, { type: 'array' });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const rawData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
       const currentUsers = loadUsers();
       const existingUNumbers = new Set(currentUsers.map((u) => u.uNumber.toLowerCase().trim()));
@@ -1006,23 +1009,22 @@ export function parseUsersExcel(
         added++;
       }
 
-      resolve({ added, skipped, errors, parsedUsers: newUsers });
+      return { added, skipped, errors, parsedUsers: newUsers };
     } catch (err: any) {
-      resolve({ added: 0, skipped: 0, errors: [err?.message || 'Failed to read Excel workbook'], parsedUsers: [] });
+      return { added: 0, skipped: 0, errors: [err?.message || 'Failed to read Excel workbook'], parsedUsers: [] };
     }
-  });
 }
 
 // Parse checklist items Excel file
-export function parseChecklistExcel(
+export async function parseChecklistExcel(
   fileData: ArrayBuffer
 ): Promise<{ items: ChecklistItem[]; errors: string[] }> {
-  return new Promise((resolve) => {
-    try {
-      const workbook = XLSX.read(fileData, { type: 'array' });
-      const sheetName = workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[sheetName];
-      const rawData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+  try {
+    const XLSX = await import('xlsx');
+    const workbook = XLSX.read(fileData, { type: 'array' });
+    const sheetName = workbook.SheetNames[0];
+    const worksheet = workbook.Sheets[sheetName];
+    const rawData: any[][] = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
       const parsedItems: ChecklistItem[] = [];
       const errors: string[] = [];
@@ -1065,52 +1067,59 @@ export function parseChecklistExcel(
         parsedItems.push(makeItem(`imp-${Date.now()}-${parsedItems.length + 1}`, seqNo, text, isMandatory));
       }
 
-      resolve({ items: parsedItems, errors });
+      return { items: parsedItems, errors };
     } catch (err: any) {
-      resolve({ items: [], errors: [err?.message || 'Failed to read Checklist Excel workbook'] });
+      return { items: [], errors: [err?.message || 'Failed to read Checklist Excel workbook'] };
     }
-  });
 }
 
 // Generate sample Excel template for users
 export function downloadUserImportTemplate(): void {
-  const sampleData = [
-    ['U-Number', 'Employee Name', 'Department / Role'],
-    ['U61029', 'Jean-Luc Picard', 'Ramp Marshalling'],
-    ['U74820', 'Kathryn Janeway', 'SUPERVISOR'],
-    ['U88319', 'Geordi La Forge', 'Aircraft Fueling & GSE'],
-    ['U90123', 'Beverly Crusher', 'Cabin Servicing'],
-  ];
+  void (async () => {
+    const XLSX = await import('xlsx');
+    const sampleData = [
+      ['U-Number', 'Employee Name', 'Department / Role'],
+      ['U61029', 'Jean-Luc Picard', 'Ramp Marshalling'],
+      ['U74820', 'Kathryn Janeway', 'SUPERVISOR'],
+      ['U88319', 'Geordi La Forge', 'Aircraft Fueling & GSE'],
+      ['U90123', 'Beverly Crusher', 'Cabin Servicing'],
+    ];
 
-  const ws = XLSX.utils.aoa_to_sheet(sampleData);
-  // Column widths
-  ws['!cols'] = [{ wch: 16 }, { wch: 26 }, { wch: 24 }];
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Users_Import_Template');
-  XLSX.writeFile(wb, 'Aviation_Users_Import_Template.xlsx');
+    const ws = XLSX.utils.aoa_to_sheet(sampleData);
+    // Column widths
+    ws['!cols'] = [{ wch: 16 }, { wch: 26 }, { wch: 24 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Users_Import_Template');
+    XLSX.writeFile(wb, 'Aviation_Users_Import_Template.xlsx');
+  })();
 }
 
 // Generate sample Excel template for checklists
 export function downloadChecklistImportTemplate(): void {
-  const sampleData = [
-    ['Serial No', 'Checklist Item Description', 'Is Mandatory (Y/N)'],
-    [1, 'Verify main landing gear safety ground locks are engaged', 'Y'],
-    [2, 'Inspect engine nacelle and fan blades for foreign object ingestion', 'Y'],
-    [3, 'Confirm pitot static covers are removed with streamers stored', 'Y'],
-    [4, 'Check potable water fill cap gasket seal integrity', 'N'],
-    [5, 'Cross-check fuel hydrometer specific gravity temperature reading', 'Y'],
-  ];
+  void (async () => {
+    const XLSX = await import('xlsx');
+    const sampleData = [
+      ['Serial No', 'Checklist Item Description', 'Is Mandatory (Y/N)'],
+      [1, 'Verify main landing gear safety ground locks are engaged', 'Y'],
+      [2, 'Inspect engine nacelle and fan blades for foreign object ingestion', 'Y'],
+      [3, 'Confirm pitot static covers are removed with streamers stored', 'Y'],
+      [4, 'Check potable water fill cap gasket seal integrity', 'N'],
+      [5, 'Cross-check fuel hydrometer specific gravity temperature reading', 'Y'],
+    ];
 
-  const ws = XLSX.utils.aoa_to_sheet(sampleData);
-  ws['!cols'] = [{ wch: 12 }, { wch: 60 }, { wch: 22 }];
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Checklist_Template');
-  XLSX.writeFile(wb, 'Aviation_Checklist_Import_Template.xlsx');
+    const ws = XLSX.utils.aoa_to_sheet(sampleData);
+    ws['!cols'] = [{ wch: 12 }, { wch: 60 }, { wch: 22 }];
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Checklist_Template');
+    XLSX.writeFile(wb, 'Aviation_Checklist_Import_Template.xlsx');
+  })();
 }
 
 // Export full operational shift log to Excel
 export function exportShiftToExcel(dayData: DayOperationalData): void {
-  const wb = XLSX.utils.book_new();
+  void (async () => {
+    const XLSX = await import('xlsx');
+    const wb = XLSX.utils.book_new();
 
   // Sheet 1: Shift Summary
   const summary = getDayOverallProgress(dayData);
@@ -1164,16 +1173,16 @@ export function exportShiftToExcel(dayData: DayOperationalData): void {
           itemRows.push([
             grp.name,
             grp.isFlightGroup ? 'Flight Turnaround' : 'Terminal Ops',
-            grp.isVerified ? `YES (${grp.verifiedBy})` : 'NO',
+            grp.isSkipped ? `SKIPPED (${grp.skipReason || 'Flight Not Operational'})` : grp.isVerified ? `YES (${grp.verifiedBy})` : 'NO',
             sub.name,
             chk.title,
             item.sequenceOrder,
             item.text,
             item.isMandatory ? 'YES' : 'NO',
-            item.status.toUpperCase(),
+            grp.isSkipped ? 'FLIGHT NOT OPERATIONAL' : item.status.toUpperCase(),
             item.actionBy || chk.completedBy || 'N/A',
             item.actionAt || chk.completedAt || 'N/A',
-            item.remark || item.skipReason || chk.remarks || '',
+            item.remark || item.skipReason || chk.remarks || (grp.isSkipped ? (grp.skipReason || 'Flight Not Operational') : ''),
           ]);
         }
       }
@@ -1197,7 +1206,8 @@ export function exportShiftToExcel(dayData: DayOperationalData): void {
   ];
   XLSX.utils.book_append_sheet(wb, wsItems, 'Detailed_Audit_Log');
 
-  XLSX.writeFile(wb, `Aviation_Ground_Ops_Audit_${dayData.date}.xlsx`);
+    XLSX.writeFile(wb, `Aviation_Ground_Ops_Audit_${dayData.date}.xlsx`);
+  })();
 }
 
 // Export Non-Compliance Report (Missed & Incorrectly Executed Items) Over Date Range to Excel
@@ -1206,7 +1216,9 @@ export function exportNonComplianceReportToExcel(
   startDate: string,
   endDate: string
 ): void {
-  const wb = XLSX.utils.book_new();
+  void (async () => {
+    const XLSX = await import('xlsx');
+    const wb = XLSX.utils.book_new();
 
   const missedCount = records.filter((r) => r.status === 'missed').length;
   const incorrectCount = records.filter((r) => r.status === 'incorrectly_executed').length;
@@ -1280,7 +1292,8 @@ export function exportNonComplianceReportToExcel(
 
   XLSX.utils.book_append_sheet(wb, wsLog, 'Non_Compliance_Log');
 
-  XLSX.writeFile(wb, `Aviation_NonCompliance_Report_${startDate}_to_${endDate}.xlsx`);
+    XLSX.writeFile(wb, `Aviation_NonCompliance_Report_${startDate}_to_${endDate}.xlsx`);
+  })();
 }
 
 export { saveDayDataToFirestoreConfirmed };

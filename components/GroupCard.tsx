@@ -115,7 +115,9 @@ export function GroupCard({
     <div 
       id={`group-card-${group.id}`}
       className={`group relative rounded-2xl sm:rounded-3xl border-2 overflow-hidden transition-all duration-200 ${
-        group.isVerified
+        group.isSkipped
+          ? 'bg-gradient-to-br from-slate-100 via-amber-50/40 to-slate-200/90 border-amber-300 shadow-[0_4px_0_0_rgba(252,211,77,0.7),0_8px_16px_-3px_rgba(245,158,11,0.12)]'
+          : group.isVerified
           ? 'bg-gradient-to-br from-slate-100 via-sky-50/40 to-slate-200/90 border-sky-300 shadow-[0_4px_0_0_rgba(186,230,253,0.95),0_8px_16px_-3px_rgba(14,165,233,0.12)] hover:shadow-[0_6px_0_0_rgba(56,189,248,0.7),0_12px_20px_-4px_rgba(14,165,233,0.18)]'
           : groupComplete
           ? 'bg-gradient-to-br from-slate-100 via-emerald-50/40 to-slate-200/90 border-emerald-300 shadow-[0_4px_0_0_rgba(167,243,208,0.95),0_8px_16px_-3px_rgba(16,185,129,0.12)] hover:shadow-[0_6px_0_0_rgba(52,211,153,0.7),0_12px_20px_-4px_rgba(16,185,129,0.18)]'
@@ -204,7 +206,7 @@ export function GroupCard({
             </svg>
             <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
               <span className="text-[11px] font-black text-slate-900 leading-none font-mono">
-                {checklistProgressPercent}%
+                {group.isSkipped ? 'N/A' : `${checklistProgressPercent}%`}
               </span>
             </div>
           </div>
@@ -262,7 +264,12 @@ export function GroupCard({
         {/* Status Indicators & Control Actions */}
         <div className="flex items-center gap-2 w-full sm:w-auto justify-between sm:justify-end">
           {/* Status Badge */}
-          {group.isVerified ? (
+          {group.isSkipped ? (
+            <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-xs font-extrabold shadow-2xs">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-700" />
+              <span>{(group.skipReason || 'FLIGHT NOT OPERATIONAL').toUpperCase()}</span>
+            </div>
+          ) : group.isVerified ? (
             isDayShift ? (
               <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-300 text-xs font-extrabold shadow-2xs">
                 <ShieldCheck className="w-4 h-4 text-emerald-600" />

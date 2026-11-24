@@ -509,7 +509,7 @@ export function AdminPanel({
         }
         return grp;
       });
-      showNotification(`Replicated sub-group "${newSubGroupName}" across ALL 3 Flight Groups (LX147, LH763, LH761) simultaneously!`);
+      showNotification(`Replicated sub-group "${newSubGroupName}" across ALL Flight Groups simultaneously!`);
     } else {
       // Single group assignment
       updatedGroups = updatedGroups.map((grp) => {
@@ -777,7 +777,7 @@ export function AdminPanel({
       setNewChecklistTitle('');
       setNewChecklistDesc('');
       setInlineSubGroupName('');
-      showNotification(`Replicated Checklist "${titleToAdd}" directly across ALL 3 Flight Groups under "${targetSubName}"!`);
+      showNotification(`Replicated Checklist "${titleToAdd}" directly across ALL Flight Groups under "${targetSubName}"!`);
     } else {
       if (!selectedEditGroup) return;
       const newChk: Checklist = {
@@ -974,7 +974,7 @@ export function AdminPanel({
 
       onSaveDayData({ ...dayData, groups: updatedGroups });
       setNewItemText('');
-      showNotification(`Added item "${textToAdd}" across ALL 3 Flight Groups simultaneously!`);
+      showNotification(`Added item "${textToAdd}" across ALL Flight Groups simultaneously!`);
     } else {
       if (!selectedEditGroup) return;
       const updatedGroups = dayData.groups.map((grp) => {
@@ -1053,7 +1053,7 @@ export function AdminPanel({
       });
 
       onSaveDayData({ ...dayData, groups: updatedGroups });
-      showNotification(`Updated item mandatory flag across ALL 3 Flight Groups`);
+      showNotification(`Updated item mandatory flag across ALL Flight Groups`);
     } else {
       if (!selectedEditGroup) return;
       const updatedGroups = dayData.groups.map((grp) => {
@@ -1159,7 +1159,7 @@ export function AdminPanel({
           });
 
           onSaveDayData({ ...dayData, groups: updatedGroups });
-          showNotification(`Deleted item from ALL 3 Flight Groups`);
+          showNotification(`Deleted item from ALL Flight Groups`);
         } else {
           const targetGrpId = parentGroupId || targetGroup?.id;
           updatedGroups = dayData.groups.map((grp) => {
@@ -1405,7 +1405,7 @@ export function AdminPanel({
         return grp;
       });
       onSaveDayData({ ...dayData, groups: updatedGroups });
-      showNotification(`Amended Flight Operations group across ALL 3 Flight Groups`);
+      showNotification(`Amended Flight Operations group across ALL Flight Groups`);
     } else {
       const updatedGroups = dayData.groups.map((grp) => {
         if (grp.id === id) {
@@ -1491,7 +1491,7 @@ export function AdminPanel({
         }
         return grp;
       });
-      showNotification(`Replicated inline sub-group "${nameToAdd}" across ALL 3 Flight Groups!`);
+      showNotification(`Replicated inline sub-group "${nameToAdd}" across ALL Flight Groups!`);
     } else {
       updatedGroups = updatedGroups.map((grp) => {
         if (grp.id === parentGroupId) {
@@ -1573,7 +1573,7 @@ export function AdminPanel({
         }
         return grp;
       });
-      showNotification(`Replicated Checklist "${titleToAdd}" across ALL 3 Flight Groups!`);
+      showNotification(`Replicated Checklist "${titleToAdd}" across ALL Flight Groups!`);
     } else {
       updatedGroups = updatedGroups.map((grp) => {
         if (grp.id === parentGroupId) {
@@ -1654,7 +1654,7 @@ export function AdminPanel({
         }
         return grp;
       });
-      showNotification(`Added item across ALL 3 Flight Groups!`);
+      showNotification(`Added item across ALL Flight Groups!`);
     } else {
       updatedGroups = updatedGroups.map((grp) => {
         if (grp.id === parentGroupId) {
@@ -1834,7 +1834,7 @@ export function AdminPanel({
         return grp;
       });
       onSaveDayData({ ...dayData, groups: updatedGroups });
-      showNotification(`Amended sub-group "${newName}" across ALL 3 Flight Groups`);
+      showNotification(`Amended sub-group "${newName}" across ALL Flight Groups`);
     } else {
       const updatedGroups = dayData.groups.map((grp) => {
         if (grp.id === parentGroupId) {
@@ -2192,22 +2192,24 @@ export function AdminPanel({
         }
       });
 
-      onSaveDayData({ ...dayData, groups: updatedGroups });
+      const updatedDayData = { ...dayData, groups: updatedGroups };
+      onSaveDayData(updatedDayData);
+      void propagateAdminGroupChangesToActiveShifts(updatedDayData);
       addAuditLog(
         currentUser.uNumber,
         currentUser.name,
         currentUser.role,
         isOverwrite ? 'CHECKLIST_OVERWRITE' : 'CHECKLIST_CREATE',
         isOverwrite
-          ? `Overwrote checklist "${finalChecklistTitle}" with automated version increment (${lastOldVer} ➔ ${lastNewVer}) containing ${importPreviewItems.length} items from Excel across ALL 3 Flight Groups.`
-          : `Imported new checklist "${finalChecklistTitle}" (v1.0) with ${importPreviewItems.length} items from Excel across ALL 3 Flight Groups.`
+          ? `Overwrote checklist "${finalChecklistTitle}" with automated version increment (${lastOldVer} ➔ ${lastNewVer}) containing ${importPreviewItems.length} items from Excel across ALL Flight Groups.`
+          : `Imported new checklist "${finalChecklistTitle}" (v1.0) with ${importPreviewItems.length} items from Excel across ALL Flight Groups.`
       );
       setImportPreviewItems([]);
       setExcelChecklistFile(null);
       showNotification(
         isOverwrite
-          ? `Successfully overwrote "${finalChecklistTitle}" (Version incremented: ${lastOldVer} ➔ ${lastNewVer}) across ALL 3 Flight Groups!`
-          : `Appended new checklist "${finalChecklistTitle}" with ${importPreviewItems.length} items to ALL 3 Flight Groups simultaneously!`
+          ? `Successfully overwrote "${finalChecklistTitle}" (Version incremented: ${lastOldVer} ➔ ${lastNewVer}) across ALL Flight Groups!`
+          : `Appended new checklist "${finalChecklistTitle}" with ${importPreviewItems.length} items to ALL Flight Groups simultaneously!`
       );
     } else {
       // Specific Operational Group
@@ -2388,7 +2390,9 @@ export function AdminPanel({
         }
       });
 
-      onSaveDayData({ ...dayData, groups: updatedGroups });
+      const updatedDayData = { ...dayData, groups: updatedGroups };
+      onSaveDayData(updatedDayData);
+      void propagateAdminGroupChangesToActiveShifts(updatedDayData);
       addAuditLog(
         currentUser.uNumber,
         currentUser.name,
@@ -4044,7 +4048,7 @@ export function AdminPanel({
                         Destination:{' '}
                         <strong>
                           {excelTargetGroupId === 'ALL_FLIGHT_GROUPS'
-                            ? 'ALL 3 Flight Groups'
+                            ? 'ALL Flight Groups'
                             : dayData.groups.find((g) => g.id === excelTargetGroupId)?.name || excelTargetGroupId}
                         </strong>{' '}
                         &gt;{' '}
@@ -4140,12 +4144,12 @@ export function AdminPanel({
                       <span>
                         {excelImportMode === 'OVERWRITE'
                           ? excelTargetGroupId === 'ALL_FLIGHT_GROUPS'
-                            ? `Overwrite "${excelChecklistTitle}" in ALL 3 Flight Groups (${importPreviewItems.length} items)`
+                            ? `Overwrite "${excelChecklistTitle}" in ALL Flight Groups (${importPreviewItems.length} items)`
                             : `Overwrite "${excelChecklistTitle}" in ${
                                 dayData.groups.find((g) => g.id === excelTargetGroupId)?.name || 'Group'
                               } (${importPreviewItems.length} items)`
                           : excelTargetGroupId === 'ALL_FLIGHT_GROUPS'
-                          ? `Append "${excelChecklistTitle}" to ALL 3 Flight Groups (${importPreviewItems.length} items)`
+                          ? `Append "${excelChecklistTitle}" to ALL Flight Groups (${importPreviewItems.length} items)`
                           : `Append "${excelChecklistTitle}" to ${
                               dayData.groups.find((g) => g.id === excelTargetGroupId)?.name || 'Group'
                             } (${importPreviewItems.length} items)`}
@@ -4703,7 +4707,7 @@ export function AdminPanel({
               <p className="text-[11px] leading-relaxed">
                 {"Uploading an Excel file will overwrite all existing items in checklist "}
                 <strong className="font-bold">{"'" + excelOverwriteTarget.checklistTitle + "'"}</strong>
-                {excelOverwriteTarget.isAllFlightGroups ? ' across ALL 3 Flight Groups simultaneously' : ` in ${excelOverwriteTarget.groupName}`}
+                {excelOverwriteTarget.isAllFlightGroups ? ' across ALL Flight Groups simultaneously' : ` in ${excelOverwriteTarget.groupName}`}
                 {". The checklist version will automatically be incremented."}
               </p>
             </div>

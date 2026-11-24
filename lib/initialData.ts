@@ -506,6 +506,38 @@ export const DEFAULT_USERS: UserAccount[] = [
 ];
 
 export const FLIGHT_CODES = ['LX147', 'LH763', 'LH761'] as const;
+export const ALL_FLIGHT_CODES = ['LX147', 'LH763', 'LH761', 'LX2647', 'LH785'] as const;
+
+// Scheduled seasonal/new flight date windows (inclusive YYYY-MM-DD)
+export const LX2647_START_DATE = '2026-12-03';
+export const LX2647_END_DATE = '2027-03-27';
+export const LH785_START_DATE = '2027-03-27';
+
+export function isFlightScheduledForDate(code: string, dateStr?: string): boolean {
+  const upper = code.trim().toUpperCase();
+  if (upper === 'LX2647') {
+    if (!dateStr) return false;
+    return dateStr >= LX2647_START_DATE && dateStr <= LX2647_END_DATE;
+  }
+  if (upper === 'LH785') {
+    if (!dateStr) return false;
+    return dateStr >= LH785_START_DATE;
+  }
+  return true;
+}
+
+export function getFlightCodesForDate(dateStr?: string): string[] {
+  const codes: string[] = [...FLIGHT_CODES];
+  if (dateStr) {
+    if (dateStr >= LX2647_START_DATE && dateStr <= LX2647_END_DATE) {
+      codes.push('LX2647');
+    }
+    if (dateStr >= LH785_START_DATE) {
+      codes.push('LH785');
+    }
+  }
+  return codes;
+}
 
 // Helper to create checklist items with isMandatory=true by default
 export function makeItem(id: string, seq: number, text: string, isMandatory: boolean = true): ChecklistItem {
@@ -785,6 +817,52 @@ export const MASTER_NON_FLIGHT_DEFINITIONS = [
           { id: 'immig-5', seq: 6, text: 'D-30 : Inform the gate about the clearance and take the EGM number from system(deposit the stamped GD along with all the papers you took to customs for clearance).', mand: true },
         ],
       },
+      {
+        idSuffix: 'dep-duty3',
+        title: 'Duty 3 Checklist',
+        items: [
+          { id: 'duty3-1', seq: 1, text: 'ENSURE ALL OFFICE PHONES ARE SWITCHED ON AND KEPT ON RINGER MODE', mand: true },
+          { id: 'duty3-2', seq: 2, text: 'CHECK ARRIVAL FLIGHT ETA THROUGH DASGO', mand: true },
+          { id: 'duty3-3', seq: 3, text: 'REVISE ETD ACCORDINGLY IF FLIGHT IS DELAYED', mand: true },
+          { id: 'duty3-4', seq: 4, text: 'PREPARE AND CIRCULATE DELAY LETTER', mand: true },
+          { id: 'duty3-5', seq: 5, text: 'MONITOR FLIGHT STATUS AND OPERATIONAL UPDATES THROUGHOUT THE SHIFT', mand: true },
+          { id: 'duty3-6', seq: 6, text: 'CALL PRC FOR PASSENGER AND CREW CONNECTIONS IF REQUIRED (FRA / MUC / ZRH)', mand: true },
+          { id: 'duty3-7', seq: 7, text: 'SEND CREW WAKE-UP DELAY EMAIL TO HYATT IF APPLICABLE', mand: true },
+          { id: 'duty3-8', seq: 8, text: 'CHECK SPECIAL SERVICE REQUIREMENTS (SSR) SUCH AS AVIH, WEAP, MEDA, UMNR, ETC.', mand: true },
+          { id: 'duty3-9', seq: 9, text: 'PERFORM FLIGHT SCANNING FOR EACH OPERATING FLIGHT', mand: true },
+          { id: 'duty3-10', seq: 10, text: 'CIRCULATE UPGRADE AND SSAS INFORMATION IN THE OPERATIONAL GROUP BY 1930 HRS', mand: true },
+          { id: 'duty3-11', seq: 11, text: 'IF FLIGHT IS OVERBOOKED, COORDINATE AND SET FLIGHT FOR VDB VOLUNTEERS', mand: true },
+          { id: 'duty3-12', seq: 12, text: 'CALL AND CONFIRM WITH HYATT REGARDING CREW MAIL RECEIPT AND RECONFIRM DETAILS', mand: true },
+          { id: 'duty3-13', seq: 13, text: 'SEND INBOUND AND OUTBOUND CREW DETAILS / MAIL LIST TO PERNAM SERVICES', mand: true },
+          { id: 'duty3-14', seq: 14, text: 'SEND ALL FLIGHT MEAL LOAD INFORMATION TO OFS', mand: true },
+          { id: 'duty3-15', seq: 15, text: 'PRINT AND DISTRIBUTE ARRIVAL / DEPARTURE GENERAL DECLARATION (GD) AND RATE CHART', mand: true },
+          { id: 'duty3-16', seq: 16, text: 'COORDINATE WITH DUTY MANAGER REGARDING ANY DELAYS, DIVERSIONS, CANCELLATIONS OR OPERATIONAL DISRUPTIONS', mand: true },
+          { id: 'duty3-17', seq: 17, text: 'ENSURE ALL REQUIRED REPORTS AND FLIGHT DOCUMENTS ARE RECEIVED PRIOR TO FLIGHT ARRIVAL', mand: true },
+          { id: 'duty3-18', seq: 18, text: 'UPDATE CONCERNED DEPARTMENTS REGARDING REVISED ETA / ETD WHENEVER APPLICABLE', mand: true },
+          { id: 'duty3-19', seq: 19, text: 'UPDATE AND SHARE THE PREFLIGHt INFO SHEET', mand: true },
+        ],
+      },
+      {
+        idSuffix: 'dep-duty4',
+        title: 'Duty 4 Checklist',
+        items: [
+          { id: 'duty4-1', seq: 1, text: 'CONFIRM THAT THE FLIGHT STATUS IS FINALISED IN ALTEA BEFORE INITIATING DUTY 4 DOCUMENTATION.', mand: true },
+          { id: 'duty4-2', seq: 2, text: 'PRINT THREE (03) ACCEPTANCE MANIFESTS FOR ARRIVAL PROCESSING.', mand: true },
+          { id: 'duty4-3', seq: 3, text: 'GENERATE AND PRINT THE PSPT MANIFEST USING THE ACCEPTED PASSENGER FILTER.', mand: true },
+          { id: 'duty4-4', seq: 4, text: 'REVIEW THE PSPT MANIFEST AND EXCLUDE ANY DUPLICATE PASSPORT ENTRIES, WHERE APPLICABLE.', mand: true },
+          { id: 'duty4-5', seq: 5, text: 'GENERATE AND PRINT THE ARRIVAL WHEELCHAIR MANIFEST USING THE WHEELCHAIR PASSENGER FILTER.', mand: true },
+          { id: 'duty4-6', seq: 6, text: 'PRINT THE SECURITY NUMBER AND BASIC BAGGAGE LIST.', mand: true },
+          { id: 'duty4-7', seq: 7, text: 'PRINT SEVEN (07) GENERAL DECLARATION (GD) COPIES FOR ARRIVAL AND DEPARTURE DISTRIBUTION REQUIREMENTS.', mand: true },
+          { id: 'duty4-8', seq: 8, text: 'GENERATE AND PRINT THE ON-CARRIAGE MANIFEST USING THE ON-CARRIAGE PASSENGER FILTER.', mand: true },
+          { id: 'duty4-9', seq: 9, text: 'DISTRIBUTE ONE (01) GD, ONE (01) ACCEPTANCE MANIFEST AND ONE (01) ON-CARRIAGE MANIFEST TO APHO.', mand: true },
+          { id: 'duty4-10', seq: 10, text: 'DISTRIBUTE ONE (01) GD AND ONE (01) ACCEPTANCE MANIFEST TO CUSTOMS ACKNOWLEDGEMENT (ACK).', mand: true },
+          { id: 'duty4-11', seq: 11, text: 'DISTRIBUTE ONE (01) GD AND ONE (01) PSPT MANIFEST TO THE DUTY OFFICER (DO) DESK.', mand: true },
+          { id: 'duty4-12', seq: 12, text: 'DISTRIBUTE ONE (01) GD, ONE (01) ACCEPTANCE MANIFEST AND ONE (01) BASIC BAG LIST TO CUSTOMS / AIU.', mand: true },
+          { id: 'duty4-13', seq: 13, text: 'ENSURE DISTRIBUTION OF ALL SEVEN (07) GD COPIES AS FOLLOWS: GATE 8 (01), IMMIGRATION (01), CREW CLEARANCE (01), SECURITY (01), CREW ESCORT (01), IMMIGRATION DO DESK (02) AND CUSTOMS (01).', mand: true },
+          { id: 'duty4-14', seq: 14, text: 'GENERATE AND PRINT THE DEPARTURE WHEELCHAIR MANIFEST BY APPLYING THE ALL CUSTOMERS FILTER AND VERIFY THAT THE RR MANIFEST HAS BEEN PRINTED AND DISTRIBUTED TO THE CONCERNED AUTHORITIES.', mand: true },
+          { id: 'duty4-15', seq: 15, text: 'VERIFY THAT ALL DUTY 4 DOCUMENTS HAVE BEEN DISTRIBUTED TO THE RESPECTIVE AUTHORITIES AND AGENCIES.', mand: true },
+        ],
+      },
     ],
   },
   {
@@ -981,24 +1059,29 @@ const SAMPLE_SUBGROUP_NAMES = new Set([
   'perimeter & ramp badge control',
 ]);
 
-// Helper to strip any legacy sample sub-groups, remove discontinued flight LX2647, and restrict flight checklists to the 3 master checklists (Gate, Ramp Floater, Lead Agent)
-export function cleanSampleSubGroups(groups: OperationalGroup[]): OperationalGroup[] {
+// Helper to strip legacy sample sub-groups, enforce date-scheduled flights (LX2647: 2026-12-03..2027-03-27, LH785: 2027-03-27+), and restrict flight checklists to the 3 master checklists (Gate, Ramp Floater, Lead Agent)
+export function cleanSampleSubGroups(groups: OperationalGroup[], dateStr?: string): OperationalGroup[] {
   if (!groups || !Array.isArray(groups)) return [];
   return groups
     .filter((g) => {
-      // Remove LX2647 flight group completely
       const codeUpper = (g.code || '').trim().toUpperCase();
       const idLower = (g.id || '').trim().toLowerCase();
       const nameUpper = (g.name || '').trim().toUpperCase();
-      if (codeUpper === 'LX2647' || idLower === 'grp-lx2647' || nameUpper.includes('LX2647')) {
-        return false;
+
+      if (dateStr) {
+        if (codeUpper === 'LX2647' || idLower === 'grp-lx2647' || nameUpper.includes('LX2647')) {
+          return isFlightScheduledForDate('LX2647', dateStr);
+        }
+        if (codeUpper === 'LH785' || idLower === 'grp-lh785' || nameUpper.includes('LH785')) {
+          return isFlightScheduledForDate('LH785', dateStr);
+        }
       }
       return true;
     })
     .map((g) => {
       const isFlight =
         g.isFlightGroup ||
-        FLIGHT_CODES.some((fc) => fc.toUpperCase() === (g.code || '').toUpperCase());
+        ALL_FLIGHT_CODES.some((fc) => fc.toUpperCase() === (g.code || '').toUpperCase());
 
       return {
         ...g,
@@ -1049,8 +1132,9 @@ export function cleanSampleSubGroups(groups: OperationalGroup[]): OperationalGro
 }
 
 // Generate complete default groups for a target date
-export function generateDefaultGroups(): OperationalGroup[] {
-  const flightGroups: OperationalGroup[] = FLIGHT_CODES.map((code) => {
+export function generateDefaultGroups(dateStr?: string): OperationalGroup[] {
+  const scheduledFlightCodes = getFlightCodesForDate(dateStr);
+  const flightGroups: OperationalGroup[] = scheduledFlightCodes.map((code) => {
     return {
       id: `grp-${code.toLowerCase()}`,
       name: `Flight ${code}`,
@@ -1145,7 +1229,7 @@ export function mergeMasterHierarchyWithExisting(
   dateStr: string
 ): { merged: DayOperationalData; changed: boolean } {
   let changed = false;
-  const masterGroups = generateDefaultGroups();
+  const masterGroups = generateDefaultGroups(dateStr);
 
   if (!existing || !existing.groups || !Array.isArray(existing.groups) || existing.groups.length === 0) {
     return {
@@ -1154,8 +1238,8 @@ export function mergeMasterHierarchyWithExisting(
     };
   }
 
-  // Clean out legacy sample subgroups, discontinued flight LX2647, and extra flight checklists
-  const cleanedExistingGroups = cleanSampleSubGroups(existing.groups);
+  // Clean out legacy sample subgroups, enforce scheduled flight date windows, and restrict flight checklists
+  const cleanedExistingGroups = cleanSampleSubGroups(existing.groups, dateStr);
   const totalExistingChecklists = existing.groups.reduce(
     (acc, g) => acc + (g.subGroups || []).reduce((sAcc, s) => sAcc + (s.checklists || []).length, 0),
     0
@@ -1225,6 +1309,25 @@ export function mergeMasterHierarchyWithExisting(
         });
       }
 
+      // Ensure Duty 3 Checklist and Duty 4 Checklist are present in Departures & Gate Management for all dates
+      const isDeparturesGroup =
+        existingGroup.id === 'grp-departures' ||
+        (existingGroup.code || '').toUpperCase() === 'DEP-OPS' ||
+        (existingGroup.name || '').trim().toLowerCase() === 'departures & gate management';
+
+      if (isDeparturesGroup && masterSubGroup && masterSubGroup.checklists.length > 0) {
+        const requiredDutySuffixes = ['dep-duty3', 'dep-duty4'];
+        const existingTitlesLower = new Set(mergedChecklists.map((c) => (c.title || '').trim().toLowerCase()));
+        for (const suffix of requiredDutySuffixes) {
+          const masterDutyChk = masterSubGroup.checklists.find((mc) => mc.id.endsWith(suffix));
+          if (masterDutyChk && !existingTitlesLower.has(masterDutyChk.title.trim().toLowerCase())) {
+            mergedChecklists = [...mergedChecklists, masterDutyChk];
+            existingTitlesLower.add(masterDutyChk.title.trim().toLowerCase());
+            changed = true;
+          }
+        }
+      }
+
       return {
         ...existingSubGroup,
         checklists: mergedChecklists,
@@ -1236,6 +1339,30 @@ export function mergeMasterHierarchyWithExisting(
       subGroups: mergedSubGroups,
     };
   });
+
+  // Ensure scheduled seasonal/new flights (LX2647: 2026-12-03..2027-03-27, LH785: 2027-03-27+) are present in the Flight Group
+  const scheduledSeasonalCodes = ['LX2647', 'LH785'].filter((c) => isFlightScheduledForDate(c, dateStr));
+  for (const code of scheduledSeasonalCodes) {
+    const alreadyExists = mergedGroups.some(
+      (g) => (g.code || '').trim().toUpperCase() === code || g.id.toLowerCase() === `grp-${code.toLowerCase()}`
+    );
+    if (!alreadyExists) {
+      const masterFlight = masterGroups.find((mg) => (mg.code || '').toUpperCase() === code);
+      if (masterFlight) {
+        // Insert right after the last existing flight group so it stays in the Flight Group section
+        let lastFlightIdx = -1;
+        mergedGroups.forEach((g, idx) => {
+          if (g.isFlightGroup) lastFlightIdx = idx;
+        });
+        if (lastFlightIdx >= 0) {
+          mergedGroups.splice(lastFlightIdx + 1, 0, masterFlight);
+        } else {
+          mergedGroups.unshift(masterFlight);
+        }
+        changed = true;
+      }
+    }
+  }
 
   // Only inject missing master groups if the day data has 0 existing groups (uninitialized brand-new date)
   if (cleanedExistingGroups.length === 0) {
@@ -1304,7 +1431,7 @@ export function getPurgeCutoffDateString(retentionDays: number = 30): string {
 export function createInitialDayData(dateStr: string): DayOperationalData {
   return sanitizeDayData({
     date: dateStr,
-    groups: generateDefaultGroups(),
+    groups: generateDefaultGroups(dateStr),
     isShiftClosed: false,
     lastUpdated: `${dateStr}T00:00:00.000Z`,
   });

@@ -22,7 +22,8 @@ import {
   MessageSquare,
   Sparkles,
   Plane,
-  Briefcase
+  Briefcase,
+  Slash
 } from 'lucide-react';
 
 interface SupervisorDiagnosisModalProps {
@@ -34,6 +35,7 @@ interface SupervisorDiagnosisModalProps {
   onClose: () => void;
   onVerifyGroup: (groupId: string, notes?: string) => void;
   onReopenGroup: (groupId: string) => void;
+  onToggleSkipGroup?: (groupId: string, skipReason?: string) => void;
   onCloseShift: (notes?: string, supervisorName?: string) => void;
   onReopenShift?: () => void;
 }
@@ -47,6 +49,7 @@ export function SupervisorDiagnosisModal({
   onClose,
   onVerifyGroup,
   onReopenGroup,
+  onToggleSkipGroup,
   onCloseShift,
   onReopenShift,
 }: SupervisorDiagnosisModalProps) {
@@ -168,7 +171,11 @@ export function SupervisorDiagnosisModal({
       const finalNotes = `Day Shift Sign-off by: ${signoffName.trim()} (U-Number: ${signoffUNumber.trim()})\nRemarks: ${shiftClosureRemarks.trim()}\n${bagSummary}`;
       onVerifyGroup(currentGroup.id, finalNotes);
     } else {
-      const finalNotes = `Sign-off by: ${signoffName.trim()} (U-Number: ${signoffUNumber.trim()})\nRemarks: ${shiftClosureRemarks.trim()}\n${bagSummary}`;
+      const skippedFlights = (dayData.groups || []).filter((g) => g.isFlightGroup && g.isSkipped);
+      const skippedSummary = skippedFlights.length > 0
+        ? `\nSkipped Flights (Flight Not Operational): ${skippedFlights.map((g) => g.code || g.name).join(', ')}`
+        : '';
+      const finalNotes = `Sign-off by: ${signoffName.trim()} (U-Number: ${signoffUNumber.trim()})\nRemarks: ${shiftClosureRemarks.trim()}\n${bagSummary}${skippedSummary}`;
       onCloseShift(finalNotes, signoffName.trim());
     }
     setSupervisorNotes('');
@@ -326,15 +333,47 @@ export function SupervisorDiagnosisModal({
                         </button>
                       )}
                     </div>
+                  ) : currentGroup.isSkipped ? (
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="px-3 py-1.5 bg-slate-200 text-slate-800 border border-slate-300 rounded-xl text-xs font-black flex items-center gap-2 shadow-2xs">
+                        <Slash className="w-4 h-4 text-slate-600" />
+                        <span>{currentGroup.skipReason || 'Flight Not Operational'} (Skipped)</span>
+                      </div>
+                      {onToggleSkipGroup && !dayData.isShiftClosed && (
+                        <button
+                          id="btn-overview-restore-skipped-flight"
+                          type="button"
+                          onClick={() => onToggleSkipGroup(currentGroup.id)}
+                          className="px-3 py-1.5 rounded-xl text-xs font-black btn-3d-amber flex items-center gap-1.5 cursor-pointer"
+                        >
+                          <Unlock className="w-3.5 h-3.5" />
+                          <span>Restore Flight</span>
+                        </button>
+                      )}
+                    </div>
                   ) : isGroupReady ? (
                     <div className="px-3 py-1.5 bg-sky-100 text-sky-950 border border-sky-300 rounded-xl text-xs font-black flex items-center gap-2 shadow-2xs">
                       <CheckCircle2 className="w-4 h-4 text-sky-700" />
                       <span>Ready for Shift Verification & Closure</span>
                     </div>
                   ) : (
-                    <div className="px-3 py-1.5 bg-amber-100 text-amber-950 border border-amber-300 rounded-xl text-xs font-black flex items-center gap-2 shadow-2xs">
-                      <AlertTriangle className="w-4 h-4 text-amber-700" />
-                      <span>{pendingItemsList.length} Checks In-Progress / Pending</span>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <div className="px-3 py-1.5 bg-amber-100 text-amber-950 border border-amber-300 rounded-xl text-xs font-black flex items-center gap-2 shadow-2xs">
+                        <AlertTriangle className="w-4 h-4 text-amber-700" />
+                        <span>{pendingItemsList.length} Checks In-Progress / Pending</span>
+                      </div>
+                      {currentGroup.isFlightGroup && onToggleSkipGroup && !dayData.isShiftClosed && (
+                        <button
+                          id="btn-overview-skip-flight"
+                          type="button"
+                          onClick={() => onToggleSkipGroup(currentGroup.id, 'Flight Not Operational')}
+                          className="px-3 py-1.5 rounded-xl text-xs font-black bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 flex items-center gap-1.5 transition cursor-pointer"
+                          title="Mark this flight as not operational for this shift"
+                        >
+                          <Slash className="w-3.5 h-3.5 text-slate-600" />
+                          <span>Skip Flight (Not Operational)</span>
+                        </button>
+                      )}
                     </div>
                   )}
                 </div>
@@ -694,6 +733,77 @@ export function SupervisorDiagnosisModal({
                     </label>
                   </div>
                 )}
+
+                {/* Flight Operations Status — Option to Skip Non-Operational Flights When Closing Shift */}
+                {!dayShiftOnly && onToggleSkipGroup && (() => {
+                  const flightGroups = (dayData.groups || []).filter((g) => g.isFlightGroup);
+                  if (flightGroups.length === 0) return null;
+                  return (
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                      <div className="flex items-center justify-between flex-wrap gap-2">
+                        <div className="flex items-center gap-1.5 text-xs font-black text-slate-800">
+                          <Plane className="w-3.5 h-3.5 text-sky-600" />
+                          <span>Scheduled Flights ({flightGroups.length}) — Skip Non-Operational Flight</span>
+                        </div>
+                        <span className="text-[10px] font-medium text-slate-500">
+                          Skip any flight that did not operate on {dayData.date} (excludes its checks from closure exceptions)
+                        </span>
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {flightGroups.map((fg) => {
+                          const fgComplete = isGroupComplete(fg);
+                          return (
+                            <div
+                              key={fg.id}
+                              className={`flex items-center justify-between gap-2 px-3 py-2 rounded-xl border text-xs transition ${
+                                fg.isSkipped
+                                  ? 'bg-amber-50/90 border-amber-300 text-amber-950'
+                                  : fg.isVerified || fgComplete
+                                  ? 'bg-emerald-50/70 border-emerald-200 text-slate-900'
+                                  : 'bg-white border-slate-200 text-slate-900'
+                              }`}
+                            >
+                              <div className="min-w-0">
+                                <div className="font-black flex items-center gap-1.5">
+                                  <span className="truncate">{fg.name}</span>
+                                  <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-700">
+                                    {fg.code}
+                                  </span>
+                                </div>
+                                <div className="text-[10px] font-semibold mt-0.5">
+                                  {fg.isSkipped ? (
+                                    <span className="text-amber-800 font-bold">Skipped · {fg.skipReason || 'Flight Not Operational'}</span>
+                                  ) : fg.isVerified ? (
+                                    <span className="text-sky-700">Verified & Locked</span>
+                                  ) : fgComplete ? (
+                                    <span className="text-emerald-700">All Checklists Completed</span>
+                                  ) : (
+                                    <span className="text-slate-500">In-Progress / Pending Checks</span>
+                                  )}
+                                </div>
+                              </div>
+                              {!fg.isVerified && (
+                                <button
+                                  id={`btn-shift-close-skip-flight-${fg.id}`}
+                                  type="button"
+                                  onClick={() => onToggleSkipGroup(fg.id, 'Flight Not Operational')}
+                                  className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-wide flex items-center gap-1 shrink-0 transition cursor-pointer border ${
+                                    fg.isSkipped
+                                      ? 'bg-amber-200 hover:bg-amber-300 text-amber-950 border-amber-400'
+                                      : 'bg-slate-100 hover:bg-rose-50 hover:text-rose-800 hover:border-rose-300 text-slate-700 border-slate-300'
+                                  }`}
+                                >
+                                  <Slash className="w-3 h-3" />
+                                  <span>{fg.isSkipped ? 'Undo Skip' : 'Skip Flight (Not Operational)'}</span>
+                                </button>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })()}
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div>
@@ -1139,6 +1249,21 @@ export function SupervisorDiagnosisModal({
                       {isTodayDate ? 'VERIFIED TODAY' : isFutureDate ? 'FUTURE DATE ⚠️' : 'PAST DATE'}
                     </span>
                   </div>
+
+                  {/* Skipped Flights Summary in Prompt Modal */}
+                  {!dayShiftOnly && (() => {
+                    const skippedFlights = (dayData.groups || []).filter((g) => g.isFlightGroup && g.isSkipped);
+                    if (skippedFlights.length === 0) return null;
+                    return (
+                      <div className="p-2.5 rounded-xl border bg-amber-50 border-amber-300 text-amber-950 text-[11px] flex items-center gap-2 font-bold">
+                        <Slash className="w-4 h-4 text-amber-700 shrink-0" />
+                        <span>
+                          Skipped Flights (Flight Not Operational):{' '}
+                          <strong className="font-mono">{skippedFlights.map((g) => g.code || g.name).join(', ')}</strong>
+                        </span>
+                      </div>
+                    );
+                  })()}
 
                   {/* Future Date Confirmation Checkbox (if closing a future shift) */}
                   {isFutureDate && (

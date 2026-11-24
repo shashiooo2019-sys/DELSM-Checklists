@@ -39,7 +39,6 @@ import {
   Briefcase
 } from 'lucide-react';
 import {
-  AreaChart,
   Area,
   XAxis,
   YAxis,
@@ -494,9 +493,11 @@ export function ChecklistDrillDownView({
     const updatedGroups = dayData.groups.map(grp => {
       if (grp.id !== groupId) return grp;
       const willSkip = !grp.isSkipped;
+      const reasonText = grp.isFlightGroup ? 'Flight Not Operational' : 'Skipped by Supervisor';
       return {
         ...grp,
         isSkipped: willSkip,
+        skipReason: willSkip ? reasonText : undefined,
         skippedBy: willSkip ? (currentUser ? `${currentUser.name} (${currentUser.uNumber})` : 'Duty Supervisor') : undefined,
         skippedAt: willSkip ? new Date().toISOString() : undefined,
         isVerified: willSkip ? false : grp.isVerified // If skipped, clear verified status
@@ -970,8 +971,8 @@ export function ChecklistDrillDownView({
                           <Lock className="w-3 h-3" /> VERIFIED CLOSED
                         </span>
                       ) : grp.isSkipped ? (
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-semibold">
-                          <Slash className="w-3 h-3" /> MARKED SKIPPED
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-amber-50 text-amber-800 border border-amber-300 text-[10px] font-bold">
+                          <Slash className="w-3 h-3" /> {grp.isFlightGroup ? (grp.skipReason || 'FLIGHT NOT OPERATIONAL').toUpperCase() : 'MARKED SKIPPED'}
                         </span>
                       ) : isGroupComplete(grp) ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">
@@ -1026,7 +1027,7 @@ export function ChecklistDrillDownView({
                           }`}
                         >
                           <Slash className="w-3 h-3" />
-                          <span>{grp.isSkipped ? 'Undo Skip' : 'Skip Group'}</span>
+                          <span>{grp.isSkipped ? 'Undo Skip' : grp.isFlightGroup ? 'Skip Flight (Not Operational)' : 'Skip Group'}</span>
                         </button>
                       )}
                     </div>

@@ -158,6 +158,7 @@ export function WhatsAppShareModal({
 
       for (const grp of dayData.groups) {
         if (!includeDayShift && (grp.name.includes('Day Shift') || grp.code === 'DAY-OPS')) continue;
+        if (grp.isSkipped) continue;
         for (const sub of grp.subGroups || []) {
           for (const chk of sub.checklists || []) {
             if (chk.status !== 'completed') checklistExceptions++;
@@ -183,7 +184,11 @@ export function WhatsAppShareModal({
       text += `\n✈️ *FLIGHT TURNAROUND STATUS:*\n`;
       for (const grp of dayData.groups) {
         if (grp.isFlightGroup) {
-          text += `  ✅ *${grp.name} (${grp.code})* - Fully Cleared & Ready 🟢 [Verified: ${grp.verifiedBy || 'Supervisor'}]\n`;
+          if (grp.isSkipped) {
+            text += `  ⏭️ *${grp.name} (${grp.code})* - SKIPPED (${grp.skipReason || 'Flight Not Operational'})\n`;
+          } else {
+            text += `  ✅ *${grp.name} (${grp.code})* - Fully Cleared & Ready 🟢 [Verified: ${grp.verifiedBy || 'Supervisor'}]\n`;
+          }
         }
       }
 
@@ -209,6 +214,10 @@ export function WhatsAppShareModal({
 
       for (const grp of dayData.groups) {
         if (!includeDayShift && (grp.name.includes('Day Shift') || grp.code === 'DAY-OPS')) continue;
+        if (grp.isSkipped) {
+          text += `⏭️ *${grp.name} (${grp.code})*: SKIPPED [${grp.skipReason || 'Flight Not Operational'}]\n`;
+          continue;
+        }
         const complete = isGroupComplete(grp);
         let done = 0;
         let total = 0;

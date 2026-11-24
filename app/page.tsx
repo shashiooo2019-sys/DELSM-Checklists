@@ -34,19 +34,51 @@ import { loadDayDataFromFirestore, subscribeToDayData } from '@/lib/firestoreSer
 import { auth } from '@/lib/firebase';
 import { onAuthStateChanged, signOut } from 'firebase/auth';
 import { Header } from '@/components/Header';
-import { LoginModal } from '@/components/LoginModal';
-import { ChangePasswordModal } from '@/components/ChangePasswordModal';
 import { ShiftOverviewBanner } from '@/components/ShiftOverviewBanner';
 import { GroupCard } from '@/components/GroupCard';
-import { ChecklistCarouselModal } from '@/components/ChecklistCarouselModal';
-import { SupervisorDiagnosisModal } from '@/components/SupervisorDiagnosisModal';
-import { ChecklistDrillDownView } from '@/components/ChecklistDrillDownView';
-import { WhatsAppShareModal } from '@/components/WhatsAppShareModal';
-import { AdminPanel } from '@/components/AdminPanel';
-import { AuditLogDrawer } from '@/components/AuditLogDrawer';
+import nextDynamic from 'next/dynamic';
 import { ConfirmModal, ConfirmModalState } from '@/components/ConfirmModal';
-import { ChecklistSearchModal } from '@/components/ChecklistSearchModal';
-import { ChecklistNavigatorModal } from '@/components/ChecklistNavigatorModal';
+
+const LoginModal = nextDynamic(
+  () => import('@/components/LoginModal').then((mod) => mod.LoginModal),
+  { ssr: false }
+);
+const ChangePasswordModal = nextDynamic(
+  () => import('@/components/ChangePasswordModal').then((mod) => mod.ChangePasswordModal),
+  { ssr: false }
+);
+const ChecklistCarouselModal = nextDynamic(
+  () => import('@/components/ChecklistCarouselModal').then((mod) => mod.ChecklistCarouselModal),
+  { ssr: false }
+);
+const SupervisorDiagnosisModal = nextDynamic(
+  () => import('@/components/SupervisorDiagnosisModal').then((mod) => mod.SupervisorDiagnosisModal),
+  { ssr: false }
+);
+const WhatsAppShareModal = nextDynamic(
+  () => import('@/components/WhatsAppShareModal').then((mod) => mod.WhatsAppShareModal),
+  { ssr: false }
+);
+const AuditLogDrawer = nextDynamic(
+  () => import('@/components/AuditLogDrawer').then((mod) => mod.AuditLogDrawer),
+  { ssr: false }
+);
+const ChecklistSearchModal = nextDynamic(
+  () => import('@/components/ChecklistSearchModal').then((mod) => mod.ChecklistSearchModal),
+  { ssr: false }
+);
+const ChecklistNavigatorModal = nextDynamic(
+  () => import('@/components/ChecklistNavigatorModal').then((mod) => mod.ChecklistNavigatorModal),
+  { ssr: false }
+);
+const AdminPanel = nextDynamic(
+  () => import('@/components/AdminPanel').then((mod) => mod.AdminPanel),
+  { ssr: false }
+);
+const ChecklistDrillDownView = nextDynamic(
+  () => import('@/components/ChecklistDrillDownView').then((mod) => mod.ChecklistDrillDownView),
+  { ssr: false }
+);
 import { 
   Plane, 
   Building2, 
@@ -656,6 +688,50 @@ export default function AviationGroundOpsPage() {
     );
   };
 
+  // Toggle Skip Flight / Operational Group (e.g. Flight Not Operational)
+  const handleToggleSkipGroup = (groupId: string, skipReason?: string) => {
+    if (!currentUser) return;
+
+    const targetGroup = dayData.groups.find((g) => g.id === groupId);
+    if (!targetGroup) return;
+
+    const willSkip = !targetGroup.isSkipped;
+    const reasonText = skipReason || (targetGroup.isFlightGroup ? 'Flight Not Operational' : 'Skipped by Supervisor');
+    const actorSig = `${currentUser.name} (${currentUser.uNumber})`;
+
+    const updatedGroups = dayData.groups.map((grp) => {
+      if (grp.id !== groupId) return grp;
+      return {
+        ...grp,
+        isSkipped: willSkip,
+        skipReason: willSkip ? reasonText : undefined,
+        skippedBy: willSkip ? actorSig : undefined,
+        skippedAt: willSkip ? new Date().toISOString() : undefined,
+        isVerified: willSkip ? false : grp.isVerified,
+        supervisorNotes: willSkip ? reasonText : grp.supervisorNotes,
+      };
+    });
+
+    const newDayData: DayOperationalData = {
+      ...dayData,
+      groups: updatedGroups,
+    };
+
+    saveDayData(newDayData);
+    setDayData(newDayData);
+
+    addAuditLog(
+      currentUser.uNumber,
+      currentUser.name,
+      currentUser.role,
+      willSkip ? 'FLIGHT_SKIPPED' : 'FLIGHT_RESTORED',
+      willSkip
+        ? `Skipped ${targetGroup.name} (${targetGroup.code}) — Reason: ${reasonText}.`
+        : `Restored ${targetGroup.name} (${targetGroup.code}) back to active operational shift.`,
+      selectedDate
+    );
+  };
+
   const handleCloseShift = (notes?: string, supervisorName?: string) => {
     if (!currentUser) return;
 
@@ -666,6 +742,19 @@ export default function AviationGroundOpsPage() {
     const updatedGroups = dayData.groups.map((grp) => {
       if (grp.name.includes('Day Shift') || grp.code === 'DAY-OPS') {
         return grp;
+      }
+      if (grp.isSkipped) {
+        return {
+          ...grp,
+          isSkipped: true,
+          skipReason: grp.skipReason || 'Flight Not Operational',
+          skippedBy: grp.skippedBy || signature,
+          skippedAt: grp.skippedAt || new Date().toISOString(),
+          isVerified: true,
+          verifiedBy: signature,
+          verifiedAt: new Date().toISOString(),
+          supervisorNotes: grp.skipReason || 'Flight Not Operational',
+        };
       }
       return {
         ...grp,
@@ -1332,85 +1421,100 @@ export default function AviationGroundOpsPage() {
       </footer>
 
       {/* 1. Login Modal */}
-      <LoginModal
-        isOpen={isLoginModalOpen}
-        onClose={() => setIsLoginModalOpen(false)}
-        onSuccess={handleLoginSuccess}
-      />
+      {isLoginModalOpen && (
+        <LoginModal
+          isOpen={isLoginModalOpen}
+          onClose={() => setIsLoginModalOpen(false)}
+          onSuccess={handleLoginSuccess}
+        />
+      )}
 
       {/* 2. Change Password Modal (Mandatory on First Login or Manual) */}
-      <ChangePasswordModal
-        isOpen={isChangePasswordModalOpen}
-        user={currentUser}
-        isMandatoryFirstLogin={isMandatoryFirstLogin}
-        onClose={() => setIsChangePasswordModalOpen(false)}
-        onSuccess={handlePasswordChangeSuccess}
-      />
+      {isChangePasswordModalOpen && (
+        <ChangePasswordModal
+          isOpen={isChangePasswordModalOpen}
+          user={currentUser}
+          isMandatoryFirstLogin={isMandatoryFirstLogin}
+          onClose={() => setIsChangePasswordModalOpen(false)}
+          onSuccess={handlePasswordChangeSuccess}
+        />
+      )}
 
       {/* 3. Touch-Friendly Checklist Carousel & Execution Engine */}
-      <ChecklistCarouselModal
-        isOpen={activeChecklistModal.isOpen}
-        checklist={activeChecklistModal.checklist}
-        groupName={activeChecklistModal.group?.name || ''}
-        subGroupName={activeChecklistModal.subGroup?.name || ''}
-        currentUser={currentUser}
-        onClose={() => {
-          setActiveChecklistModal((prev) => ({ ...prev, isOpen: false }));
-          if (reopenDrillDownAfterChecklistClose) {
-            setIsDrillDownOpen(true);
-            setReopenDrillDownAfterChecklistClose(false);
-          }
-        }}
-        onSaveChecklist={handleSaveChecklist}
-        isShiftClosed={dayData.isShiftClosed}
-      />
+      {activeChecklistModal.isOpen && (
+        <ChecklistCarouselModal
+          isOpen={activeChecklistModal.isOpen}
+          checklist={activeChecklistModal.checklist}
+          groupName={activeChecklistModal.group?.name || ''}
+          subGroupName={activeChecklistModal.subGroup?.name || ''}
+          currentUser={currentUser}
+          onClose={() => {
+            setActiveChecklistModal((prev) => ({ ...prev, isOpen: false }));
+            if (reopenDrillDownAfterChecklistClose) {
+              setIsDrillDownOpen(true);
+              setReopenDrillDownAfterChecklistClose(false);
+            }
+          }}
+          onSaveChecklist={handleSaveChecklist}
+          isShiftClosed={dayData.isShiftClosed}
+        />
+      )}
 
       {/* 4. Supervisor Diagnosis & Verification Modal */}
-      <SupervisorDiagnosisModal
-        isOpen={diagnosisModalState.isOpen}
-        dayData={dayData}
-        currentUser={currentUser}
-        targetGroupId={diagnosisModalState.targetGroupId}
-        onClose={() => setDiagnosisModalState({ isOpen: false })}
-        onVerifyGroup={handleVerifyGroup}
-        onReopenGroup={handleReopenGroup}
-        onCloseShift={handleCloseShift}
-        onReopenShift={handleReopenShift}
-      />
+      {diagnosisModalState.isOpen && (
+        <SupervisorDiagnosisModal
+          isOpen={diagnosisModalState.isOpen}
+          dayData={dayData}
+          currentUser={currentUser}
+          targetGroupId={diagnosisModalState.targetGroupId}
+          onClose={() => setDiagnosisModalState({ isOpen: false })}
+          onVerifyGroup={handleVerifyGroup}
+          onReopenGroup={handleReopenGroup}
+          onToggleSkipGroup={handleToggleSkipGroup}
+          onCloseShift={handleCloseShift}
+          onReopenShift={handleReopenShift}
+        />
+      )}
 
       {/* 4b. Day Shift Dedicated Supervisor Verification Modal */}
-      <SupervisorDiagnosisModal
-        isOpen={dayShiftDiagnosisState.isOpen}
-        dayData={dayData}
-        currentUser={currentUser}
-        targetGroupId={dayShiftDiagnosisState.targetGroupId}
-        dayShiftOnly={true}
-        onClose={() => setDayShiftDiagnosisState({ isOpen: false })}
-        onVerifyGroup={handleVerifyGroup}
-        onReopenGroup={handleReopenGroup}
-        onCloseShift={handleCloseShift}
-        onReopenShift={handleReopenShift}
-      />
+      {dayShiftDiagnosisState.isOpen && (
+        <SupervisorDiagnosisModal
+          isOpen={dayShiftDiagnosisState.isOpen}
+          dayData={dayData}
+          currentUser={currentUser}
+          targetGroupId={dayShiftDiagnosisState.targetGroupId}
+          dayShiftOnly={true}
+          onClose={() => setDayShiftDiagnosisState({ isOpen: false })}
+          onVerifyGroup={handleVerifyGroup}
+          onReopenGroup={handleReopenGroup}
+          onCloseShift={handleCloseShift}
+          onReopenShift={handleReopenShift}
+        />
+      )}
 
       {/* 5. WhatsApp Broadcast Summary Modal */}
-      <WhatsAppShareModal
-        isOpen={isWhatsAppModalOpen}
-        dayData={dayData}
-        currentUser={currentUser}
-        onClose={() => setIsWhatsAppModalOpen(false)}
-      />
+      {isWhatsAppModalOpen && (
+        <WhatsAppShareModal
+          isOpen={isWhatsAppModalOpen}
+          dayData={dayData}
+          currentUser={currentUser}
+          onClose={() => setIsWhatsAppModalOpen(false)}
+        />
+      )}
 
       {/* 5b. Day Shift Dedicated WhatsApp Summary Modal */}
-      <WhatsAppShareModal
-        isOpen={isDayShiftWhatsAppOpen}
-        dayData={dayData}
-        currentUser={currentUser}
-        dayShiftOnly={true}
-        onClose={() => setIsDayShiftWhatsAppOpen(false)}
-      />
+      {isDayShiftWhatsAppOpen && (
+        <WhatsAppShareModal
+          isOpen={isDayShiftWhatsAppOpen}
+          dayData={dayData}
+          currentUser={currentUser}
+          dayShiftOnly={true}
+          onClose={() => setIsDayShiftWhatsAppOpen(false)}
+        />
+      )}
 
       {/* 6. Admin Management Control Center */}
-      {currentUser?.role === 'ADMIN' && (
+      {currentUser?.role === 'ADMIN' && isAdminPanelOpen && (
         <AdminPanel
           isOpen={isAdminPanelOpen}
           dayData={dayData}
@@ -1424,7 +1528,7 @@ export default function AviationGroundOpsPage() {
       )}
 
       {/* 6b. Interactive Operational Drill-Down & Verification Cockpit */}
-      {(currentUser?.role === 'SUPERVISOR' || currentUser?.role === 'ADMIN') && (
+      {(currentUser?.role === 'SUPERVISOR' || currentUser?.role === 'ADMIN') && isDrillDownOpen && (
         <ChecklistDrillDownView
           isOpen={isDrillDownOpen}
           dayData={dayData}
@@ -1453,10 +1557,12 @@ export default function AviationGroundOpsPage() {
       )}
 
       {/* 7. Real-Time Audit Log Modal */}
-      <AuditLogDrawer
-        isOpen={isAuditLogOpen}
-        onClose={() => setIsAuditLogOpen(false)}
-      />
+      {isAuditLogOpen && (
+        <AuditLogDrawer
+          isOpen={isAuditLogOpen}
+          onClose={() => setIsAuditLogOpen(false)}
+        />
+      )}
 
       {/* 8. Filter Options Pop-up Window Modal */}
       {isFilterModalOpen && (
@@ -1495,8 +1601,8 @@ export default function AviationGroundOpsPage() {
                 {
                   id: 'flights',
                   title: 'Flight Turnarounds',
-                  desc: 'Focus exclusively on turnaround flights (AI-102, AI-304, etc.)',
-                  badge: '4 Flights',
+                  desc: 'Focus exclusively on scheduled turnaround flights',
+                  badge: `${dayData.groups.filter((g) => g.isFlightGroup).length} Flights`,
                   icon: Plane,
                   activeColor: 'bg-blue-600 text-white border-blue-600',
                 },
@@ -1585,38 +1691,42 @@ export default function AviationGroundOpsPage() {
       )}
 
       {/* Checklist Search Modal */}
-      <ChecklistSearchModal
-        isOpen={isChecklistSearchOpen}
-        onClose={() => setIsChecklistSearchOpen(false)}
-        dayData={dayData}
-        currentUser={currentUser}
-        onSelectChecklist={(grp, sub, chk) => {
-          setIsChecklistSearchOpen(false);
-          setActiveChecklistModal({
-            isOpen: true,
-            group: grp,
-            subGroup: sub,
-            checklist: chk,
-          });
-        }}
-      />
+      {isChecklistSearchOpen && (
+        <ChecklistSearchModal
+          isOpen={isChecklistSearchOpen}
+          onClose={() => setIsChecklistSearchOpen(false)}
+          dayData={dayData}
+          currentUser={currentUser}
+          onSelectChecklist={(grp, sub, chk) => {
+            setIsChecklistSearchOpen(false);
+            setActiveChecklistModal({
+              isOpen: true,
+              group: grp,
+              subGroup: sub,
+              checklist: chk,
+            });
+          }}
+        />
+      )}
 
       {/* Screen-Covering Operational Groups & Checklists Navigator */}
-      <ChecklistNavigatorModal
-        isOpen={isNavigatorOpen}
-        onClose={() => setIsNavigatorOpen(false)}
-        dayData={dayData}
-        currentUser={currentUser}
-        onSelectChecklist={(grp, sub, chk) => {
-          setIsNavigatorOpen(false);
-          setActiveChecklistModal({
-            isOpen: true,
-            group: grp,
-            subGroup: sub,
-            checklist: chk,
-          });
-        }}
-      />
+      {isNavigatorOpen && (
+        <ChecklistNavigatorModal
+          isOpen={isNavigatorOpen}
+          onClose={() => setIsNavigatorOpen(false)}
+          dayData={dayData}
+          currentUser={currentUser}
+          onSelectChecklist={(grp, sub, chk) => {
+            setIsNavigatorOpen(false);
+            setActiveChecklistModal({
+              isOpen: true,
+              group: grp,
+              subGroup: sub,
+              checklist: chk,
+            });
+          }}
+        />
+      )}
 
       {/* Floating Navigator & Search Action Buttons on Mobile */}
       <div className="fixed bottom-5 right-5 sm:hidden z-40 flex flex-col items-end gap-2.5">

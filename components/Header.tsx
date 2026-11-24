@@ -125,6 +125,7 @@ export function Header({
   };
 
   const isGroupCompleteAndVerified = (grp: any) => {
+    if (grp.isSkipped) return true;
     const isComplete = !grp.subGroups || grp.subGroups.length === 0 || grp.subGroups.every((sub: any) => {
       return !sub.checklists || sub.checklists.length === 0 || sub.checklists.every((chk: any) => chk.status === 'completed');
     });

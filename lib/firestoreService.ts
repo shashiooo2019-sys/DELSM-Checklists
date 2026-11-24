@@ -42,6 +42,7 @@ import {
 import {
   DEFAULT_USERS,
   generateDefaultGroups,
+  isFlightScheduledForDate,
   makeItem,
   FLIGHT_CODES,
   cleanSampleSubGroups,
@@ -760,7 +761,8 @@ export async function updateTemplateManifestInFirestore(groups: OperationalGroup
 // Synchronize target shift groups structure with updated master groups from Admin while preserving execution progress
 export function syncGroupsStructure(
   targetGroups: OperationalGroup[],
-  masterGroups: OperationalGroup[]
+  masterGroups: OperationalGroup[],
+  targetDateStr?: string
 ): OperationalGroup[] {
   const targetGroupMap = new Map<string, OperationalGroup>();
   targetGroups.forEach((g) => {
@@ -768,7 +770,11 @@ export function syncGroupsStructure(
     if (g.code) targetGroupMap.set(g.code.toUpperCase(), g);
   });
 
-  const updatedGroups = masterGroups.map((masterGrp) => {
+  const applicableMasterGroups = targetDateStr
+    ? masterGroups.filter((g) => !g.isFlightGroup || isFlightScheduledForDate(g.code || '', targetDateStr))
+    : masterGroups;
+
+  const updatedGroups = applicableMasterGroups.map((masterGrp) => {
     const existingGrp = targetGroupMap.get(masterGrp.id) || targetGroupMap.get(masterGrp.code.toUpperCase());
 
     if (!existingGrp) {
@@ -864,11 +870,16 @@ export function syncGroupsStructure(
       isVerified: existingGrp.isVerified || false,
       verifiedBy: existingGrp.verifiedBy,
       verifiedAt: existingGrp.verifiedAt,
+      supervisorNotes: existingGrp.supervisorNotes,
+      isSkipped: existingGrp.isSkipped,
+      skipReason: existingGrp.skipReason,
+      skippedBy: existingGrp.skippedBy,
+      skippedAt: existingGrp.skippedAt,
       subGroups: updatedSubGroups,
     };
   });
 
-  const dummyDayData: DayOperationalData = { date: 'sync', groups: updatedGroups, isShiftClosed: false, lastUpdated: new Date().toISOString() };
+  const dummyDayData: DayOperationalData = { date: targetDateStr || 'sync', groups: updatedGroups, isShiftClosed: false, lastUpdated: new Date().toISOString() };
   return sanitizeDayData(dummyDayData).groups;
 }
 
@@ -878,26 +889,18 @@ export async function propagateAdminGroupChangesToActiveShifts(
 ): Promise<void> {
   try {
     if (masterDayData.groups) {
-      updateTemplateManifestInFirestore(masterDayData.groups);
+      await updateTemplateManifestInFirestore(masterDayData.groups);
     }
 
-    const windowDates = getUpcomingDateStrings(undefined, 10);
-    const todayStr = getTodayDateString();
-    if (!windowDates.includes(todayStr)) {
-      windowDates.unshift(todayStr);
-    }
-
-    const batch = writeBatch(db);
+    const shiftsSnap = await getDocs(collection(db, 'daily_shifts'));
+    let batch = writeBatch(db);
     let batchCount = 0;
 
-    for (const dStr of windowDates) {
+    for (const shiftDoc of shiftsSnap.docs) {
+      const dStr = shiftDoc.id;
       if (dStr === masterDayData.date) continue;
 
-      const shiftRef = doc(db, 'daily_shifts', dStr);
-      const shiftSnap = await getDoc(shiftRef);
-      if (!shiftSnap.exists()) continue;
-
-      const data = shiftSnap.data();
+      const data = shiftDoc.data();
       if (data.status === 'CLOSED') continue;
 
       let parsed: DayOperationalData | null = null;
@@ -907,8 +910,8 @@ export async function propagateAdminGroupChangesToActiveShifts(
         } catch {}
       }
 
-      if (parsed && parsed.groups) {
-        const syncedGroups = syncGroupsStructure(parsed.groups, masterDayData.groups);
+      if (parsed && parsed.groups && !parsed.isShiftClosed) {
+        const syncedGroups = syncGroupsStructure(parsed.groups, masterDayData.groups, dStr);
         const updatedShift: DayOperationalData = sanitizeDayData({
           ...parsed,
           groups: syncedGroups,
@@ -922,7 +925,7 @@ export async function propagateAdminGroupChangesToActiveShifts(
           : 'IN_PROGRESS';
 
         batch.set(
-          shiftRef,
+          shiftDoc.ref,
           {
             date: dStr,
             status: shiftStatus,
@@ -936,6 +939,12 @@ export async function propagateAdminGroupChangesToActiveShifts(
           { merge: true }
         );
         batchCount++;
+
+        if (batchCount >= 400) {
+          await batch.commit();
+          batch = writeBatch(db);
+          batchCount = 0;
+        }
       }
     }
 
@@ -1172,7 +1181,7 @@ export async function loadDayDataFromFirestore(dateStr: string): Promise<DayOper
     if (!parsedData || !parsedData.groups || parsedData.groups.length === 0) {
       parsedData = {
         date: dateStr,
-        groups: generateDefaultGroups(),
+        groups: generateDefaultGroups(dateStr),
         isShiftClosed: shiftData.status === 'CLOSED',
         closedBy: shiftData.closed_by || undefined,
         closedAt: shiftData.closed_at || undefined,
@@ -1410,9 +1419,8 @@ export function subscribeToDayData(
           try {
             const parsed = JSON.parse(data.raw_data) as DayOperationalData;
             if (parsed && parsed.groups && parsed.groups.length > 0) {
-              parsed.groups = cleanSampleSubGroups(parsed.groups);
-              const sanitized = sanitizeDayData(parsed);
-              callback(sanitized);
+              const { merged } = mergeMasterHierarchyWithExisting(parsed, dateStr);
+              callback(merged);
               return;
             }
           } catch (err) {

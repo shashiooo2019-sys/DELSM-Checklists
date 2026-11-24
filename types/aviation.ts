@@ -70,7 +70,7 @@ export interface OperationalGroup {
   id: string;
   name: string; // e.g. "LX147", "Arrivals"
   code: string;
-  isFlightGroup: boolean; // True for LX147, LH763, LH761
+  isFlightGroup: boolean; // True for scheduled flight groups (LX147, LH763, LH761, LX2647, LH785)
   isMandatory: boolean;
   subGroups: SubOperationalGroup[];
   isVerified: boolean; // Verified by Supervisor
@@ -78,6 +78,7 @@ export interface OperationalGroup {
   verifiedAt?: string;
   supervisorNotes?: string;
   isSkipped?: boolean;
+  skipReason?: string;
   skippedBy?: string;
   skippedAt?: string;
 }
